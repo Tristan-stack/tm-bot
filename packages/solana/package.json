@@ -1,0 +1,21 @@
+{
+  "name": "@launchbot/solana",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wallets, balances, withdrawals, encryption; pump.fun and PumpSwap in V2",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsc -b --watch --preserveWatchOutput",
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run --root ../.. --project solana"
+  },
+  "dependencies": {
+    "@launchbot/shared": "workspace:*",
+    "@solana/web3.js": "^1.98.2"
+  }
+}

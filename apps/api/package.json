@@ -1,0 +1,23 @@
+{
+  "name": "@launchbot/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fastify API for the Mini App (initData validation)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run --root ../.. --project api"
+  },
+  "dependencies": {
+    "@launchbot/shared": "workspace:*",
+    "@launchbot/db": "workspace:*",
+    "@launchbot/solana": "workspace:*"
+  }
+}

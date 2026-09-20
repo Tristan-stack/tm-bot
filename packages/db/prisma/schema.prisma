@@ -1,0 +1,242 @@
+// Launch Bot — V1 data model (context §13).
+// Conventions: cuid ids, SOL amounts in lamports (BigInt), USD in Decimal, UTC timestamps,
+// encrypted secrets in Bytes. Each ticket adds its own migration.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Plan {
+  CLASSIC
+  PREMIUM
+}
+
+enum PlanDuration {
+  TWO_DAYS
+  ONE_MONTH
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  CANCELED
+  SWEPT
+}
+
+enum WalletSource {
+  CREATED
+  IMPORTED_KEY
+  IMPORTED_SEED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+// Decision of 16/09/2026: sweeps of inactive accounts are kept for a manual refund.
+enum WithdrawalKind {
+  USER
+  INACTIVITY_SWEEP
+}
+
+enum AiGenerationKind {
+  TEXT
+  LOGO
+}
+
+model User {
+  id               String    @id @default(cuid())
+  // Telegram ids exceed int4. BigInt(ctx.from.id) on write, Number() on read (< 2^53).
+  telegramId       BigInt    @unique
+  username         String?
+  firstName        String?
+  termsVersion     Int?
+  termsAcceptedAt  DateTime? @db.Timestamptz(3)
+  channelCheckedAt DateTime? @db.Timestamptz(3)
+  lastActiveAt     DateTime  @default(now()) @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  subscriptions Subscription[]
+  payments      Payment[]
+  wallets       Wallet[]
+  withdrawals   Withdrawal[]
+  aiGenerations AiGeneration[]
+  tokenDrafts   TokenDraft[]
+  simulations   Simulation[]
+
+  // Inactive accounts after 48 h (V1-45)
+  @@index([lastActiveAt])
+}
+
+// One row per activation.
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      Plan
+  duration  PlanDuration
+  status    SubscriptionStatus @default(ACTIVE)
+  startsAt  DateTime           @db.Timestamptz(3)
+  expiresAt DateTime           @db.Timestamptz(3)
+  // Unique: a paid invoice activates a subscription only once, even when the worker and
+  // "I've paid" detect it at the same time. Null for a manual /grant.
+  paymentId String?            @unique
+  payment   Payment?           @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  createdAt DateTime           @default(now()) @db.Timestamptz(3)
+
+  // Expirations and reminders (V1-34)
+  @@index([status, expiresAt])
+  // Active subscription of a user (V1-07)
+  @@index([userId, status])
+}
+
+// Accounting record: kept and detached from the account (userId -> null) after a purge.
+model Payment {
+  id               String        @id @default(cuid())
+  userId           String?
+  user             User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  plan             Plan
+  duration         PlanDuration
+  priceUsd         Decimal       @db.Decimal(12, 2)
+  solUsdRate       Decimal       @db.Decimal(18, 8)
+  expectedLamports BigInt
+  receivedLamports BigInt        @default(0)
+  depositAddress   String        @unique
+  // Deposit key, erased after the 30 days of monitoring (V1-33): nullable.
+  encSecretKey     Bytes?
+  iv               Bytes?
+  authTag          Bytes?
+  status           PaymentStatus @default(PENDING)
+  expiresAt        DateTime      @db.Timestamptz(3)
+  paidAt           DateTime?     @db.Timestamptz(3)
+  // A full payment is accepted up to 24 h after expiry or cancellation (§8.3).
+  canceledAt       DateTime?     @db.Timestamptz(3)
+  sweepSignature   String?
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+
+  subscription Subscription?
+
+  // Pending invoices and the 24 h window (V1-32)
+  @@index([status, expiresAt])
+  // Last 5 payments of /whois (V1-43)
+  @@index([userId, createdAt])
+}
+
+model AiGeneration {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      AiGenerationKind
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+
+  // Quota of 50 per day (V1-17)
+  @@index([userId, createdAt])
+}
+
+model Wallet {
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  publicKey       String
+  source          WalletSource
+  derivationPath  String?
+  encSecretKey    Bytes
+  iv              Bytes
+  authTag         Bytes
+  // Decision of 16/09/2026: encrypted seed phrase, null for IMPORTED_KEY. The three columns
+  // are set together or not at all (CHECK constraint in the init migration).
+  encMnemonic     Bytes?
+  mnemonicIv      Bytes?
+  mnemonicAuthTag Bytes?
+  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
+
+  withdrawals Withdrawal[]
+
+  @@unique([userId, name])
+  // Per user only: two users may import the same key.
+  @@unique([userId, publicKey])
+  // Order of the wallet list (§9.1)
+  @@index([userId, createdAt])
+}
+
+// Accounting record: survives the deletion of its user and of its wallet.
+model Withdrawal {
+  id             String           @id @default(cuid())
+  userId         String?
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  walletId       String?
+  wallet         Wallet?          @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  fromAddress    String
+  toAddress      String
+  lamports       BigInt
+  feeLamports    BigInt?
+  signature      String?          @unique
+  status         WithdrawalStatus @default(PENDING)
+  error          String?
+  kind           WithdrawalKind   @default(USER)
+  // INACTIVITY_SWEEP only: kept after the account is deleted, for a manual refund.
+  userTelegramId BigInt?
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  // Manual refund of inactivity sweeps (V1-45)
+  @@index([kind, userTelegramId])
+}
+
+model TokenDraft {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String?
+  symbol      String?
+  description String?
+  imageFileId String?
+  website     String?
+  twitter     String?
+  telegram    String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  // A reused draft must not be purged 90 days after its creation (V1-45).
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  simulations Simulation[]
+
+  @@index([userId, createdAt])
+  // Cleanup after 90 days
+  @@index([updatedAt])
+}
+
+model Simulation {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenDraftId String
+  tokenDraft   TokenDraft @relation(fields: [tokenDraftId], references: [id], onDelete: Cascade)
+  devBuySol    Decimal    @db.Decimal(20, 9)
+  // int4: 0 to 2 147 483 647 (V1-22 generates in this range)
+  seed         Int
+  // Full SimConfig of §7.4, including the solUsdPrice frozen at creation
+  params       Json
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  // Cleanup after 90 days
+  @@index([createdAt])
+}

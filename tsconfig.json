@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/sim-engine" },
+    { "path": "./packages/db" },
+    { "path": "./packages/solana" },
+    { "path": "./apps/api" },
+    { "path": "./apps/bot" },
+    { "path": "./apps/worker" },
+    { "path": "./apps/webapp" }
+  ]
+}

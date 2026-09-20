@@ -1,0 +1,17 @@
+{
+  "name": "@launchbot/sim-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Seeded launch simulation engine. Pure TypeScript, no network, no Node API",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsc -b --watch --preserveWatchOutput",
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run --root ../.. --project sim-engine"
+  }
+}
