@@ -4,6 +4,7 @@
   "private": true,
   "description": "Types, constants, zod schemas and bot texts (universal entry) + env and logger (server entry)",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./server": "./src/server/index.ts"
@@ -16,6 +17,7 @@
     "test": "vitest run --root ../.. --project shared"
   },
   "dependencies": {
+    "@grammyjs/types": "5.0.0",
     "bs58": "^6.0.0",
     "dotenv": "^18.0.1",
     "pino": "^10.3.1",

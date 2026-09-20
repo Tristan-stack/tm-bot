@@ -1,6 +1,7 @@
 import { writeSync } from "node:fs";
 import bs58 from "bs58";
 import { z } from "zod";
+import { SOLANA_CLUSTERS } from "../cluster.js";
 import { loadDotenvOnce } from "./dotenv.js";
 import { createLogger, LOG_LEVELS } from "./logger.js";
 
@@ -14,7 +15,7 @@ const REASON = {
   invalid: "is invalid",
   botToken: "must look like <digits>:<token>, as given by BotFather",
   databaseUrl: "must be a postgres:// or postgresql:// URL",
-  cluster: "must be devnet, testnet or mainnet-beta",
+  cluster: `must be one of: ${SOLANA_CLUSTERS.join(", ")}`,
   httpUrl: "must be an http(s) URL",
   httpsUrl: "must be an https:// URL",
   encryptionKey: "must be valid base64 that decodes to exactly 32 bytes",
@@ -91,9 +92,7 @@ const envSchema = z.object({
     REASON.databaseUrl,
   ),
   // Anything other than devnet is refused by the startup guard of V1-04, not here.
-  SOLANA_CLUSTER: z
-    .enum(["devnet", "testnet", "mainnet-beta"], { error: REASON.cluster })
-    .default("devnet"),
+  SOLANA_CLUSTER: z.enum(SOLANA_CLUSTERS, { error: REASON.cluster }).default("devnet"),
   SOLANA_RPC_URL: httpUrl().default("https://api.devnet.solana.com"),
   WALLET_ENCRYPTION_KEY: required().transform((value, ctx) => {
     const key = decodeEncryptionKey(value);
@@ -140,7 +139,6 @@ const envSchema = z.object({
 });
 
 export type Env = z.infer<typeof envSchema>;
-export type SolanaCluster = Env["SOLANA_CLUSTER"];
 export type EnvIssue = { variable: string; reason: string };
 
 export class EnvValidationError extends Error {

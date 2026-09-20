@@ -1,0 +1,70 @@
+import { LAMPORTS_PER_SOL, SOL_DECIMALS } from "../constants.js";
+import { formatMagnitude, trimTrailingZeros } from "./number.js";
+
+export type SolRounding = "floor" | "ceil" | "halfUp";
+export type FormatSolOptions = {
+  /** 0 to 9, 3 by default. Invoices use 4. */
+  decimals?: number;
+  /** `floor` by default: a balance is never overstated. A missing amount uses `ceil`. */
+  rounding?: SolRounding;
+  /** Drops trailing zeros: `3`, `0.05`. */
+  trim?: boolean;
+};
+
+/** `2.500`: SOL amount without its unit. Computed on lamports, never on floats. */
+export function formatSolAmount(lamports: bigint, options: FormatSolOptions = {}): string {
+  const { decimals = 3, rounding = "floor", trim = false } = options;
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > SOL_DECIMALS) {
+    throw new RangeError(`decimals must be an integer from 0 to ${SOL_DECIMALS}`);
+  }
+  const negative = lamports < 0n;
+  const magnitude = negative ? -lamports : lamports;
+  // Rounding applies to the magnitude: -1.2345 SOL floors to -1.234.
+  const unit = 10n ** BigInt(SOL_DECIMALS - decimals);
+  const remainder = magnitude % unit;
+  let scaled = magnitude / unit;
+  if (
+    (rounding === "ceil" && remainder > 0n) ||
+    (rounding === "halfUp" && remainder * 2n >= unit)
+  ) {
+    scaled += 1n;
+  }
+
+  const digits = scaled.toString().padStart(decimals + 1, "0");
+  const integer = digits.slice(0, digits.length - decimals);
+  let text = decimals === 0 ? integer : `${integer}.${digits.slice(-decimals)}`;
+  if (trim && decimals > 0) text = trimTrailingZeros(text);
+  return negative && scaled > 0n ? `-${text}` : text;
+}
+
+/** `2.500 SOL`; `{ decimals: 4 }` → `0.5708 SOL`; `{ trim: true }` → `3 SOL`. */
+export const formatSol = (lamports: bigint, options?: FormatSolOptions): string =>
+  `${formatSolAmount(lamports, options)} SOL`;
+
+const SOL_INPUT = /^(\d{1,10})(?:[.,](\d{1,9}))?$/;
+
+/** Parses a typed amount: `.` or `,`, 9 decimals max, no sign, no exponent. `null` if invalid. */
+export function parseSolToLamports(input: string): bigint | null {
+  const match = SOL_INPUT.exec(input.trim());
+  if (match === null) return null;
+  const [, integer = "0", fraction = ""] = match;
+  return BigInt(integer) * LAMPORTS_PER_SOL + BigInt(fraction.padEnd(SOL_DECIMALS, "0"));
+}
+
+/** `$1,234.56`, `$59.00` */
+export const formatUsd = (value: number): string => {
+  const text = formatMagnitude(value, 2);
+  return value < 0 && text !== "0.00" ? `-$${text}` : `$${text}`;
+};
+
+/** USD value of a SOL amount, for display only. `null` when the SOL price is unknown (§4.3). */
+export const usdOf = (lamports: bigint, solUsd: number | null): number | null =>
+  solUsd === null ? null : (Number(lamports) / Number(LAMPORTS_PER_SOL)) * solUsd;
+
+/** `2.500 SOL ($258.40)`, or `2.500 SOL` when the SOL price is unknown: USD amounts are hidden. */
+export const withUsd = (solText: string, usd: number | null): string =>
+  usd === null ? solText : `${solText} (${formatUsd(usd)})`;
+
+/** `SOL $103.36`, or `SOL —` when the price is unknown. */
+export const formatSolPrice = (solUsd: number | null): string =>
+  `SOL ${solUsd === null ? "—" : formatUsd(solUsd)}`;

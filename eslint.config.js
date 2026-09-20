@@ -4,10 +4,15 @@ import prettier from "eslint-config-prettier";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-/** Internal packages a given folder must never import. */
-const restrictImports = (patterns, message) => ({
-  "no-restricted-imports": ["error", { patterns: [{ group: patterns, message }] }],
+/** Imports a given folder must never use: one [patterns, message] pair per reason. */
+const restrictImports = (...restrictions) => ({
+  "no-restricted-imports": [
+    "error",
+    { patterns: restrictions.map(([group, message]) => ({ group, message })) },
+  ],
 });
+
+const SHARED_NO_INTERNAL = [["@launchbot/*"], "shared depends on no internal package."];
 
 export default defineConfig(
   globalIgnores(["**/dist/", "**/coverage/", "packages/db/src/generated/"]),
@@ -35,21 +40,31 @@ export default defineConfig(
   {
     files: ["apps/webapp/**"],
     languageOptions: { globals: globals.browser },
-    rules: restrictImports(
+    rules: restrictImports([
       ["@launchbot/shared/server", "@launchbot/db", "@launchbot/solana"],
       "The Mini App runs in a browser: only @launchbot/shared (universal entry) and @launchbot/sim-engine are allowed.",
-    ),
+    ]),
   },
   {
     files: ["packages/sim-engine/**"],
-    rules: restrictImports(
+    rules: restrictImports([
       ["@launchbot/*", "node:*"],
       "sim-engine is pure TypeScript: no internal package, no Node API, no network.",
-    ),
+    ]),
   },
   {
     files: ["packages/shared/**"],
-    rules: restrictImports(["@launchbot/*"], "shared depends on no internal package."),
+    rules: restrictImports(SHARED_NO_INTERNAL),
+  },
+  // A later block replaces the options of a rule, it does not merge them: the restriction of
+  // the block above is repeated.
+  {
+    files: ["packages/shared/src/**"],
+    ignores: ["packages/shared/src/server/**"],
+    rules: restrictImports(SHARED_NO_INTERNAL, [
+      ["node:*", "**/server", "**/server/**"],
+      "The universal entry of shared is bundled by the Mini App: Node code lives in src/server.",
+    ]),
   },
 
   prettier,

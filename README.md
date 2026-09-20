@@ -37,6 +37,14 @@ Dépendances internes autorisées. pnpm n'expose à un package que les dépendan
 `loadEnv`, `parseEnv`, `createLogger`, `scrubSecrets`). La Mini App n'importe jamais `./server`,
 `db` ni `solana`.
 
+L'entrée universelle fournit les briques de tous les écrans : textes `en` et emojis `E`
+(`src/i18n/`), gabarit `renderScreen` / `renderInputScreen`, boutons et `navRow` (`src/ui/`), codec
+`encodeCallback` / `decodeCallback`, constantes métier, config de cluster, formateurs
+(`src/format/`, tout en UTC, SOL en lamports `bigint`) et schémas zod. ESLint y interdit tout import
+`node:*` ou `server`, et `sideEffects: false` laisse Vite retirer ce que la Mini App n'utilise pas.
+Chaque process lie le cluster une fois au démarrage : `const ui = createUi(env.SOLANA_CLUSTER)`, puis
+`ui.screenHeader(title, counter?)` et `ui.flowHeader({ flow, step })` portent le badge du cluster.
+
 Emplacement des services : logique Telegram dans `apps/bot`, accès Solana dans `packages/solana`,
 services métier Prisma partagés entre apps dans `packages/db/src/services/`, avec dépendances
 injectées (Solana, prix, horloge) pour rester testables.
@@ -210,3 +218,5 @@ ticket V1-04). Aucune valeur « devnet » n'est codée en dur : tout dérive de 
 | 20/09/2026 | **Imports relatifs en `.js`** dans les packages Node (`moduleResolution: NodeNext`), sans extension dans la webapp (`Bundler`).                                                                                                                                                                                                                   |
 | 20/09/2026 | **Prisma 7.10.0**, version figée (le tag `latest` du CLI pointe sur une RC 8.0). Générateur `prisma-client` (client en TypeScript dans `src/generated/`), driver adapter `@prisma/adapter-pg`, URL dans `prisma.config.ts`. Avec l'adapter, P2002 ne donne que le nom de l'index : `isUniqueViolation` en déduit les champs.                      |
 | 20/09/2026 | **PostgreSQL Docker publié sur le port 5440**, pas 5432 : la machine de dev a des PostgreSQL natifs sur 5432 à 5435.                                                                                                                                                                                                                              |
+| 20/09/2026 | **`@grammyjs/types` 5.0.0, version exacte**, dans `shared` : c'est celle que grammY 1.46 épingle, donc une seule copie des types Bot API. `shared` ne dépend pas de grammY.                                                                                                                                                                       |
+| 20/09/2026 | **Textes sous `packages/shared/src/i18n/`** (le contexte dit `shared/i18n/en.ts`) pour suivre les `exports` du package. `shared` ne lit jamais l'environnement : le cluster est passé en paramètre (`createUi(cluster)`), et la liste des clusters de `loadEnv` vient de `cluster.ts`.                                                            |
