@@ -101,7 +101,7 @@ describe.skipIf(!process.env.RUN_DB_TESTS)("PaymentService (db)", () => { … })
 ## Base de données
 
 Schéma Prisma : [packages/db/prisma/schema.prisma](packages/db/prisma/schema.prisma) (8 modèles V1 du
-§13). Le client généré (`packages/db/src/generated/`) n'est pas commité : `pnpm install` lance
+§13, plus la table `Session` que grammY utilise). Le client généré (`packages/db/src/generated/`) n'est pas commité : `pnpm install` lance
 `prisma generate`, qui ne demande ni base ni `.env`.
 
 | Script             | Rôle                                                                     |
@@ -117,9 +117,10 @@ Ces scripts lisent `DATABASE_URL` dans le `.env` racine. Chaque ticket ajoute sa
 Prisma ne sait pas exprimer une contrainte CHECK : elle s'écrit à la main dans une migration SQL
 (`wallet_mnemonic_check`).
 
-`pnpm test:db` supprime puis recrée la base `launchbot_test` et y applique les migrations avec
+`pnpm test:db` supprime puis recrée la base de test et y applique les migrations avec
 `prisma migrate deploy`. L'URL vient de `TEST_DATABASE_URL`, sinon de `DATABASE_URL` avec le suffixe
-`_test`. Une base dont le nom ne finit pas par `_test` est refusée.
+`_test`. Une base dont le nom ne finit pas par `_test` est refusée. Chaque suite a sa propre base
+(`resetTestDatabase("bot")` → `launchbot_bot_test`), car Vitest lance les projets en parallèle.
 
 ```ts
 import { prisma, isUniqueViolation } from "@launchbot/db";
@@ -202,21 +203,61 @@ Copier l'URL https obtenue dans `WEBAPP_URL`. Les hôtes `.trycloudflare.com`, `
 [apps/webapp/vite.config.ts](apps/webapp/vite.config.ts). L'URL d'un quick tunnel change à chaque
 lancement : mettre `WEBAPP_URL` à jour et relancer le bot.
 
+## Le bot
+
+`pnpm --filter @launchbot/bot start` lance [apps/bot/src/main.ts](apps/bot/src/main.ts), qui passe
+`createBotService()` à `runProcess` (V1-05 y ajoutera l'API, dans le même process). Tout le démarrage
+se fait dans le `start()` du service, donc un refus est loggé proprement (nom et message de l'erreur,
+jamais de stack) et le process sort en code 1. Ordre de démarrage :
+
+1. `loadEnv()` ;
+2. **garde-fou devnet** : `assertDevnet` compare le hash genesis du RPC à celui du devnet. Un
+   cluster autre que devnet, un hash différent ou un RPC injoignable refusent le démarrage. Les logs
+   ne montrent que l'hôte du RPC, jamais sa query, qui peut contenir une clé d'API ;
+3. `SELECT 1` sur PostgreSQL ;
+4. `bot.init()` (le token n'apparaît dans aucun log) ;
+5. `setMyCommands`, puis long polling (`bot.start` supprime lui-même le webhook).
+
+Chaîne de middlewares, dans cet ordre : `privateOnly` (en groupe ou en canal le bot ne fait rien,
+aucune écriture en base), `ensureAnswered`, limite globale de fréquence, `touchUser` (activité, qui
+pilote la purge à 48 h), sessions, conversations, puis les handlers et le routeur de callbacks.
+`ensureAnswered` **englobe** la suite : une fois les handlers passés, il ferme toute callback query
+restée sans réponse. Placé en fin de chaîne, il serait sauté par tout handler qui n'appelle pas
+`next()`, ce que font les commandes et le plugin conversations. `bot.catch` logge la forme de
+l'update et l'erreur — jamais `ctx.update`, un texte de message ou `GrammyError.payload`.
+
+Le logger ne garde d'une erreur que son nom et son message nettoyé (serializer `err`) : un
+`log.error({ err })` ne peut donc pas laisser fuir une stack ou les champs propres de l'erreur.
+
+Navigation à message unique : `showScreen(ctx, screen)` édite l'écran en place sur un clic, envoie un
+nouveau message après une saisie et désarme le clavier de l'ancien. Il renvoie `not_modified` quand
+Telegram refuse une édition identique, ce dont le Refresh se sert pour répondre « Already up to
+date ». `blockWithFlag` répond une alerte et réécrit l'écran avec le flag (§4.5).
+
+Sessions et conversations partagent la table `Session` (préfixe `conversation-` pour les secondes).
+Une session que la version en place ne sait pas lire est jetée et reconstruite, donc un déploiement
+ne casse aucune conversation. **Aucun secret en session** : les lignes sont en clair.
+
 ## Devnet
 
-SOL de test : https://faucet.solana.com. Le bot refusera de démarrer hors devnet (garde-fou du
-ticket V1-04). Aucune valeur « devnet » n'est codée en dur : tout dérive de `SOLANA_CLUSTER`
-(centralisé en V1-03).
+SOL de test : https://faucet.solana.com. Le bot refuse de démarrer hors devnet, et rien ne contourne
+ce garde-fou, pas même les tests (le RPC est simulé). Aucune valeur « devnet » n'est codée en dur :
+tout dérive de `SOLANA_CLUSTER` (centralisé en V1-03).
 
 ## Décisions techniques
 
-| Date       | Décision                                                                                                                                                                                                                                                                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 20/09/2026 | **Lib Solana (D10) : `@solana/web3.js` 1.x** (`^1.98.2`, 1.99.0 installée). C'est la dépendance directe de `@pump-fun/pump-sdk` 2.0.0 (avec `@coral-xyz/anchor`, `@solana/spl-token`, `bn.js`). Installée dans `packages/solana` uniquement, une seule copie dans le lockfile (`pnpm why -r @solana/web3.js`). Pas de `@solana/kit` en parallèle. |
-| 20/09/2026 | **TypeScript 6.0.x** (`~6.0`) et non 7.x : typescript-eslint 8 exige `typescript <6.1`. À relever quand typescript-eslint supportera TypeScript 7.                                                                                                                                                                                                |
-| 20/09/2026 | **Packages internes consommés en source TS** (`exports` → `./src/index.ts`) : pas d'étape de build entre packages. Les process Node tournent avec `tsx` (`dev` : `tsx watch`, `start` : `tsx`). `tsc -b` sert au typecheck et n'émet que les déclarations (`emitDeclarationOnly`), nécessaires aux références de projets.                         |
-| 20/09/2026 | **Imports relatifs en `.js`** dans les packages Node (`moduleResolution: NodeNext`), sans extension dans la webapp (`Bundler`).                                                                                                                                                                                                                   |
-| 20/09/2026 | **Prisma 7.10.0**, version figée (le tag `latest` du CLI pointe sur une RC 8.0). Générateur `prisma-client` (client en TypeScript dans `src/generated/`), driver adapter `@prisma/adapter-pg`, URL dans `prisma.config.ts`. Avec l'adapter, P2002 ne donne que le nom de l'index : `isUniqueViolation` en déduit les champs.                      |
-| 20/09/2026 | **PostgreSQL Docker publié sur le port 5440**, pas 5432 : la machine de dev a des PostgreSQL natifs sur 5432 à 5435.                                                                                                                                                                                                                              |
-| 20/09/2026 | **`@grammyjs/types` 5.0.0, version exacte**, dans `shared` : c'est celle que grammY 1.46 épingle, donc une seule copie des types Bot API. `shared` ne dépend pas de grammY.                                                                                                                                                                       |
-| 20/09/2026 | **Textes sous `packages/shared/src/i18n/`** (le contexte dit `shared/i18n/en.ts`) pour suivre les `exports` du package. `shared` ne lit jamais l'environnement : le cluster est passé en paramètre (`createUi(cluster)`), et la liste des clusters de `loadEnv` vient de `cluster.ts`.                                                            |
+| Date       | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 20/09/2026 | **Lib Solana (D10) : `@solana/web3.js` 1.x** (`^1.98.2`, 1.99.0 installée). C'est la dépendance directe de `@pump-fun/pump-sdk` 2.0.0 (avec `@coral-xyz/anchor`, `@solana/spl-token`, `bn.js`). Installée dans `packages/solana` uniquement, une seule copie dans le lockfile (`pnpm why -r @solana/web3.js`). Pas de `@solana/kit` en parallèle.                                                                                                                                                           |
+| 20/09/2026 | **TypeScript 6.0.x** (`~6.0`) et non 7.x : typescript-eslint 8 exige `typescript <6.1`. À relever quand typescript-eslint supportera TypeScript 7.                                                                                                                                                                                                                                                                                                                                                          |
+| 20/09/2026 | **Packages internes consommés en source TS** (`exports` → `./src/index.ts`) : pas d'étape de build entre packages. Les process Node tournent avec `tsx` (`dev` : `tsx watch`, `start` : `tsx`). `tsc -b` sert au typecheck et n'émet que les déclarations (`emitDeclarationOnly`), nécessaires aux références de projets.                                                                                                                                                                                   |
+| 20/09/2026 | **Imports relatifs en `.js`** dans les packages Node (`moduleResolution: NodeNext`), sans extension dans la webapp (`Bundler`).                                                                                                                                                                                                                                                                                                                                                                             |
+| 20/09/2026 | **Prisma 7.10.0**, version figée (le tag `latest` du CLI pointe sur une RC 8.0). Générateur `prisma-client` (client en TypeScript dans `src/generated/`), driver adapter `@prisma/adapter-pg`, URL dans `prisma.config.ts`. Avec l'adapter, P2002 ne donne que le nom de l'index : `isUniqueViolation` en déduit les champs.                                                                                                                                                                                |
+| 20/09/2026 | **PostgreSQL Docker publié sur le port 5440**, pas 5432 : la machine de dev a des PostgreSQL natifs sur 5432 à 5435.                                                                                                                                                                                                                                                                                                                                                                                        |
+| 20/09/2026 | **`@grammyjs/types` 5.0.0, version exacte**, dans `shared` : c'est celle que grammY 1.46 épingle, donc une seule copie des types Bot API. `shared` ne dépend pas de grammY.                                                                                                                                                                                                                                                                                                                                 |
+| 20/09/2026 | **Textes sous `packages/shared/src/i18n/`** (le contexte dit `shared/i18n/en.ts`) pour suivre les `exports` du package. `shared` ne lit jamais l'environnement : le cluster est passé en paramètre (`createUi(cluster)`), et la liste des clusters de `loadEnv` vient de `cluster.ts`.                                                                                                                                                                                                                      |
+| 21/09/2026 | **grammY 1.46 avec `@grammyjs/storage-prisma`** (sessions et conversations dans la table `Session`). `@grammyjs/ratelimiter` n'est pas installé : la limite globale appelle `consumeRateLimit(userId, "global")`, le même compteur que les actions coûteuses et que l'API, donc une seule fenêtre glissante et un seul balayage des utilisateurs partis. `@grammyjs/auto-retry` attend sur les 429, borné à 2 essais et 10 s : les updates passent un par un, un réessai illimité bloquerait tout le monde. |
+| 21/09/2026 | **`setLogDestination` est la prise de test du logger.** Un module crée son logger à l'import, donc sa destination doit pouvoir changer après coup : la bascule est au niveau du flux, après le nettoyage des secrets, et couvre tous les loggers et leurs enfants. C'est ce qui permet de prouver par un test qu'un secret n'est pas loggé.                                                                                                                                                                 |
+| 21/09/2026 | **Chaque suite d'intégration a sa base** (`resetTestDatabase("bot")` → `launchbot_bot_test`) : Vitest lance les projets en parallèle, et deux suites qui réinitialisent la même base se la suppriment mutuellement.                                                                                                                                                                                                                                                                                         |
+
+| 21/09/2026 | **`runProcess` sort avec un délai de 100 ms.** Node 24 sous Windows plante sur une assertion libuv (code 127) si `process.exit()` suit de trop près une requête réseau, ce qui est exactement le cas d'un démarrage refusé par le garde-fou. `setImmediate` ne suffit pas. |

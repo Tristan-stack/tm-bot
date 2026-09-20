@@ -240,3 +240,11 @@ model Simulation {
   // Cleanup after 90 days
   @@index([createdAt])
 }
+
+/// grammY session and conversation storage (@grammyjs/storage-prisma, V1-04).
+/// `key` is the chat id for sessions, prefixed for conversations. Holds no secret.
+model Session {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+}

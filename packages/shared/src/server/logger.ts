@@ -2,7 +2,7 @@ import { pino } from "pino";
 import type { DestinationStream, Logger } from "pino";
 import { PinoPretty } from "pino-pretty";
 import { loadDotenvOnce } from "./dotenv.js";
-import { CENSOR, SECRET_ENV_VARIABLES, scrubSecrets } from "./scrub.js";
+import { CENSOR, SECRET_ENV_VARIABLES, scrubError, scrubSecrets } from "./scrub.js";
 
 export type { Logger };
 
@@ -55,8 +55,10 @@ function defaultDestination(): DestinationStream {
 }
 
 /**
- * Two layers: `redact` censors known secret keys of logged objects, then every serialized
- * line (message, error, stack trace included) goes through scrubSecrets before it is written.
+ * Three layers: `redact` censors known secret keys of logged objects, the `err` serializer
+ * keeps the name and the message of an error only (no stack, and none of its own fields:
+ * `GrammyError.payload` holds user input), then every serialized line goes through
+ * scrubSecrets before it is written.
  * Processes use createLogger; this one is exported for tests that capture the output.
  */
 export function createRootLogger(options: LoggerOptions = {}): Logger {
@@ -66,15 +68,34 @@ export function createRootLogger(options: LoggerOptions = {}): Logger {
     write: (line) => destination.write(scrubSecrets(line)),
   };
   return pino(
-    { level: resolveLevel(options.level), redact: { paths: REDACT_PATHS, censor: CENSOR } },
+    {
+      level: resolveLevel(options.level),
+      redact: { paths: REDACT_PATHS, censor: CENSOR },
+      serializers: { err: scrubError },
+    },
     scrubbed,
   );
 }
 
 let root: Logger | undefined;
+let captured: DestinationStream | undefined;
+
+/**
+ * Test seam: redirects what every logger of createLogger writes, scrubbing included, until
+ * it is called again with `undefined`. The switch sits at the destination, so it also covers
+ * the loggers that modules built when they were imported, and their children.
+ */
+export function setLogDestination(destination: DestinationStream | undefined): void {
+  captured = destination;
+}
 
 /** Child logger tagged `{ module: name }`. All processes log through it: `console` is banned. */
 export function createLogger(name: string): Logger {
-  root ??= createRootLogger();
+  if (root === undefined) {
+    const fallback = defaultDestination();
+    root = createRootLogger({
+      destination: { write: (line) => (captured ?? fallback).write(line) },
+    });
+  }
   return root.child({ module: name });
 }

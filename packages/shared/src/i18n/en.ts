@@ -38,9 +38,21 @@ export const en = {
     current: (value: string) => `Current: ${value}`,
     none: "—",
     step: (step: number, total: number) => `STEP ${step}/${total}`,
+    // proposed text (D19)
+    tryAgainIn: (seconds: number) => `${E.waiting} Too many actions. Try again in ${seconds} s.`,
   },
 
   alerts: {},
+
+  // Provisional /start screen, replaced by V1-06 then V1-08.
+  start: {
+    title: `${E.launchBot} LAUNCH BOT`,
+    // proposed text (D19)
+    description: "Launch Bot is being set up. The menu is coming soon.",
+    /** `id` is already wrapped in <code> by the caller. */
+    id: (id: string) => `${E.id} ${id}`,
+    command: "Open the menu",
+  },
 
   plans: {
     CLASSIC: "Classic",

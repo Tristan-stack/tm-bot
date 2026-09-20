@@ -59,6 +59,8 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
     expect(tables.map((table) => table.name)).toEqual([
       "AiGeneration",
       "Payment",
+      // grammY sessions and conversations (V1-04)
+      "Session",
       "Simulation",
       "Subscription",
       "TokenDraft",

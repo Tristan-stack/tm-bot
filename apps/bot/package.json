@@ -5,18 +5,22 @@
   "description": "grammY bot: menus, flows, admin commands",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run --root ../.. --project bot"
   },
   "dependencies": {
-    "@launchbot/shared": "workspace:*",
+    "@grammyjs/auto-retry": "2.0.2",
+    "@grammyjs/conversations": "2.1.1",
+    "@grammyjs/storage-prisma": "2.6.0",
+    "@launchbot/api": "workspace:*",
     "@launchbot/db": "workspace:*",
-    "@launchbot/solana": "workspace:*",
+    "@launchbot/shared": "workspace:*",
     "@launchbot/sim-engine": "workspace:*",
-    "@launchbot/api": "workspace:*"
+    "@launchbot/solana": "workspace:*",
+    "grammy": "1.46.0"
   }
 }

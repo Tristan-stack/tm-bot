@@ -8,13 +8,20 @@ const DEFAULT_DATABASE_URL = "postgresql://launchbot:launchbot@localhost:5440/la
 
 const PACKAGE_DIR = join(import.meta.dirname, "..");
 
-/** TEST_DATABASE_URL, or DATABASE_URL with `_test` appended to the database name. */
-export function testDatabaseUrl(): string {
+/**
+ * TEST_DATABASE_URL, or DATABASE_URL with `_test` appended to the database name. `suffix` gives
+ * a suite its own database: Vitest runs the projects in parallel, and two suites resetting the
+ * same database would drop it under each other.
+ */
+export function testDatabaseUrl(suffix?: string): string {
   loadDotenvOnce();
   const explicit = process.env["TEST_DATABASE_URL"];
-  if (explicit !== undefined && explicit !== "") return explicit;
-  const url = new URL(process.env["DATABASE_URL"] ?? DEFAULT_DATABASE_URL);
-  url.pathname = `${url.pathname}_test`;
+  const hasExplicit = explicit !== undefined && explicit !== "";
+  const url = new URL(
+    hasExplicit ? explicit : (process.env["DATABASE_URL"] ?? DEFAULT_DATABASE_URL),
+  );
+  if (!hasExplicit) url.pathname += "_test";
+  if (suffix !== undefined) url.pathname = url.pathname.replace(/_test$/, `_${suffix}_test`);
   return url.toString();
 }
 
@@ -23,8 +30,8 @@ export function testDatabaseUrl(): string {
  * applies every migration with `prisma migrate deploy`. Refuses any database whose name does
  * not end with `_test`, so a misconfigured URL can never wipe real data.
  */
-export async function resetTestDatabase(): Promise<string> {
-  const url = new URL(testDatabaseUrl());
+export async function resetTestDatabase(suffix?: string): Promise<string> {
+  const url = new URL(testDatabaseUrl(suffix));
   const database = decodeURIComponent(url.pathname.slice(1));
   if (!/^[A-Za-z0-9_]+_test$/.test(database)) {
     throw new Error("Refusing to reset a database whose name does not end with _test");

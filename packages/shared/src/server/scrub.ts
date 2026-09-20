@@ -60,3 +60,12 @@ export function scrubSecrets(text: string): string {
   for (const scrubber of extraScrubbers) result = scrubber(result);
   return result;
 }
+
+/**
+ * What a log keeps of an error: its name and its scrubbed message. Never the stack, and never
+ * its own fields. The logger applies it to every `{ err }` it is given.
+ */
+export function scrubError(cause: unknown): { name: string; message: string } {
+  const error = cause instanceof Error ? cause : new Error(String(cause));
+  return { name: error.name, message: scrubSecrets(error.message) };
+}

@@ -10,4 +10,6 @@ export const PACKAGE_NAME = "@launchbot/db";
 
 export { createPrismaClient, disconnectPrisma, prisma } from "./client.js";
 export { isUniqueViolation } from "./errors.js";
+export { touchUser } from "./services/user.js";
+export type { TelegramIdentity } from "./services/user.js";
 export * from "./generated/prisma/client.js";

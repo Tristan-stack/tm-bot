@@ -5,7 +5,8 @@
   "description": "Prisma schema, client and shared business services",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./test": "./src/test-db.ts"
   },
   "scripts": {
     "dev": "tsc -b --watch --preserveWatchOutput",

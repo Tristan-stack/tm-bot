@@ -59,6 +59,15 @@ importers:
 
   apps/bot:
     dependencies:
+      '@grammyjs/auto-retry':
+        specifier: 2.0.2
+        version: 2.0.2(grammy@1.46.0)
+      '@grammyjs/conversations':
+        specifier: 2.1.1
+        version: 2.1.1(grammy@1.46.0)
+      '@grammyjs/storage-prisma':
+        specifier: 2.6.0
+        version: 2.6.0
       '@launchbot/api':
         specifier: workspace:*
         version: link:../api
@@ -74,6 +83,9 @@ importers:
       '@launchbot/solana':
         specifier: workspace:*
         version: link:../../packages/solana
+      grammy:
+        specifier: 1.46.0
+        version: 1.46.0
 
   apps/webapp:
     dependencies:
@@ -446,6 +458,21 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@grammyjs/auto-retry@2.0.2':
+    resolution: {integrity: sha512-b4A4p5jlYDiQtW0c0FXYe11WMkYoiW+5rvOaDMCOk1h7Pu2SDl7B7gmFF8cthWCx2+M2nWLOsBxAgbBG4kKWYg==}
+    engines: {node: '>=12.20.0 || >=14.13.1'}
+    peerDependencies:
+      grammy: ^1.10.0
+
+  '@grammyjs/conversations@2.1.1':
+    resolution: {integrity: sha512-hoxqwSkaXDeU7mzXulpk3A4Cmd6UZO3HU4aPoITX5ekSHK7ZcUEmMl7RhKKkqw3z6zVbbAShQreJoVV5/dDSLA==}
+    engines: {node: ^12.20.0 || >=14.13.1}
+    peerDependencies:
+      grammy: ^1.20.1
+
+  '@grammyjs/storage-prisma@2.6.0':
+    resolution: {integrity: sha512-IoYQq6Q6R0zeXUt58zEXVTIvmr/ePk/lN8D+k4pPBEz7SdH+yEQivWaBb7TqLQtwYn/kDHzR2nMgD69E5ylxIg==}
 
   '@grammyjs/types@5.0.0':
     resolution: {integrity: sha512-iq1Qrq1iPKkB8yAa0qSuIURMZOCuqTY5pWy5gHpCeL1oQ+GPadGhw/cDTVE8waJwuCzacUzuIjRv1sESvk7u7A==}
@@ -981,6 +1008,10 @@ packages:
   '@vitest/spy@5.0.1':
     resolution: {integrity: sha512-rbto/mF/SGERxEgYOek7Xm6B9b+y+mVoo+f4b2LymYO8zM1b7uB5nHuhVMTP2hxdzgxvGiZYGxGIaMvL5y180Q==}
 
+  abort-controller@3.0.0:
+    resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
+    engines: {node: '>=6.5'}
+
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
     peerDependencies:
@@ -1307,6 +1338,10 @@ packages:
     resolution: {integrity: sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==}
     engines: {node: '>=0.10.0'}
 
+  event-target-shim@5.0.1:
+    resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
+    engines: {node: '>=6'}
+
   eventemitter3@5.0.4:
     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
 
@@ -1410,6 +1445,10 @@ packages:
 
   grammex@3.1.13:
     resolution: {integrity: sha512-LnPnhOBLEJEVKS8WFDVaA397L9Kq55Q9oSITJiVLHVdhAclfUkWzQv74KhvZHKL2Q09Pb1XdsrOsZ4LfTFFTEg==}
+
+  grammy@1.46.0:
+    resolution: {integrity: sha512-/8Qw+iisrUdOMk+p2mjEHouMm/BBdBEN1DHh16wiTpRUZkxDG3PxexdjCvR+wvK3LWPdrEvnQbdrwpU954sPhg==}
+    engines: {node: ^12.20.0 || >=14.13.1}
 
   graphmatch@1.1.1:
     resolution: {integrity: sha512-5ykVn/EXM1hF0XCaWh05VbYvEiOL2lY1kBxZtaYsyvjp7cmWOU1XsAdfQBwClraEofXDT197lFbXOEVMHpvQOg==}
@@ -2421,6 +2460,19 @@ snapshots:
     optionalDependencies:
       '@noble/hashes': 1.8.0
 
+  '@grammyjs/auto-retry@2.0.2(grammy@1.46.0)':
+    dependencies:
+      debug: 4.4.3
+      grammy: 1.46.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@grammyjs/conversations@2.1.1(grammy@1.46.0)':
+    dependencies:
+      grammy: 1.46.0
+
+  '@grammyjs/storage-prisma@2.6.0': {}
+
   '@grammyjs/types@5.0.0': {}
 
   '@humanfs/core@0.19.2':
@@ -2993,6 +3045,10 @@ snapshots:
 
   '@vitest/spy@5.0.1': {}
 
+  abort-controller@3.0.0:
+    dependencies:
+      event-target-shim: 5.0.1
+
   acorn-jsx@5.3.2(acorn@8.18.0):
     dependencies:
       acorn: 8.18.0
@@ -3343,6 +3399,8 @@ snapshots:
 
   esutils@2.0.3: {}
 
+  event-target-shim@5.0.1: {}
+
   eventemitter3@5.0.4: {}
 
   expect-type@1.4.0: {}
@@ -3427,6 +3485,16 @@ snapshots:
   graceful-fs@4.2.11: {}
 
   grammex@3.1.13: {}
+
+  grammy@1.46.0:
+    dependencies:
+      '@grammyjs/types': 5.0.0
+      abort-controller: 3.0.0
+      debug: 4.4.3
+      node-fetch: 2.7.0
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
 
   graphmatch@1.1.1: {}
 
