@@ -1,6 +1,7 @@
 import { pino } from "pino";
 import type { DestinationStream, Logger } from "pino";
 import { PinoPretty } from "pino-pretty";
+import { INIT_DATA_HEADER } from "../constants.js";
 import { loadDotenvOnce } from "./dotenv.js";
 import { CENSOR, SECRET_ENV_VARIABLES, scrubError, scrubSecrets } from "./scrub.js";
 
@@ -37,9 +38,9 @@ const SECRET_KEYS = [
 // pino wildcards match one level only: the keys are listed at the root and two levels deep.
 const REDACT_PATHS = [
   ...SECRET_KEYS.flatMap((key) => [key, `*.${key}`, `*.*.${key}`]),
-  'req.headers["x-telegram-init-data"]',
+  `req.headers["${INIT_DATA_HEADER}"]`,
   "req.headers.authorization",
-  'headers["x-telegram-init-data"]',
+  `headers["${INIT_DATA_HEADER}"]`,
   "headers.authorization",
 ];
 

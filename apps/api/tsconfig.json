@@ -6,9 +6,6 @@
     },
     {
       "path": "../../packages/db"
-    },
-    {
-      "path": "../../packages/solana"
     }
   ]
 }

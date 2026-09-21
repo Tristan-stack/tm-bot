@@ -8,16 +8,19 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run --root ../.. --project api"
   },
   "dependencies": {
-    "@launchbot/shared": "workspace:*",
+    "@fastify/cors": "^11.3.0",
     "@launchbot/db": "workspace:*",
-    "@launchbot/solana": "workspace:*"
+    "@launchbot/shared": "workspace:*",
+    "fastify": "^5.12.5",
+    "fastify-plugin": "^6.0.0",
+    "zod": "^4.6.5"
   }
 }

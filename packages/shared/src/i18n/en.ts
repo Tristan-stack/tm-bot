@@ -1,5 +1,6 @@
 import type { Duration, Plan } from "../constants.js";
 import { E } from "./emoji.js";
+import { enWebapp } from "./en-webapp.js";
 
 /**
  * Every text of the bot, by domain. Each ticket adds the section of its screens
@@ -10,7 +11,7 @@ import { E } from "./emoji.js";
  * - This file is trusted HTML: it is sent as is with `parse_mode: HTML`. User values
  *   (token, wallet, username, link) are escaped by the caller with `escapeHtml`, `b`,
  *   `code` or `a` before they reach a function of this file.
- * - This file imports emojis and types only: dates and amounts arrive already formatted, so
+ * - This file imports emojis, types and the texts of the Mini App only: dates and amounts arrive already formatted, so
  *   that formatters can use these texts.
  * - `alerts` holds the texts of `answerCallbackQuery` (200 characters max).
  */
@@ -83,4 +84,7 @@ export const en = {
       steps: ["Wallet", "Dev buy", "Token", "Recap"],
     },
   },
+
+  // The texts of the Mini App live in their own module: see en-webapp.ts.
+  webapp: enWebapp,
 } as const;

@@ -22,16 +22,17 @@ packages/
 ```
 
 Dépendances internes autorisées. pnpm n'expose à un package que les dépendances de son
-`package.json` ; ESLint ajoute les règles de `shared`, `sim-engine` et `webapp` :
+`package.json` ; ESLint ajoute les règles de `shared`, `sim-engine`, `api` et `webapp` :
 
-| Package         | Peut importer                                            |
-| --------------- | -------------------------------------------------------- |
-| `shared`        | aucun package interne                                    |
-| `sim-engine`    | rien : ni package interne, ni API Node                   |
-| `db`, `solana`  | `shared`                                                 |
-| `api`, `worker` | `shared`, `db`, `solana`                                 |
-| `bot`           | `shared`, `db`, `solana`, `sim-engine`, `api`            |
-| `webapp`        | `shared` (entrée universelle) et `sim-engine` uniquement |
+| Package        | Peut importer                                                         |
+| -------------- | --------------------------------------------------------------------- |
+| `shared`       | aucun package interne                                                 |
+| `sim-engine`   | rien : ni package interne, ni API Node                                |
+| `db`, `solana` | `shared`                                                              |
+| `api`          | `shared`, `db` — jamais `solana` : elle démarre sans garde-fou devnet |
+| `worker`       | `shared`, `db`, `solana`                                              |
+| `bot`          | `shared`, `db`, `solana`, `sim-engine`, `api`                         |
+| `webapp`       | `shared` (entrée universelle, sans `en` ni `E`) et `sim-engine`       |
 
 `@launchbot/shared` a deux entrées : `.` (navigateur + Node) et `./server` (Node uniquement :
 `loadEnv`, `parseEnv`, `createLogger`, `scrubSecrets`). La Mini App n'importe jamais `./server`,
@@ -179,29 +180,84 @@ local : il affiche le contenu des updates.
 
 1. `/newbot` → copier le token dans `BOT_TOKEN`.
 2. `/setjoingroups` → **Disable** : le bot ne fonctionne qu'en conversation privée.
-3. `/setcommands` → `start - Open Launch Bot` uniquement. Les commandes admin ne sont pas listées.
+
+Inutile de faire `/setcommands` : le bot enregistre sa commande `/start` lui-même au démarrage. Les
+commandes admin ne sont pas listées.
+
+Le bot ne répond qu'en **conversation privée** : `/start` se tape dans le chat ouvert depuis
+`https://t.me/<username_du_bot>`. Tapé dans un canal ou un groupe, il ne se passe rien, par
+conception (§4.1), et rien n'apparaît dans les logs au niveau `info`.
 
 ### Canaux
 
 Créer les trois canaux (canal du bot, Succès, Annonces), puis ajouter le bot comme
 **administrateur** de chacun : c'est nécessaire pour y publier et pour vérifier l'adhésion
-(`getChatMember`). Noter pour chaque canal son ID (`-100…`) et son lien public dans `CHANNEL_*_ID`
-et `CHANNEL_*_URL`. Le compte support va dans `SUPPORT_URL` (`https://t.me/…`).
+(`getChatMember`). Pour un canal public, `CHANNEL_*_ID` accepte directement `@nom_du_canal` ; pour
+un canal privé, c'est l'ID numérique `-100…`. `CHANNEL_*_URL` est le lien `https://t.me/…`, et le
+compte support va dans `SUPPORT_URL`.
 
-### Mini App en local (HTTPS obligatoire)
+### Mini App et API en local (HTTPS obligatoire)
 
-Telegram n'ouvre une Mini App qu'en HTTPS. En local, exposer Vite (port 5173) par un tunnel :
+Telegram n'ouvre une Mini App qu'en HTTPS. En local, **un seul tunnel** suffit : Vite sert la Mini
+App sur le port 5173 et relaie `/api` vers l'API locale (`server.proxy`), donc la Mini App et son API
+partagent l'origine du tunnel.
 
 ```sh
+pnpm --filter @launchbot/bot start     # le bot ET l'API (port 3001), dans le même process
+pnpm --filter @launchbot/webapp dev    # Vite sur 5173, avec le proxy /api → 127.0.0.1:3001
 cloudflared tunnel --url http://localhost:5173
 # ou
 ngrok http 5173
 ```
 
-Copier l'URL https obtenue dans `WEBAPP_URL`. Les hôtes `.trycloudflare.com`, `.ngrok-free.app` et
-`.ngrok.app` sont déjà autorisés dans `server.allowedHosts` de
-[apps/webapp/vite.config.ts](apps/webapp/vite.config.ts). L'URL d'un quick tunnel change à chaque
-lancement : mettre `WEBAPP_URL` à jour et relancer le bot.
+Copier l'URL https obtenue dans `WEBAPP_URL` **et** dans `API_URL`, puis relancer le bot et Vite. Les
+hôtes `.trycloudflare.com`, `.ngrok-free.app` et `.ngrok.app` sont déjà autorisés dans
+`server.allowedHosts` de [apps/webapp/vite.config.ts](apps/webapp/vite.config.ts) : pour un autre
+fournisseur de tunnel, y ajouter son hôte, sinon Vite refuse la requête. L'URL d'un quick tunnel
+change à chaque lancement. Variante : deux tunnels (Mini App et API), avec `API_URL` sur le second ;
+le CORS de l'API n'autorise que l'origine de `WEBAPP_URL`.
+
+Tester une page sans attendre les boutons du bot (V1-06) : s'envoyer un bouton `web_app`, depuis le
+chat privé avec le bot, jamais depuis un canal.
+
+```sh
+curl "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+  -H "content-type: application/json" \
+  -d '{"chat_id": <ton_id>, "text": "Terms", "reply_markup": {"inline_keyboard":
+       [[{"text": "Open", "web_app": {"url": "https://<tunnel>/terms"}}]]}}'
+```
+
+Les pages : `/terms` et `/privacy` (« Version N · Updated … », N = `TERMS_VERSION`), `/sim/:id`
+(provisoire jusqu'à V1-24), et « Page not found. » ailleurs. Hors de Telegram, dans un navigateur,
+elles s'affichent aussi ; seuls les appels à l'API sont refusés, faute d'`initData`.
+
+`TERMS_VERSION` et `API_URL` sont les **deux seules** variables du `.env` injectées dans le bundle
+(`define` de Vite) : changer de version impose de rebuilder la Mini App, et le build échoue si la
+version n'a pas de date dans `LEGAL_UPDATED_AT`. En production, l'hébergement statique doit renvoyer
+`index.html` pour toute route (`public/_redirects` le fait sur Cloudflare Pages et Netlify ; sur
+nginx, `try_files $uri /index.html`), et ne doit envoyer ni `X-Frame-Options: DENY` ni
+`frame-ancestors` restrictif : Telegram Web affiche la Mini App dans une iframe.
+
+### API
+
+`GET /health` est public et répond `{"status":"ok"}`, sans rien dire de l'environnement.
+
+**Tout ce qui est sous `/api` est protégé par défaut.** Les routes de la Mini App se déclarent dans
+l'option `routes` de `buildApiServer`, sans `preHandler` : le périmètre `/api` applique
+`app.requireTelegramUser` à chacune, donc une route ne peut pas devenir publique par oubli. Ce
+preHandler valide l'en-tête `X-Telegram-Init-Data` comme le décrit la doc Telegram (HMAC avec la clé
+`WebAppData`, champs triés, comparaison en temps constant, `auth_date` d'une heure au plus). Tout
+échec donne le même `401 {"error":"unauthorized"}` ; la raison n'est que dans les logs `debug`,
+jamais l'en-tête. `request.telegramUser` n'est jamais `undefined` : le lire sur une route non
+protégée lève une erreur, au lieu de donner un utilisateur vide que Prisma transformerait en requête
+sans filtre de propriétaire.
+
+Erreurs : un seul chemin de sortie, avec un mot fixe par statut et jamais le message de l'erreur. Un
+4xx voulu passe tel quel — une route lève une erreur portant `statusCode` 403, 404 ou 429 — et tout
+le reste répond `500 {"error":"internal_error"}`. Une URL mal formée suit le même chemin.
+
+L'API seule : `pnpm --filter @launchbot/api start`. Elle ne parle jamais à Solana, et ESLint lui
+interdit `@launchbot/solana` : c'est ce qui permet qu'elle démarre sans garde-fou devnet.
 
 ## Le bot
 
@@ -261,3 +317,8 @@ tout dérive de `SOLANA_CLUSTER` (centralisé en V1-03).
 | 21/09/2026 | **Chaque suite d'intégration a sa base** (`resetTestDatabase("bot")` → `launchbot_bot_test`) : Vitest lance les projets en parallèle, et deux suites qui réinitialisent la même base se la suppriment mutuellement.                                                                                                                                                                                                                                                                                         |
 
 | 21/09/2026 | **`runProcess` sort avec un délai de 100 ms.** Node 24 sous Windows plante sur une assertion libuv (code 127) si `process.exit()` suit de trop près une requête réseau, ce qui est exactement le cas d'un démarrage refusé par le garde-fou. `setImmediate` ne suffit pas. |
+| 21/09/2026 | **Fastify 5 avec le logger de `@launchbot/shared`** (`loggerInstance`), donc la même redaction et le même nettoyage que le bot. L'API s'expose comme `createApiService()` et rejoint le process du bot dans `apps/bot/src/main.ts` ; elle ne parle jamais à Solana, donc elle n'a pas de garde-fou devnet propre, et le bot démarre avant elle. `API_PORT` (3001) et `API_HOST` (`127.0.0.1`, `0.0.0.0` en conteneur) sont optionnelles, hors §12. |
+| 21/09/2026 | **Un seul tunnel en local** : Vite relaie `/api` vers l'API, donc `WEBAPP_URL` = `API_URL`. Le CORS n'autorise que l'origine de `WEBAPP_URL` : une origine étrangère ne reçoit aucun `Access-Control-Allow-Origin`, et le preflight est mis en cache 2 h (`maxAge`), sinon l'en-tête personnalisé coûte un aller-retour de plus à chaque appel. |
+
+| 21/09/2026 | **Pas de `react-router-dom` dans la Mini App**, alors que la carte V1-05 le cite. Chaque page s'ouvre par une URL complète depuis un bouton `web_app` et aucune ne renvoie vers une autre : un aiguillage de dix lignes sur `location.pathname` suffit. Le routeur pesait 39 kB (13 kB gzip), soit 91 % de la croissance du bundle. À réintroduire si une page a un jour besoin de navigation interne. |
+| 21/09/2026 | **Les textes de la Mini App sont dans `i18n/en-webapp.ts`**, exposés aussi comme `en.webapp`. `en` est un seul objet, qu'un bundler ne sait pas élaguer : l'importer embarquerait tous les textes du bot. ESLint interdit `en` et `E` dans `apps/webapp`. À décider avant V1-24 : importer un schéma zod depuis `@launchbot/shared` dans la Mini App coûterait 74 kB (21 kB gzip) ; `apiFetch` accepte tout objet doté d'un `parse`, donc un parseur écrit à la main suffit. |

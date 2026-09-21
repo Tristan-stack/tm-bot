@@ -2,6 +2,8 @@ import { writeSync } from "node:fs";
 import bs58 from "bs58";
 import { z } from "zod";
 import { SOLANA_CLUSTERS } from "../cluster.js";
+import { DEFAULT_TERMS_VERSION } from "../legal.js";
+import { withoutTrailingSlash } from "../url.js";
 import { loadDotenvOnce } from "./dotenv.js";
 import { createLogger, LOG_LEVELS } from "./logger.js";
 
@@ -23,6 +25,7 @@ const REASON = {
   telegramUrl: "must be an https://t.me/… link",
   nonNegativeInt: "must be an integer >= 0",
   positiveInt: "must be an integer > 0",
+  port: "must be a port number from 1 to 65535",
   maxBelowMin: "must be >= PRIORITY_FEE_MIN_MICROLAMPORTS",
   adminIds: "must be positive integers separated by commas",
   treasury: "must be a base58 Solana address (32 bytes)",
@@ -41,8 +44,6 @@ function hasProtocol(value: string, protocols: readonly string[]): boolean {
     return false;
   }
 }
-
-const withoutTrailingSlash = (value: string): string => value.replace(/\/+$/, "");
 
 function decodeEncryptionKey(value: string): Uint8Array | undefined {
   if (!BASE64.test(value) || value.length % 4 !== 0) return undefined;
@@ -72,11 +73,11 @@ function parseAdminIds(value: string | undefined): number[] | undefined {
 
 const required = () => z.string({ error: REASON.required });
 
-const integer = (reason: string, min: number) =>
+const integer = (reason: string, min: number, max = Number.MAX_SAFE_INTEGER) =>
   required()
     .regex(DIGITS, reason)
     .transform(Number)
-    .refine((value) => Number.isSafeInteger(value) && value >= min, reason);
+    .refine((value) => Number.isSafeInteger(value) && value >= min && value <= max, reason);
 
 const httpUrl = () => required().refine((v) => hasProtocol(v, ["http:", "https:"]), REASON.httpUrl);
 const httpsUrl = () => required().refine((v) => hasProtocol(v, ["https:"]), REASON.httpsUrl);
@@ -127,14 +128,18 @@ const envSchema = z.object({
       return ids;
     }),
   TREASURY_WALLET: required().refine(isSolanaAddress, REASON.treasury),
-  TERMS_VERSION: integer(REASON.positiveInt, 1).default(1),
+  TERMS_VERSION: integer(REASON.positiveInt, 1).default(DEFAULT_TERMS_VERSION),
   // Optional here: V1-07 picks the price provider (D11).
   SOL_PRICE_API_URL: httpUrl().optional(),
   // A key alone does not enable AI Generate: a provider must also be implemented (DEC-02).
   LLM_API_KEY: z.string().optional(),
   IMAGE_API_KEY: z.string().optional(),
 
-  // Outside §12 (proposal).
+  // Outside §12 (proposals).
+  // The /api proxy of apps/webapp/vite.config.ts assumes the same default.
+  API_PORT: integer(REASON.port, 1, 65_535).default(3001),
+  // 0.0.0.0 in a container; the loopback by default, so a dev machine exposes nothing.
+  API_HOST: z.string().default("127.0.0.1"),
   LOG_LEVEL: z.enum(LOG_LEVELS, { error: REASON.logLevel }).default("info"),
 });
 

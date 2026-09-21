@@ -79,6 +79,16 @@ export const INACTIVITY_CHECK_INTERVAL_MS = 15 * MINUTE_MS;
 /** Token drafts and simulations. */
 export const DATA_RETENTION_MS = 90 * DAY_MS;
 
+// Mini App requests (§12). Proposals: the Mini App calls the API when it opens (V1-24), so one
+// hour is plenty, and a minute absorbs the clock drift between Telegram and the server.
+/**
+ * Lower case, as Node reports incoming headers. The API reads it, the Mini App sends it and
+ * the logger redacts it: one name, so a rename cannot leave the redaction behind.
+ */
+export const INIT_DATA_HEADER = "x-telegram-init-data";
+export const INIT_DATA_MAX_AGE_SEC = 3600;
+export const INIT_DATA_CLOCK_SKEW_SEC = 60;
+
 // Telegram Bot API limits
 export const TG = {
   CALLBACK_DATA_MAX_BYTES: 64,

@@ -5,7 +5,13 @@
     "moduleResolution": "Bundler",
     "rootDir": ".",
     "outDir": "node_modules/.cache/tsc/node",
-    "tsBuildInfoFile": "node_modules/.cache/tsc/node/.tsbuildinfo"
+    "tsBuildInfoFile": "node_modules/.cache/tsc/node/.tsbuildinfo",
+    "allowImportingTsExtensions": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts"],
+  "references": [
+    {
+      "path": "../../packages/shared"
+    }
+  ]
 }

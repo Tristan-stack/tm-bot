@@ -191,6 +191,17 @@ describe("parseEnv", () => {
     ]);
   });
 
+  it("defaults the API to the loopback on port 3001, and validates the port", () => {
+    expect(parseEnv(valid)).toMatchObject({ API_PORT: 3001, API_HOST: "127.0.0.1" });
+    expect(parseEnv({ ...valid, API_PORT: "8080", API_HOST: "0.0.0.0" })).toMatchObject({
+      API_PORT: 8080,
+      API_HOST: "0.0.0.0",
+    });
+    for (const port of ["0", "65536", "-1", "http"]) {
+      expect(variablesOf(failure({ ...valid, API_PORT: port }))).toEqual(["API_PORT"]);
+    }
+  });
+
   it("never puts a received value in the error", () => {
     const secrets = {
       BOT_TOKEN: "not-a-token-but-still-secret-value",
