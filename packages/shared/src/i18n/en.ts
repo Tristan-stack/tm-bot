@@ -1,4 +1,4 @@
-import type { Duration, Plan } from "../constants.js";
+import type { Duration, ImportFormat, Plan } from "../constants.js";
 import { formatInt } from "../format/number.js";
 import { E } from "./emoji.js";
 import { enWebapp } from "./en-webapp.js";
@@ -245,10 +245,53 @@ export const en = {
       btnYes: `${E.confirm} Yes, delete`,
       btnWithdrawAll: `${E.withdraw} Withdraw all`,
     },
-    // Provisional screens, replaced by V1-12 and V1-14. proposed texts (D19)
+    // Import (§9.4). The two formats, their inputs, and what a failed attempt says.
+    import: {
+      title: `${E.import} IMPORT WALLET`,
+      warning: `${E.warning} Never import a wallet that holds real funds. The same key also works on mainnet.`,
+      description: "Choose the format of the key you want to import.",
+      // proposed text (D19): the counter of the plan, on the screen that adds a wallet
+      counter: (count: number, limit: number) => `${E.wallets} Wallets: ${count}/${limit}`,
+      btnKey: `${E.privateKey} Private key`,
+      btnSeed: `${E.seedPhrase} Seed phrase`,
+      // The two inputs (§4.5): what to send, then the format that is accepted.
+      key: {
+        title: `${E.privateKey} IMPORT PRIVATE KEY`,
+        prompt:
+          "Send your private key in one message. It is deleted from the chat right after reading.",
+        rules: "Format: base58 private key (64 bytes), as exported from Phantom or Solflare.",
+      },
+      seed: {
+        title: `${E.seedPhrase} IMPORT SEED PHRASE`,
+        prompt:
+          "Send your seed phrase in one message. It is deleted from the chat right after reading.",
+        /** `path` is the derivation path of the wallet package: never written twice. */
+        rules: (path: string) =>
+          `Format: 12 or 24 words separated by spaces. The first account (${path}) is imported: same address as Phantom or Solflare. Your seed phrase is stored encrypted. Only support can recover it for you.`,
+      },
+      /** What the input screen says when the secret does not parse, by format. */
+      invalid: {
+        KEY: `${E.fail} Invalid private key.`,
+        SEED: `${E.fail} Invalid seed phrase.`,
+      } satisfies Record<ImportFormat, string>,
+      /** `time` comes from `formatTimeUtc`: two minutes after the input opened (D18). */
+      expiresAt: (time: string) => `${E.expired} Expires at ${time}`,
+      expired: `${E.expired} Import expired. Please start again.`,
+      duplicate: `${E.warning} This wallet is already in your list.`,
+      // proposed text (D19): the limit of RATE_LIMITS.walletImport (D17)
+      tooManyAttempts: `${E.warning} Too many import attempts. Try again in a few minutes.`,
+      done: `${E.confirm} Wallet imported.`,
+    },
+    // A message that looks like a secret, wherever it arrives (§9.4). proposed texts (D19)
+    sensitive: {
+      deleted: `${E.warning} Your message looked like a private key or seed phrase, so it was deleted.`,
+      /** Telegram refused the deletion: also the flag of the import screens. */
+      notDeleted: `${E.warning} Couldn't delete your message. Delete it yourself now.`,
+      advice: `Never share it with anyone. To add a wallet, use ${E.wallets} Wallets › ${E.import} Import.`,
+    },
+    // Provisional screen, replaced by V1-14. proposed text (D19)
     comingSoon: {
       withdraw: { title: `${E.withdraw} WITHDRAW`, description: "Withdrawals are coming soon." },
-      import: { title: `${E.import} IMPORT WALLET`, description: "Wallet import is coming soon." },
     },
   },
 

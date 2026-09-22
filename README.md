@@ -283,8 +283,13 @@ jamais de stack) et le process sort en code 1. Ordre de démarrage :
 6. `setMyCommands`, puis long polling (`bot.start` supprime lui-même le webhook).
 
 Chaîne de middlewares, dans cet ordre : `privateOnly` (en groupe ou en canal le bot ne fait rien,
-aucune écriture en base), `ensureAnswered`, limite globale de fréquence, `touchUser` (activité, qui
-pilote la purge à 48 h), sessions, `access.gate` (premier accès), conversations, puis `/start` et le routeur de callbacks. Les commandes admin (V1-38) s'enregistrent après la gate.
+aucune écriture en base), `ensureAnswered`, `touchUser` (activité, qui pilote la purge à 48 h),
+sessions, **`sensitiveMessageGuard`** (V1-12), limite globale de fréquence, `access.gate` (premier
+accès), conversations, puis `/start` et le routeur de callbacks. Les commandes admin (V1-38)
+s'enregistrent après la gate. Le garde anti-secret est **avant** la limite de fréquence et la gate :
+une clé collée doit quitter le chat même si l'utilisateur est limité ou n'a pas accepté les Terms —
+en échange, un update au-dessus de la limite coûte désormais un upsert `User` et une lecture de
+session.
 `ensureAnswered` **englobe** la suite : une fois les handlers passés, il ferme toute callback query
 restée sans réponse. Placé en fin de chaîne, il serait sauté par tout handler qui n'appelle pas
 `next()`, ce que font les commandes et le plugin conversations. `bot.catch` logge la forme de
@@ -301,6 +306,65 @@ date ». `blockWithFlag` répond une alerte et réécrit l'écran avec le flag (
 Sessions et conversations partagent la table `Session` (préfixe `conversation-` pour les secondes).
 Une session que la version en place ne sait pas lire est jetée et reconstruite, donc un déploiement
 ne casse aucune conversation. **Aucun secret en session** : les lignes sont en clair.
+
+### Wallets : import et messages sensibles (V1-12)
+
+Deuxième façon d'obtenir un wallet, et le point le plus sensible de la V1 : aucun secret dans le
+chat, la session, les logs ni en clair en base.
+
+- **Écrans** ([screens.ts](apps/bot/src/features/wallets/screens.ts),
+  [import.ts](apps/bot/src/features/wallets/import.ts)) : `wal:imp` ouvre IMPORT WALLET (l'avertissement
+  « Never import a wallet that holds real funds… », le compteur `👛 Wallets: 2/5`, Back → liste),
+  `wal:imp:key` et `wal:imp:seed` arment la saisie correspondante (les deux codes n'existent qu'une
+  fois, dans `IMPORT_CODE` : `WALLET_CB.importFormat(format)` les écrit, `importFormatOf(code)` les
+  relit). Le compteur vient de `wallets.getQuota(userId)` — un `count` et l'abonnement, jamais une
+  lecture de soldes : atteinte, l'écran ne s'ouvre pas, la liste se réaffiche avec l'alerte et le
+  flag « Wallet limit reached. ». Les saisies n'ont pas de ligne « Current » (un secret n'a pas de
+  valeur courante) mais une expiration `⌛ Expires at 14:34 UTC` (`IMPORT_INPUT_TIMEOUT_MS`, 2 min,
+  D18) et un Cancel qui ramène à la liste (§9.4).
+- **Session** : `pendingInput = { kind: "wallet_import", format, expiresAt }` — **jamais le secret**.
+  Expiration paresseuse : l'état reste jusqu'au prochain message, pour qu'une clé envoyée en retard
+  soit quand même supprimée et que « Import expired. Please start again. » s'affiche ; fonctionne
+  après un redémarrage (D16).
+- **Garde** ([sensitive-input.ts](apps/bot/src/middleware/sensitive-input.ts)) : sur `message` et
+  `edited_message` privés, texte et légende. Si un import attend (`waiting(ctx)` rend ce que la
+  session porte, le middleware ignore tout le reste de la section), le texte est lu puis le message
+  **supprimé avant toute validation** — un nouvel essai, sauf refus définitif de Telegram
+  (`isUndeletable`, les 429 étant déjà repris par `autoRetry`) —, et le consommateur répond ; sinon, un texte que
+  `looksLikePrivateKey` / `looksLikeSeedPhrase` (V1-09) reconnaît est supprimé et **la chaîne
+  s'arrête**, donc il ne peut pas tomber dans une saisie ouverte pour autre chose (un Rename V1-11),
+  suivi d'un message séparé sans bouton qui n'écrase pas l'écran courant. Une adresse publique et un
+  texte normal passent. Suppression impossible → ligne « Couldn't delete your message. Delete it
+  yourself now. » sur l'écran suivant. Une commande (`/…`) suit son cours normal et abandonne l'import.
+- **Service** (`importWallet(userId, format, secret)`, [wallets.ts](packages/db/src/services/wallets.ts)) :
+  ordre imposé par §9.4 — parsing (V1-09, injecté via `parseSecret`), puis insertion. Elle partage
+  avec Create la transaction verrouillée (`pg_advisory_xact_lock` par utilisateur, limite et adresse
+  relues dedans, nom `Wallet N`), qui est la seule autorité sur la limite : contrairement à Create,
+  l'import ne pré-vérifie pas le quota, puisque la clé est déjà parsée quand il le saurait.
+  Chiffrement **avant** le verrou (PBKDF2). `IMPORTED_KEY`
+  avec `derivationPath` nul, ou `IMPORTED_SEED` avec `m/44'/501'/0'/0'` et la phrase normalisée
+  chiffrée en plus de la clé (décision du 16/09/2026, récupération par le support via `/getall`,
+  V1-43). Doublon `(userId, publicKey)` : contrôle dans le verrou **et** capture du `P2002` ; le même
+  wallet réimporté dans l'autre format reste un doublon (la phrase n'est pas ajoutée), alors que deux
+  utilisateurs peuvent détenir la même clé (§13). `secretKey.dispose()` dans un `finally`, quel que
+  soit le résultat.
+- **Fréquence** (D17) : `RATE_LIMITS.walletImport`, 5 tentatives / 10 min par utilisateur
+  (proposition), comptées après l'expiration et avant le parsing — dépassement → « Too many import
+  attempts. Try again in a few minutes. ». Un message de plus de `IMPORT_SECRET_MAX_CHARS`
+  (1 000 caractères) est refusé sans être parsé — une constante, pas un schéma zod, comme
+  `walletNameIssue` en V1-11 : l'appelant veut la raison.
+- **Hygiène** : le plugin conversations n'est pas utilisé pour ces saisies (il persisterait l'update
+  dans PostgreSQL) ; la redaction pino couvre maintenant `text` et `caption`, en plus des colonnes de
+  clés ; aucune erreur de parsing ne remonte de message d'origine (un code). `DEBUG=grammy*` est
+  interdit hors local : il trace les appels API. Telegram peut garder le secret dans une notification
+  push sur l'appareil de l'utilisateur — hors de notre contrôle.
+- **Tests** : [import.test.ts](apps/bot/src/features/wallets/import.test.ts) (écrans, ordre
+  suppression → parsing, expiration à 2 min en fake timers, garde, « no leak » : le secret n'est ni
+  dans les logs capturés, ni dans la session stockée, ni dans ce qu'on envoie à Telegram) ;
+  `importWallet` dans [wallets.test.ts](packages/db/src/services/wallets.test.ts) et
+  [wallets.int.test.ts](packages/db/src/services/wallets.int.test.ts) (vraie base, vrai coffre :
+  adresse Phantom du vecteur 12 mots, phrase stockée normalisée même saisie en majuscules, aucun
+  octet lisible dans la ligne `Wallet`).
 
 ### Wallets : renommer et supprimer (V1-11)
 
@@ -341,9 +405,9 @@ walletId } })` : `showScreen` écrit `session.pendingInput` (D16, survit à un r
 
 `registerWallets` ([apps/bot/src/features/wallets/wallets.ts](apps/bot/src/features/wallets/wallets.ts))
 branche le domaine `wal` : `wal:list` (le bouton « 👛 Wallets » du menu), `wal:lref` (Refresh de la
-liste), `wal:new` (Create), `wal:v:<id>` (détail), `wal:ref:<id>` (Refresh du détail), et les écrans
-provisoires `wal:imp` (V1-12), `wal:wd:<id>` (V1-14), `wal:ren:<id>` / `wal:del:<id>` (V1-11), qui
-gardent la ligne du wallet et un Back vers le détail. Les valeurs sont dans `WALLET_CB`
+liste), `wal:new` (Create), `wal:v:<id>` (détail), `wal:ref:<id>` (Refresh du détail), l'import
+(V1-12), le rename et le delete (V1-11), et l'écran provisoire `wal:wd:<id>` (V1-14), qui garde la
+ligne du wallet et un Back vers le détail. Les valeurs sont dans `WALLET_CB`
 ([screens.ts](apps/bot/src/features/wallets/screens.ts)), les tickets suivants les reprennent.
 
 - **Service** `createWalletService` dans `@launchbot/db`
@@ -352,8 +416,9 @@ gardent la ligne du wallet et un Back vers le détail. Les valeurs sont dans `WA
   `solana`. Le vault (`encrypt`, `encryptMnemonic`) et `generateMnemonicWallet` y sont **injectés**,
   comme le lecteur de lamports du service des soldes. `listWithBalances(userId, { skipCache? })`
   rend les soldes de V1-07 plus `count` / `limit` ; `getOwned(userId, walletId)` trouve le wallet dans
-  ces soldes, donc jamais celui d'un autre utilisateur ; `assertCanAdd`, `nextDefaultName`
-  (`Wallet N`, N = nombre de wallets + 1, puis le premier nom libre) et `create`.
+  ces soldes, donc jamais celui d'un autre utilisateur ; `getQuota` (count / limit / reached, sans
+  lecture de soldes), `nextDefaultName` (`Wallet N`, N = nombre de wallets + 1, puis le premier nom
+  libre) et `create`.
 - **Create** (§9.3) : limite lue hors verrou, génération et chiffrement (PBKDF2) hors transaction,
   puis transaction avec `pg_advisory_xact_lock` par utilisateur (proposition) qui **revérifie la
   limite** et insère : deux clics à limite − 1 créent un seul wallet. Une collision de nom
@@ -416,9 +481,9 @@ Les primitives de sécurité des wallets vivent dans `@launchbot/solana`
   (`solana-address.ts`, la même règle valide `TREASURY_WALLET`) et sont réexportés par
   `@launchbot/solana` à côté de `isOnCurve` (faux pour une PDA, ex. le Global de pump.fun →
   « Continue anyway » en V1-14), qui a besoin de la bibliothèque.
-- **Heuristiques** pour le middleware de V1-12 : `looksLikePrivateKey` (jeton base58 de 80 à 90
-  caractères qui décode 64 octets, ou tableau JSON de 64 octets) et `looksLikeSeedPhrase` (12 mots
-  consécutifs dont 11 dans la wordlist). Seuils en constantes exportées (proposition).
+- **Heuristiques** du garde de V1-12 : `looksLikePrivateKey` (jeton base58 de 80 à 90 caractères qui
+  décode 64 octets, ou tableau JSON de 64 octets) et `looksLikeSeedPhrase` (12 mots consécutifs dont
+  11 dans la wordlist). Seuils en constantes du module (proposition).
 - **Hygiène** : `SecretBytes` (un `Uint8Array` qui s'affiche `[REDACTED]` en JSON, texte et
   `util.inspect`, `dispose()` le remet à zéro) ; les résultats qui portent une phrase ou une clé
   en texte (`generateMnemonicWallet`, `parseSeedPhrase`, `revealWalletSecrets`) s'affichent de

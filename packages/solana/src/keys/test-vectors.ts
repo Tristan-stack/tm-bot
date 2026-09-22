@@ -1,7 +1,8 @@
-// Test only, not exported by the package. Public phrases of the BIP39 test vectors: they never
-// receive funds. Addresses computed by this package, then cross-checked on 2026-09-22 with an
-// independent implementation (ed25519-hd-key + bip39); the 12-word one is the address Phantom
-// shows for this phrase.
+// Test only (the `@launchbot/solana/test` entry, like `@launchbot/db/test`): the tests of the bot
+// and of the wallet service import the same vectors from here. Public phrases of the BIP39 test
+// vectors: they never receive funds. Addresses computed by this package, then cross-checked on
+// 2026-09-22 with an independent implementation (ed25519-hd-key + bip39); the 12-word one is the
+// address Phantom shows for this phrase.
 
 const words = (word: string, count: number, last: string) => `${`${word} `.repeat(count)}${last}`;
 

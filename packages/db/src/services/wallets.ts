@@ -1,18 +1,26 @@
 import {
   getWalletLimit,
+  IMPORT_SECRET_MAX_CHARS,
   isBalanceWithdrawable,
   normalizeWalletName,
   walletNameIssue,
 } from "@launchbot/shared";
-import type { WalletNameIssue } from "@launchbot/shared";
+import type { ImportFormat, WalletNameIssue } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
-import type { KeyVault, MnemonicWallet } from "@launchbot/solana";
+import type {
+  EncryptedMnemonic,
+  EncryptedSecret,
+  ImportResult,
+  KeyVault,
+  MnemonicWallet,
+} from "@launchbot/solana";
 import type { Db } from "../client.js";
 import { isUniqueViolation } from "../errors.js";
-import type { PrismaClient } from "../generated/prisma/client.js";
+import type { PrismaClient, WalletSource } from "../generated/prisma/client.js";
 import { WALLET_SUMMARY_SELECT } from "./balances.js";
 import type { BalancesService, UserBalances, WalletBalance } from "./balances.js";
 import { getActiveSubscription, getWalletQuota } from "./subscriptions.js";
+import type { WalletQuota } from "./subscriptions.js";
 
 const log = createLogger("db:wallets");
 
@@ -30,8 +38,15 @@ export type WalletDetailData = Pick<UserBalances, "fetchedAt" | "status"> & {
   wallet: WalletBalance;
 };
 
-export type CreateWalletResult =
-  { ok: true; wallet: WalletSummary } | { ok: false; reason: "limit_reached" };
+/** A wallet added to the list, or the reason it was not: one shape, three reason sets. */
+type AddResult<Reason extends string> =
+  { ok: true; wallet: WalletSummary } | { ok: false; reason: Reason };
+
+export type CreateWalletResult = AddResult<"limit_reached">;
+/** What the locked insertion can answer, whatever brought the key. */
+type InsertResult = AddResult<"limit_reached" | "duplicate">;
+/** `invalid_secret`: the caller knows the format, so it knows which text the user reads (§9.4). */
+export type WalletImportResult = AddResult<"invalid_secret" | "limit_reached" | "duplicate">;
 
 export type RenameIssue = WalletNameIssue | { reason: "duplicate"; name: string };
 export type RenameResult =
@@ -55,11 +70,14 @@ export type DeleteResult = DeleteCheck | { status: "deleted" };
 export type GeneratedWallet = MnemonicWallet;
 /** The two encrypting methods of the vault: nothing decrypts here. */
 export type WalletVault = Pick<KeyVault, "encrypt" | "encryptMnemonic">;
+/** `parsePrivateKey` and `parseSeedPhrase` of the wallet package, by format (§9.4). */
+export type SecretParsers = Record<ImportFormat, (secret: string) => ImportResult>;
 
 export type WalletsDeps = {
   prisma: PrismaClient;
   balances: Pick<BalancesService, "getUserBalances" | "invalidateUserBalances">;
   generateWallet: () => GeneratedWallet;
+  parseSecret: SecretParsers;
   vault: WalletVault;
   /** `getWithdrawFeeBudgetLamports(env.PRIORITY_FEE_MAX_MICROLAMPORTS)`: the Delete threshold. */
   withdrawFeeBudgetLamports: bigint;
@@ -75,8 +93,11 @@ export type WalletService = {
     walletId: string,
     options?: { skipCache?: boolean },
   ) => Promise<WalletDetailData | null>;
-  /** The check of Create and Import (V1-12), outside the lock. */
-  assertCanAdd: (userId: string) => Promise<{ ok: true } | { ok: false; reason: "limit_reached" }>;
+  /**
+   * How many wallets the plan allows and how many are used (§8.1): the counter of the Import
+   * screen, and the check Create makes before generating a key. Two cheap reads, no balance.
+   */
+  getQuota: (userId: string) => Promise<WalletQuota>;
   /** `Wallet N`, N from the number of wallets + 1, skipping the names already taken. */
   nextDefaultName: (userId: string) => Promise<string>;
   /**
@@ -85,6 +106,16 @@ export type WalletService = {
    * per user (proposal): two clicks at limit − 1 create one wallet.
    */
   create: (userId: string) => Promise<CreateWalletResult>;
+  /**
+   * A wallet from a key the user already owns (§9.4): the key, and the phrase of a `SEED`
+   * import, are stored encrypted, nothing is returned in clear. The same address twice for one
+   * user is a `duplicate`, whatever the format it came in; two users may hold the same key.
+   */
+  importWallet: (
+    userId: string,
+    format: ImportFormat,
+    secret: string,
+  ) => Promise<WalletImportResult>;
   /** Normalizes the name, refuses a duplicate (case-insensitive, proposal). Same name: no write. */
   rename: (userId: string, walletId: string, rawName: string) => Promise<RenameResult>;
   /** Reads the balance without the cache (a security check, outside the Refresh throttle). */
@@ -94,19 +125,34 @@ export type WalletService = {
 };
 
 const LIMIT_REACHED = { ok: false, reason: "limit_reached" } as const;
+const DUPLICATE = { ok: false, reason: "duplicate" } as const;
 /** A name can only collide with a rename racing the lock: one retry is plenty, two is safe. */
 const NAME_ATTEMPTS = 3;
 
+const IMPORTED_SOURCE = {
+  KEY: "IMPORTED_KEY",
+  SEED: "IMPORTED_SEED",
+} as const satisfies Record<ImportFormat, WalletSource>;
+
+/** The key columns of a new row: the phrase is there for `CREATED` and `IMPORTED_SEED` only. */
+type KeyColumns = {
+  publicKey: string;
+  source: WalletSource;
+  derivationPath: string | null;
+} & EncryptedSecret &
+  Partial<EncryptedMnemonic>;
+
 const defaultName = (n: number): string => `Wallet ${n}`;
 
-/** The names of the user: their number is the wallet count, one read serves both. */
-const namesOf = async (db: Db, userId: string): Promise<string[]> =>
-  (await db.wallet.findMany({ where: { userId }, select: { name: true } })).map((row) => row.name);
+/** The wallets of the user, as the insertion needs them: a name to pick, an address to refuse. */
+type TakenWallet = { name: string; publicKey: string };
+const walletsOf = (db: Db, userId: string): Promise<TakenWallet[]> =>
+  db.wallet.findMany({ where: { userId }, select: { name: true, publicKey: true } });
 
-function nextName(names: string[]): string {
-  const taken = new Set(names);
-  let n = names.length + 1;
-  while (taken.has(defaultName(n))) n++;
+function nextName(taken: TakenWallet[]): string {
+  const names = new Set(taken.map((wallet) => wallet.name));
+  let n = taken.length + 1;
+  while (names.has(defaultName(n))) n++;
   return defaultName(n);
 }
 
@@ -115,6 +161,7 @@ export function createWalletService(deps: WalletsDeps): WalletService {
     prisma,
     balances,
     generateWallet,
+    parseSecret,
     vault,
     withdrawFeeBudgetLamports,
     now = Date.now,
@@ -132,9 +179,37 @@ export function createWalletService(deps: WalletsDeps): WalletService {
     return { ...read, count: read.wallets.length, limit };
   }
 
-  async function assertCanAdd(userId: string) {
-    const quota = await getWalletQuota(prisma, userId, clock());
-    return quota.reached ? LIMIT_REACHED : { ok: true as const };
+  const getQuota = (userId: string) => getWalletQuota(prisma, userId, clock());
+
+  /**
+   * The insertion Create and Import share (§9.4): one advisory lock per user, the limit and the
+   * address rechecked inside it, and the default name taken from the names already used. The
+   * key is encrypted by the caller, before the lock: PBKDF2 must not hold a transaction open.
+   */
+  async function insertWallet(userId: string, columns: KeyColumns): Promise<InsertResult> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const outcome = await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:${userId}`}))`;
+          const taken = await walletsOf(tx, userId);
+          if (taken.length >= (await limitOf(tx, userId))) return LIMIT_REACHED;
+          // Per user (§13): the same key imported by someone else is another wallet.
+          if (taken.some((wallet) => wallet.publicKey === columns.publicKey)) return DUPLICATE;
+          const wallet = await tx.wallet.create({
+            data: { userId, name: nextName(taken), ...columns },
+            select: WALLET_SUMMARY_SELECT,
+          });
+          return { ok: true as const, wallet };
+        });
+        // The new wallet must show everywhere at once: home, list (§4.3).
+        if (outcome.ok) balances.invalidateUserBalances(userId);
+        return outcome;
+      } catch (error) {
+        // The unique constraints are the net under a click that raced this one.
+        if (isUniqueViolation(error, ["userId", "publicKey"])) return DUPLICATE;
+        if (attempt >= NAME_ATTEMPTS || !isUniqueViolation(error, ["userId", "name"])) throw error;
+      }
+    }
   }
 
   async function checkDeletable(userId: string, walletId: string): Promise<DeleteCheck> {
@@ -158,7 +233,7 @@ export function createWalletService(deps: WalletsDeps): WalletService {
 
   return {
     listWithBalances,
-    assertCanAdd,
+    getQuota,
     checkDeletable,
 
     async getOwned(userId, walletId, options) {
@@ -168,46 +243,54 @@ export function createWalletService(deps: WalletsDeps): WalletService {
       return wallet === undefined ? null : { wallet, fetchedAt, status };
     },
 
-    nextDefaultName: async (userId) => nextName(await namesOf(prisma, userId)),
+    nextDefaultName: async (userId) => nextName(await walletsOf(prisma, userId)),
 
     async create(userId) {
       // Outside the lock first: no key is generated for a user at the limit.
-      if (!(await assertCanAdd(userId)).ok) return LIMIT_REACHED;
+      if ((await getQuota(userId)).reached) return LIMIT_REACHED;
 
       // Generation and encryption (PBKDF2, tens of ms) happen before the lock is taken.
       const generated = generateWallet();
       try {
-        const columns = {
+        const result = await insertWallet(userId, {
           publicKey: generated.address,
-          source: "CREATED" as const,
+          source: "CREATED",
           derivationPath: generated.derivationPath,
           ...vault.encrypt(generated.secretKey, generated.address),
           ...vault.encryptMnemonic(generated.mnemonic, generated.address),
-        };
-
-        for (let attempt = 1; ; attempt++) {
-          try {
-            const wallet = await prisma.$transaction(async (tx) => {
-              await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:${userId}`}))`;
-              const names = await namesOf(tx, userId);
-              if (names.length >= (await limitOf(tx, userId))) return null;
-              return tx.wallet.create({
-                data: { userId, name: nextName(names), ...columns },
-                select: WALLET_SUMMARY_SELECT,
-              });
-            });
-            if (wallet === null) return LIMIT_REACHED;
-            // The new wallet must show everywhere at once: home, list (§4.3).
-            balances.invalidateUserBalances(userId);
-            return { ok: true, wallet };
-          } catch (error) {
-            if (attempt >= NAME_ATTEMPTS || !isUniqueViolation(error, ["userId", "name"])) {
-              throw error;
-            }
-          }
+        });
+        if (result.ok) return result;
+        // An address out of the CSPRNG is new: a duplicate here is a bug, not a user error.
+        if (result.reason === "duplicate") {
+          throw new Error("The generated address is already stored for this user");
         }
+        return LIMIT_REACHED;
       } finally {
         generated.secretKey.dispose();
+      }
+    },
+
+    async importWallet(userId, format, secret) {
+      // The order of §9.4: the format is judged first, so a bad paste never reads the quota.
+      // A whole message pasted around a key is refused here rather than scanned.
+      if (secret.length > IMPORT_SECRET_MAX_CHARS) return { ok: false, reason: "invalid_secret" };
+      const parsed = parseSecret[format](secret);
+      if (!parsed.ok) return { ok: false, reason: "invalid_secret" };
+      try {
+        // No quota pre-check: the key is already parsed, and the limit of the lock is the one
+        // that decides. Create pre-checks because it would otherwise generate a key for nothing.
+        const { address, secretKey, mnemonic, derivationPath } = parsed;
+        return await insertWallet(userId, {
+          publicKey: address,
+          source: IMPORTED_SOURCE[format],
+          derivationPath,
+          ...vault.encrypt(secretKey, address),
+          // Decision of 16/09/2026: an imported phrase is stored encrypted too, so that the
+          // support can give it back (V1-43). A key import leaves the three columns null.
+          ...(mnemonic === null ? {} : vault.encryptMnemonic(mnemonic, address)),
+        });
+      } finally {
+        parsed.secretKey.dispose();
       }
     },
 

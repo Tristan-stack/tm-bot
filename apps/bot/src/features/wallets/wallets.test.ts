@@ -7,17 +7,19 @@ import {
   botHarness,
   callbackUpdate,
   feed,
+  keyboardOf,
+  MAIN_WALLET,
   photoUpdate,
   storedSession,
   telegramError,
   TEST_BALANCES,
   TEST_USER,
+  TEST_WALLET,
   textUpdate,
 } from "../../test-harness.js";
 import {
   buildDeleteBlockedScreen,
   buildDeleteConfirmScreen,
-  buildImportSoonScreen,
   buildRenameScreen,
   buildWalletDetailScreen,
   buildWalletListScreen,
@@ -28,10 +30,8 @@ import type { WalletDetailView, WalletListView } from "./screens.js";
 
 const ui = createUi("devnet");
 const UUID = "123e4567-e89b-12d3-a456-426614174000";
-const [MAIN, TEST] = TEST_BALANCES.wallets as [
-  WalletDetailData["wallet"],
-  WalletDetailData["wallet"],
-];
+const MAIN = MAIN_WALLET;
+const TEST = TEST_WALLET;
 
 /** The two wallets of the mockup of §9.1, under a Classic plan. */
 const list = (overrides: Partial<WalletListView> = {}): WalletListView => ({
@@ -51,8 +51,6 @@ const detail = (overrides: Partial<WalletDetailView["wallet"]> = {}): WalletDeta
 
 const listText = (view: WalletListView, flag?: string) =>
   buildWalletListScreen(ui, view, { flag }).text;
-const keyboardOf = (screen: { reply_markup: { inline_keyboard: unknown[][] } }) =>
-  screen.reply_markup.inline_keyboard;
 
 beforeEach(resetRateLimits);
 
@@ -222,7 +220,7 @@ describe("buildWalletDetailScreen", () => {
   });
 });
 
-describe("provisional screens", () => {
+describe("provisional withdraw screen", () => {
   it("shows the wallet line and goes back to the detail", () => {
     const screen = buildWithdrawSoonScreen(ui, detail());
 
@@ -236,15 +234,6 @@ describe("provisional screens", () => {
       ].join("\n"),
     );
     expect(keyboardOf(screen)).toEqual([[{ text: "⬅️ Back", callback_data: "wal:v:w1" }]]);
-  });
-
-  it("goes back to the list from the import screen", () => {
-    const screen = buildImportSoonScreen(ui);
-
-    expect(screen.text).toContain(
-      "<b>📥 IMPORT WALLET</b> · 🧪 Devnet\n\nWallet import is coming soon.",
-    );
-    expect(keyboardOf(screen)).toEqual([[{ text: "⬅️ Back", callback_data: "wal:list" }]]);
   });
 });
 
@@ -349,7 +338,6 @@ describe("wallet handlers", () => {
   it.each([
     ["withdraw", WALLET_CB.withdraw("w1"), "Withdrawals are coming soon."],
     ["withdraw all", WALLET_CB.withdrawAll("w1"), "Withdrawals are coming soon."],
-    ["import", WALLET_CB.import, "Wallet import is coming soon."],
   ])("shows the provisional screen of %s", async (_label, data, text) => {
     const { bot, api } = botHarness();
 

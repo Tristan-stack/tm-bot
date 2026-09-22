@@ -1,4 +1,10 @@
 import { SecretBytes } from "@launchbot/solana";
+import type { ImportResult } from "@launchbot/solana";
+import {
+  TWELVE_WORDS,
+  TWELVE_WORDS_ADDRESS,
+  TWENTY_FOUR_WORDS_ADDRESS,
+} from "@launchbot/solana/test";
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "../generated/prisma/client.js";
 import type { Plan, PrismaClient } from "../generated/prisma/client.js";
@@ -7,10 +13,16 @@ import type { GeneratedWallet } from "./wallets.js";
 
 const T0 = new Date("2026-09-21T12:00:00Z");
 const USER = "u1";
-const MNEMONIC = `${"abandon ".repeat(11)}about`;
-const ADDRESS = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
+const MNEMONIC = TWELVE_WORDS;
+const ADDRESS = TWELVE_WORDS_ADDRESS;
+const PATH = "m/44'/501'/0'/0'";
 /** `getWithdrawFeeBudgetLamports(1_000_000)`: 5 000 base + 1 000 priority. */
 const FEE_BUDGET = 6_000n;
+
+/** The only secrets the faked parsers accept: V1-09 has the real formats under test. */
+const SECRETS = { KEY: "a-valid-private-key", SEED: MNEMONIC } as const;
+/** The address of the imported key: another one, so a swap between formats would show. */
+const KEY_ADDRESS = TWENTY_FOUR_WORDS_ADDRESS;
 
 type Columns = { userId: string; name: string; publicKey: string } & Record<string, unknown>;
 type Row = Columns & { id: string; createdAt: Date };
@@ -93,7 +105,7 @@ function harness(
       }),
     },
     subscription: {
-      findFirst: () => Promise.resolve(plan === null ? null : { plan }),
+      findFirst: vi.fn(() => Promise.resolve(plan === null ? null : { plan })),
     },
     withdrawal: {
       count: vi.fn(() => Promise.resolve(pendingWithdrawals)),
@@ -130,11 +142,43 @@ function harness(
     invalidateUserBalances: vi.fn(),
   };
   const secretKeys: Uint8Array[] = [];
-  const generateWallet = vi.fn((): GeneratedWallet => {
-    const secretKey = SecretBytes.take(new Uint8Array(64).fill(7));
+  /** Every key the service handles, so a test can check it was zeroed afterwards. */
+  const takeSecret = (fill: number) => {
+    const secretKey = SecretBytes.take(new Uint8Array(64).fill(fill));
     secretKeys.push(secretKey);
-    return { mnemonic: MNEMONIC, address: ADDRESS, secretKey, derivationPath: "m/44'/501'/0'/0'" };
-  });
+    return secretKey;
+  };
+  const generateWallet = vi.fn((): GeneratedWallet => ({
+    mnemonic: MNEMONIC,
+    address: ADDRESS,
+    secretKey: takeSecret(7),
+    derivationPath: PATH,
+  }));
+  /** The parsers of V1-09, faked: `SECRETS` parses, anything else is refused. */
+  const parseSecret = {
+    KEY: vi.fn((secret: string): ImportResult =>
+      secret === SECRETS.KEY
+        ? {
+            ok: true,
+            address: KEY_ADDRESS,
+            secretKey: takeSecret(8),
+            derivationPath: null,
+            mnemonic: null,
+          }
+        : { ok: false, reason: "invalid_base58" },
+    ),
+    SEED: vi.fn((secret: string): ImportResult =>
+      secret.trim().toLowerCase() === SECRETS.SEED
+        ? {
+            ok: true,
+            address: ADDRESS,
+            secretKey: takeSecret(9),
+            derivationPath: PATH,
+            mnemonic: SECRETS.SEED,
+          }
+        : { ok: false, reason: "invalid_mnemonic" },
+    ),
+  };
   // The fake ciphertext names its input: the test can see what was bound to what.
   const vault = {
     encrypt: vi.fn((secretKey: Uint8Array, address: string) => ({
@@ -153,11 +197,12 @@ function harness(
     prisma: prisma as unknown as PrismaClient,
     balances,
     generateWallet,
+    parseSecret,
     vault,
     withdrawFeeBudgetLamports: FEE_BUDGET,
     now: () => T0.getTime(),
   });
-  return { ...service, rows, prisma, balances, generateWallet, vault, secretKeys };
+  return { ...service, rows, prisma, balances, generateWallet, parseSecret, vault, secretKeys };
 }
 
 describe("nextDefaultName", () => {
@@ -171,24 +216,28 @@ describe("nextDefaultName", () => {
   });
 });
 
-describe("listWithBalances / assertCanAdd", () => {
+describe("listWithBalances / getQuota", () => {
   it.each<[Plan | null, number]>([
     [null, 3],
     ["CLASSIC", 5],
     ["PREMIUM", 10],
   ])("applies the limit of the plan %s: %i", async (plan, limit) => {
-    const { listWithBalances, assertCanAdd } = harness({ names: ["Main", "Test"], plan });
+    const { listWithBalances, getQuota } = harness({ names: ["Main", "Test"], plan });
 
     expect(await listWithBalances(USER)).toMatchObject({ count: 2, limit, status: "fresh" });
-    expect(await assertCanAdd(USER)).toEqual({ ok: true });
+    expect(await getQuota(USER)).toEqual({ count: 2, limit, reached: false });
   });
 
   it("blocks at the limit, and keeps the extra wallets of a downgraded user", async () => {
-    const { listWithBalances, assertCanAdd } = harness({ names: ["1", "2", "3", "4", "5"] });
+    const { listWithBalances, getQuota, balances } = harness({ names: ["1", "2", "3", "4", "5"] });
 
     expect(await listWithBalances(USER)).toMatchObject({ count: 5, limit: 3 });
     expect((await listWithBalances(USER)).wallets).toHaveLength(5);
-    expect(await assertCanAdd(USER)).toEqual({ ok: false, reason: "limit_reached" });
+    expect(await getQuota(USER)).toEqual({ count: 5, limit: 3, reached: true });
+    // The counter of the Import screen costs a count, never a balance read.
+    balances.getUserBalances.mockClear();
+    await getQuota(USER);
+    expect(balances.getUserBalances).not.toHaveBeenCalled();
   });
 
   it("passes a Refresh on to the balance service", async () => {
@@ -280,13 +329,21 @@ describe("create", () => {
     expect(rows).toHaveLength(2);
   });
 
-  it.each([
-    ["a unique violation on another constraint", uniqueViolation(["userId", "publicKey"])],
-    ["any other error", new Error("connection lost")],
-  ])("rethrows %s, and still zeroes the key", async (_label, failure) => {
+  it("rethrows any other error, and still zeroes the key", async () => {
+    const failure = new Error("connection lost");
     const { create, secretKeys } = harness({ failCreates: [failure] });
 
     await expect(create(USER)).rejects.toBe(failure);
+    expect(secretKeys[0]?.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("refuses to believe a generated address is already stored", async () => {
+    const { create, secretKeys } = harness({
+      failCreates: [uniqueViolation(["userId", "publicKey"])],
+    });
+
+    // Import answers `duplicate` here; out of the CSPRNG it can only be a bug.
+    await expect(create(USER)).rejects.toThrow("The generated address is already stored");
     expect(secretKeys[0]?.every((byte) => byte === 0)).toBe(true);
   });
 
@@ -295,6 +352,128 @@ describe("create", () => {
     const { create } = harness({ failCreates: collisions });
 
     await expect(create(USER)).rejects.toBe(collisions[2]);
+  });
+});
+
+describe("importWallet", () => {
+  it("stores an imported key, its address and nothing else", async () => {
+    const { importWallet, rows, secretKeys, balances } = harness({ names: ["Main"] });
+
+    const result = await importWallet(USER, "KEY", SECRETS.KEY);
+
+    expect(result).toEqual({
+      ok: true,
+      wallet: { id: "w2", name: "Wallet 2", publicKey: KEY_ADDRESS, createdAt: T0 },
+    });
+    expect(rows[1]).toMatchObject({
+      source: "IMPORTED_KEY",
+      derivationPath: null,
+      encSecretKey: bytes(`key:64:${KEY_ADDRESS}`),
+    });
+    // The three mnemonic columns stay null: there is no phrase behind a key (§13).
+    expect(rows[1]).not.toHaveProperty("encMnemonic");
+    expect(secretKeys.at(-1)?.every((byte) => byte === 0)).toBe(true);
+    expect(balances.invalidateUserBalances).toHaveBeenCalledWith(USER);
+  });
+
+  it("stores an imported phrase encrypted next to the key it derives (16/09/2026)", async () => {
+    const { importWallet, rows, vault } = harness();
+
+    expect(await importWallet(USER, "SEED", ` ${MNEMONIC.toUpperCase()} `)).toMatchObject({
+      ok: true,
+      wallet: { name: "Wallet 1", publicKey: ADDRESS },
+    });
+
+    expect(rows[0]).toMatchObject({
+      source: "IMPORTED_SEED",
+      derivationPath: PATH,
+      encSecretKey: bytes(`key:64:${ADDRESS}`),
+      encMnemonic: bytes(`mnemonic:${MNEMONIC}:${ADDRESS}`),
+      mnemonicIv: bytes("miv"),
+      mnemonicAuthTag: bytes("mtag"),
+    });
+    // The vault gets the phrase the parser normalized, never what the user typed.
+    expect(vault.encryptMnemonic).toHaveBeenCalledExactlyOnceWith(MNEMONIC, ADDRESS);
+  });
+
+  it.each<["KEY" | "SEED", string]>([
+    ["KEY", "not a key"],
+    ["SEED", "abandon abandon"],
+  ])("refuses a %s that does not parse, without reading the quota", async (format, secret) => {
+    const { importWallet, prisma, balances } = harness();
+
+    expect(await importWallet(USER, format, secret)).toEqual({
+      ok: false,
+      reason: "invalid_secret",
+    });
+    expect(prisma.wallet.create).not.toHaveBeenCalled();
+    expect(prisma.subscription.findFirst).not.toHaveBeenCalled();
+    expect(balances.invalidateUserBalances).not.toHaveBeenCalled();
+  });
+
+  it("refuses a message too long to be a secret, without parsing it", async () => {
+    const { importWallet, parseSecret } = harness();
+
+    expect(await importWallet(USER, "SEED", `${MNEMONIC} `.repeat(20))).toEqual({
+      ok: false,
+      reason: "invalid_secret",
+    });
+    expect(parseSecret.SEED).not.toHaveBeenCalled();
+  });
+
+  it("imports nothing at the limit, and zeroes the key it parsed", async () => {
+    const { importWallet, prisma, secretKeys } = harness({ names: ["1", "2", "3"] });
+
+    expect(await importWallet(USER, "KEY", SECRETS.KEY)).toEqual({
+      ok: false,
+      reason: "limit_reached",
+    });
+    expect(prisma.wallet.create).not.toHaveBeenCalled();
+    expect(secretKeys[0]?.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("refuses the same address twice, whatever the format brought it", async () => {
+    const { importWallet, rows } = harness();
+
+    expect(await importWallet(USER, "SEED", MNEMONIC)).toMatchObject({ ok: true });
+    // Same wallet, imported as a key this time: a duplicate, and the phrase is not added.
+    expect(await importWallet(USER, "SEED", MNEMONIC)).toEqual({ ok: false, reason: "duplicate" });
+    expect(rows).toHaveLength(1);
+  });
+
+  it("reports a duplicate when the unique constraint catches a concurrent import", async () => {
+    const { importWallet } = harness({
+      failCreates: [uniqueViolation(["userId", "publicKey"])],
+    });
+
+    expect(await importWallet(USER, "KEY", SECRETS.KEY)).toEqual({
+      ok: false,
+      reason: "duplicate",
+    });
+  });
+
+  it("creates one wallet for two concurrent imports of the same key", async () => {
+    const { importWallet, rows } = harness({ names: ["Main"] });
+
+    const results = await Promise.all([
+      importWallet(USER, "KEY", SECRETS.KEY),
+      importWallet(USER, "KEY", SECRETS.KEY),
+    ]);
+
+    // The second one enters the lock with room left, and finds the address already there.
+    expect(results.map((result) => (result.ok ? "ok" : result.reason)).sort()).toEqual([
+      "duplicate",
+      "ok",
+    ]);
+    expect(rows).toHaveLength(2);
+  });
+
+  it("never returns the secret, in any shape", async () => {
+    const { importWallet } = harness();
+
+    const result = await importWallet(USER, "SEED", MNEMONIC);
+
+    expect(JSON.stringify(result)).not.toContain("abandon");
   });
 });
 

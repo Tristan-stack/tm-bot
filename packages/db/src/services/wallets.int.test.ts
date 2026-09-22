@@ -6,6 +6,8 @@ import {
   parseSeedPhrase,
   revealWalletSecrets,
 } from "@launchbot/solana";
+import { captureLogs, setLogDestination } from "@launchbot/shared/server";
+import { INVALID_PHRASES, TWELVE_WORDS, TWELVE_WORDS_ADDRESS } from "@launchbot/solana/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPrismaClient } from "../client.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
@@ -44,6 +46,7 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("wallet service (db)", () => {
         prisma,
         balances,
         generateWallet: generateMnemonicWallet,
+        parseSecret: { KEY: parsePrivateKey, SEED: parseSeedPhrase },
         vault,
         withdrawFeeBudgetLamports: 6_000n,
       }),
@@ -74,6 +77,136 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("wallet service (db)", () => {
     expect(parseSeedPhrase(secrets.mnemonic ?? "")).toMatchObject({
       ok: true,
       address: row.publicKey,
+    });
+  });
+
+  // The vectors come from the wallet package (V1-09): Phantom shows TWELVE_WORDS_ADDRESS for the
+  // first account of TWELVE_WORDS.
+  describe("import", () => {
+    /** A real base58 key of 64 bytes: the one a wallet of another account was created with. */
+    const someonesKey = async () => {
+      const other = await createUser();
+      const created = await service().create(other.id);
+      if (!created.ok) throw new Error(created.reason);
+      const row = await prisma.wallet.findUniqueOrThrow({ where: { id: created.wallet.id } });
+      return { ...revealWalletSecrets(row, vault), address: row.publicKey };
+    };
+
+    it("stores a key import under its own address, with no phrase", async () => {
+      const [user, key] = await Promise.all([createUser(), someonesKey()]);
+
+      const result = await service().importWallet(user.id, "KEY", ` ${key.privateKeyBase58} `);
+
+      if (!result.ok) throw new Error(result.reason);
+      // Two users may hold the same key (§13): the address is the one of the other account.
+      expect(result.wallet).toMatchObject({ name: "Wallet 1", publicKey: key.address });
+      const row = await prisma.wallet.findUniqueOrThrow({ where: { id: result.wallet.id } });
+      expect(row).toMatchObject({
+        source: "IMPORTED_KEY",
+        derivationPath: null,
+        encMnemonic: null,
+        mnemonicIv: null,
+        mnemonicAuthTag: null,
+      });
+      // The vault gives the key back to /getall (V1-43), and only to it.
+      expect(revealWalletSecrets(row, vault)).toEqual({
+        privateKeyBase58: key.privateKeyBase58,
+        mnemonic: null,
+      });
+    });
+
+    it("derives the Phantom address of a phrase and stores it normalized", async () => {
+      const user = await createUser();
+
+      const result = await service().importWallet(
+        user.id,
+        "SEED",
+        `  ${TWELVE_WORDS.toUpperCase().replace(/ /g, "   ")}  `,
+      );
+
+      if (!result.ok) throw new Error(result.reason);
+      expect(result.wallet.publicKey).toBe(TWELVE_WORDS_ADDRESS);
+      const row = await prisma.wallet.findUniqueOrThrow({ where: { id: result.wallet.id } });
+      expect(row).toMatchObject({ source: "IMPORTED_SEED", derivationPath: "m/44'/501'/0'/0'" });
+      expect(revealWalletSecrets(row, vault).mnemonic).toBe(TWELVE_WORDS);
+    });
+
+    it("keeps no plain secret in the row", async () => {
+      const user = await createUser();
+      const result = await service().importWallet(user.id, "SEED", TWELVE_WORDS);
+
+      if (!result.ok) throw new Error(result.reason);
+      const row = await prisma.wallet.findUniqueOrThrow({ where: { id: result.wallet.id } });
+      // Every column as text, ciphertext included: no byte of the phrase is readable.
+      const dump = Object.values(row)
+        .map((value) =>
+          value instanceof Uint8Array ? Buffer.from(value).toString("latin1") : String(value),
+        )
+        .join("|");
+      expect(dump).not.toContain("abandon");
+      expect(dump).not.toContain("about");
+    });
+
+    it("logs nothing of the secret, valid or not", async () => {
+      const user = await createUser();
+      const lines = captureLogs();
+      try {
+        const wallets = service();
+        await wallets.importWallet(user.id, "SEED", TWELVE_WORDS);
+        await wallets.importWallet(user.id, "SEED", INVALID_PHRASES.wrongChecksum);
+        await wallets.importWallet(user.id, "KEY", "not a private key");
+      } finally {
+        setLogDestination(undefined);
+      }
+
+      expect(lines.join("")).not.toContain("abandon");
+    });
+
+    it.each([
+      ["KEY" as const, "not a private key"],
+      ["KEY" as const, `[${Array.from({ length: 64 }, () => 1).join(",")}]`],
+      ["SEED" as const, INVALID_PHRASES.wrongChecksum],
+      ["SEED" as const, INVALID_PHRASES.thirteenWords],
+    ])("refuses a %s that does not parse: %s", async (format, secret) => {
+      const user = await createUser();
+
+      expect(await service().importWallet(user.id, format, secret)).toEqual({
+        ok: false,
+        reason: "invalid_secret",
+      });
+      expect(await prisma.wallet.count({ where: { userId: user.id } })).toBe(0);
+    });
+
+    it("imports a phrase once, then reports a duplicate, twice concurrently included", async () => {
+      const [user, other] = await Promise.all([createUser(), createUser()]);
+      const wallets = service();
+
+      const results = await Promise.all([
+        wallets.importWallet(user.id, "SEED", TWELVE_WORDS),
+        wallets.importWallet(user.id, "SEED", TWELVE_WORDS),
+      ]);
+
+      expect(results.map((result) => (result.ok ? "ok" : result.reason)).sort()).toEqual([
+        "duplicate",
+        "ok",
+      ]);
+      expect(await prisma.wallet.count({ where: { userId: user.id } })).toBe(1);
+      // The same phrase in another account is another wallet, not a duplicate.
+      expect(await wallets.importWallet(other.id, "SEED", TWELVE_WORDS)).toMatchObject({
+        ok: true,
+      });
+    });
+
+    it("stops at the limit of the plan, without the wallets of the other users", async () => {
+      const user = await createUser();
+      await prisma.wallet.createMany({
+        data: [1, 2, 3].map((n) => testWalletData(user.id, `Wallet ${n}`, `${user.id}-${n}`)),
+      });
+
+      expect(await service().importWallet(user.id, "SEED", TWELVE_WORDS)).toEqual({
+        ok: false,
+        reason: "limit_reached",
+      });
     });
   });
 

@@ -35,7 +35,13 @@ export const WALLET_LIMITS = { NONE: 3, CLASSIC: 5, PREMIUM: 10 } as const satis
   number
 >;
 export const WALLET_NAME_MAX_CHARS = 32;
+/** The two formats a user can import a wallet in (§9.4). `WalletSource` of V1-02 mirrors them. */
+export const IMPORT_FORMATS = ["KEY", "SEED"] as const;
+export type ImportFormat = (typeof IMPORT_FORMATS)[number];
+/** How long an import input stays armed (§9.4, V1-12): a late secret is deleted, not imported. */
 export const IMPORT_INPUT_TIMEOUT_MS = 120 * SECOND_MS;
+/** Refused before parsing (V1-12): a 24-word phrase is about 200 characters, a key 88. */
+export const IMPORT_SECRET_MAX_CHARS = 1_000;
 
 // SOL amounts, always in lamports
 export const SOL_DECIMALS = 9;
@@ -121,6 +127,8 @@ export const RATE_LIMITS = {
   generate: { limit: 20, windowMs: 60 * SECOND_MS },
   /** Simulation creation (V1-22). */
   simulation: { limit: 10, windowMs: 10 * MINUTE_MS },
+  /** Wallet import attempts, valid or not (V1-12). Proposal: 5 per 10 minutes. */
+  walletImport: { limit: 5, windowMs: 10 * MINUTE_MS },
   /** V1-14. */
   withdrawal: { limit: 5, windowMs: 10 * MINUTE_MS },
   /** V1-31. */

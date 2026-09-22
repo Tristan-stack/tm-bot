@@ -17,7 +17,7 @@ export {
   urlBtn,
   webAppBtn,
 } from "./screen.js";
-export type { Button, InputScreenParams, Screen, ScreenParams } from "./screen.js";
+export type { Button, InputScreenParams, OptionalLine, Screen, ScreenParams } from "./screen.js";
 
 /**
  * Proposal: shared never reads the environment, so each process binds the cluster-dependent

@@ -5,7 +5,8 @@
   "description": "Wallets, balances, withdrawals, encryption; pump.fun and PumpSwap in V2",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./test": "./src/keys/test-vectors.ts"
   },
   "scripts": {
     "dev": "tsc -b --watch --preserveWatchOutput",

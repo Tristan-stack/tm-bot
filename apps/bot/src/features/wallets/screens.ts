@@ -18,14 +18,23 @@ import {
   urlBtn,
   WALLET_NAME_MAX_CHARS,
 } from "@launchbot/shared";
-import type { Screen, Ui } from "@launchbot/shared";
+import type { ImportFormat, OptionalLine, Screen, Ui } from "@launchbot/shared";
+import { SOLANA_DERIVATION_PATH } from "@launchbot/solana";
 
-/** Callback data of the section (§4.4). V1-12 and V1-14 take over these values. */
+/** The callback argument of each format, and the only place the two codes are written. */
+const IMPORT_CODE = { KEY: "key", SEED: "seed" } as const satisfies Record<ImportFormat, string>;
+
+/** The format `wal:imp:<code>` asks for, `undefined` for anything else (an old button). */
+export const importFormatOf = (code: string | undefined): ImportFormat | undefined =>
+  (Object.keys(IMPORT_CODE) as ImportFormat[]).find((format) => IMPORT_CODE[format] === code);
+
+/** Callback data of the section (§4.4). V1-14 takes over the withdrawal values. */
 export const WALLET_CB = {
   list: encodeCallback("wal", "list"),
   refreshList: encodeCallback("wal", "lref"),
   create: encodeCallback("wal", "new"),
   import: encodeCallback("wal", "imp"),
+  importFormat: (format: ImportFormat) => encodeCallback("wal", "imp", IMPORT_CODE[format]),
   view: (id: string) => encodeCallback("wal", "v", id),
   refresh: (id: string) => encodeCallback("wal", "ref", id),
   withdraw: (id: string) => encodeCallback("wal", "wd", id),
@@ -142,13 +151,53 @@ export function buildWithdrawSoonScreen(ui: Ui, view: WalletDetailView): Screen 
   });
 }
 
-/** Import until V1-12: Back to the list. */
-export const buildImportSoonScreen = (ui: Ui): Screen =>
+/** What the Import screens show of the plan (§8.1): the counter, nothing about balances. */
+export type WalletQuotaView = Pick<WalletListData, "count" | "limit">;
+
+/**
+ * IMPORT WALLET (§9.4): the warning of the context, the two formats, and the counter of the
+ * plan. The limit is checked before this screen opens, so it is never shown at the limit.
+ */
+export const buildImportScreen = (
+  ui: Ui,
+  quota: WalletQuotaView,
+  options: { flags?: OptionalLine[] } = {},
+): Screen =>
   renderScreen({
-    header: ui.screenHeader(en.wallets.comingSoon.import.title),
-    description: en.wallets.comingSoon.import.description,
-    keyboard: [navRow(WALLET_CB.list)],
+    header: ui.screenHeader(en.wallets.import.title),
+    description: [en.wallets.import.warning, "", en.wallets.import.description].join("\n"),
+    info: en.wallets.import.counter(quota.count, quota.limit),
+    flags: options.flags,
+    keyboard: [
+      [
+        cbBtn(en.wallets.import.btnKey, WALLET_CB.importFormat("KEY")),
+        cbBtn(en.wallets.import.btnSeed, WALLET_CB.importFormat("SEED")),
+      ],
+      navRow(WALLET_CB.list),
+    ],
   });
+
+/**
+ * The input of a secret (§9.4, §4.5): no "Current" line, an expiry instead, and Cancel back to
+ * the list. The next message of the user is read as the secret and deleted at once. The seed
+ * rules quote the derivation path of the wallet package, so it is never written twice.
+ */
+export const buildImportInputScreen = (
+  ui: Ui,
+  format: ImportFormat,
+  expiresAt: Date,
+  options: { flags?: OptionalLine[] } = {},
+): Screen => {
+  const { key, seed } = en.wallets.import;
+  const texts = format === "KEY" ? key : { ...seed, rules: seed.rules(SOLANA_DERIVATION_PATH) };
+  return renderInputScreen({
+    header: ui.screenHeader(texts.title),
+    prompt: texts.prompt,
+    rules: [texts.rules, en.wallets.import.expiresAt(formatTimeUtc(expiresAt))],
+    flags: options.flags,
+    keyboard: [[cancelBtn(WALLET_CB.list)]],
+  });
+};
 
 /** The input of a new name (§9.3, §4.5). Cancel goes back to the detail (proposal). */
 export const buildRenameScreen = (

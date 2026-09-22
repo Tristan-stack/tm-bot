@@ -34,6 +34,9 @@ const SECRET_KEYS = [
   "mnemonicIv",
   "mnemonicAuthTag",
   "initData",
+  // §9.6 and V1-12: a user can paste a private key or a seed phrase in any message.
+  "text",
+  "caption",
 ];
 
 // pino wildcards match one level only: the keys are listed at the root and two levels deep.

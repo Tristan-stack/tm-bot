@@ -208,8 +208,9 @@ describe("global rate limit", () => {
     await feed(bot, textUpdate("/start"));
 
     expect(api.calls).toHaveLength(before);
-    // Nothing ran: no activity written either.
-    expect(prisma.upserts).toHaveLength(20);
+    // The activity is still recorded: since V1-12 the limit runs after the session and the
+    // upsert, so that a message holding a key is deleted even for a user over their limit.
+    expect(prisma.upserts).toHaveLength(21);
   });
 });
 

@@ -20,3 +20,10 @@ export const isUneditable = (error: unknown): boolean =>
 
 /** A callback query older than its validity window can no longer be answered. */
 export const isQueryTooOld = (error: unknown): boolean => isBadRequest(error, /query is too old/i);
+
+/**
+ * The message cannot be deleted at all: already gone, or older than the 48 h a bot is given in a
+ * private chat (V1-12). Retrying such a refusal only wastes a call.
+ */
+export const isUndeletable = (error: unknown): boolean =>
+  isBadRequest(error, /message to delete not found|message can't be deleted|MESSAGE_ID_INVALID/i);

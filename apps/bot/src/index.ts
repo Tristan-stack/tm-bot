@@ -7,7 +7,14 @@ import type { PrismaClient, WalletService } from "@launchbot/db";
 import { createUi, en, getWithdrawFeeBudgetLamports } from "@launchbot/shared";
 import { createLogger, loadEnv } from "@launchbot/shared/server";
 import type { Env, Service } from "@launchbot/shared/server";
-import { assertDevnet, createKeyVault, generateMnemonicWallet, rpcHost } from "@launchbot/solana";
+import {
+  assertDevnet,
+  createKeyVault,
+  generateMnemonicWallet,
+  parsePrivateKey,
+  parseSeedPhrase,
+  rpcHost,
+} from "@launchbot/solana";
 import { Bot, session } from "grammy";
 import { initialSession } from "./context.js";
 import type { BotContext } from "./context.js";
@@ -16,9 +23,12 @@ import { createAccess } from "./features/access/access.js";
 import { checkChannelRights } from "./features/access/startup-check.js";
 import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
+import { importConsumer } from "./features/wallets/import.js";
+import { createWalletNav } from "./features/wallets/nav.js";
 import { registerWallets } from "./features/wallets/wallets.js";
 import { privateOnly } from "./middleware/private-only.js";
 import { globalRateLimit } from "./middleware/rate-limit.js";
+import { sensitiveMessageGuard } from "./middleware/sensitive-input.js";
 import { CONVERSATION_KEY_PREFIX, createSessionStorage } from "./middleware/session.js";
 import { userActivity } from "./middleware/user-activity.js";
 import { ensureAnswered } from "./navigation/notify.js";
@@ -53,10 +63,13 @@ export function createBot(
       prisma,
       balances: data,
       generateWallet: generateMnemonicWallet,
+      parseSecret: { KEY: parsePrivateKey, SEED: parseSeedPhrase },
       // The one vault of the process: nothing else holds the master key.
       vault: createKeyVault(env.WALLET_ENCRYPTION_KEY),
       withdrawFeeBudgetLamports: getWithdrawFeeBudgetLamports(env.PRIORITY_FEE_MAX_MICROLAMPORTS),
     });
+  // Built here, not inside the section: the import input is consumed before the rate limit.
+  const walletNav = createWalletNav({ ui, wallets, data });
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
   // unlimited retry would stall every user, and would hang the startup instead of failing it.
@@ -66,7 +79,6 @@ export function createBot(
   bot.use(privateOnly);
   // Wraps everything below: a click always gets its one answer, whatever handled it.
   bot.use(ensureAnswered);
-  bot.use(globalRateLimit);
   bot.use(userActivity(prisma));
   bot.use(
     session({
@@ -75,7 +87,11 @@ export function createBot(
       getSessionKey: (ctx) => ctx.chat?.id.toString(),
     }),
   );
-  // V1-12 deletes sensitive messages here, before the gate can answer them.
+  // §9.4: a key or a seed phrase leaves the chat before anything else runs. It needs the
+  // session (the input it answers) and it must run before the rate limit, which would drop the
+  // update without deleting it, and before the gate, which would answer it with the Terms.
+  bot.use(sensitiveMessageGuard(importConsumer(walletNav)));
+  bot.use(globalRateLimit);
   // No conversation and no menu before the Terms and the channel (§4.2).
   bot.use(access.gate);
   bot.use(
@@ -90,7 +106,7 @@ export function createBot(
 
   access.register(router);
   registerHome(bot, router, access, { ui, env, data });
-  registerWallets(bot, router, { ui, wallets, data });
+  registerWallets(bot, router, walletNav);
   // Until the ticket of a section registers its domain.
   registerComingSoon(router, ui);
   // Admin commands (V1-38) go here, after the gate: an admin accepts the Terms too.

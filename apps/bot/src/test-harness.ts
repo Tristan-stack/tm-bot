@@ -70,6 +70,11 @@ export function interceptApi(bot: Bot<BotContext>, replies: ApiReplies = {}) {
 /** First id the fake gives to a sent message. */
 export const FIRST_MESSAGE_ID = 100;
 
+/** The keyboard of a screen a builder returned, for the tests that assert on its buttons. */
+export const keyboardOf = (screen: {
+  reply_markup: { inline_keyboard: unknown[][] };
+}): unknown[][] => screen.reply_markup.inline_keyboard;
+
 function defaultResult(
   method: string,
   payload: Record<string, unknown>,
@@ -122,19 +127,28 @@ let nextUpdateId = 1;
 
 type MessageOverrides = { chat?: Record<string, unknown>; from?: Record<string, unknown> };
 
+const privateMessage = (fields: Record<string, unknown>, overrides: MessageOverrides = {}) => ({
+  message_id: 10,
+  date: 0,
+  chat: { ...CHAT, ...overrides.chat },
+  from: { ...FROM, ...overrides.from },
+  ...fields,
+});
+
 /** A message of the user in the private chat, with the fields of its kind (`text`, `photo`…). */
 export const messageUpdate = (
   fields: Record<string, unknown>,
   overrides: MessageOverrides = {},
 ): Update => ({
   update_id: nextUpdateId++,
-  message: {
-    message_id: 10,
-    date: 0,
-    chat: { ...CHAT, ...overrides.chat },
-    from: { ...FROM, ...overrides.from },
-    ...fields,
-  },
+  message: privateMessage(fields, overrides),
+});
+
+/** The same message, edited by the user: the guard of V1-12 watches these too. */
+export const editedTextUpdate = (text: string): Update => ({
+  update_id: nextUpdateId++,
+  // `edited_message` carries `edit_date`, which the shape of the fields cannot express.
+  edited_message: privateMessage({ text, edit_date: 1 }) as NonNullable<Update["edited_message"]>,
 });
 
 export const textUpdate = (text: string, overrides: MessageOverrides = {}): Update =>
@@ -148,8 +162,9 @@ export const textUpdate = (text: string, overrides: MessageOverrides = {}): Upda
     overrides,
   );
 
-/** A photo, the way Telegram sends one: no `text`. */
-export const photoUpdate = (): Update => messageUpdate({ photo: [] });
+/** A photo, the way Telegram sends one: no `text`, and a `caption` when the user wrote one. */
+export const photoUpdate = (caption?: string): Update =>
+  messageUpdate({ photo: [], ...(caption === undefined ? {} : { caption }) });
 
 export const callbackUpdate = (
   data: string,
@@ -276,23 +291,23 @@ export const TEST_ENV = {
 export const BALANCES_READ_AT = new Date("2026-09-21T14:32:00Z");
 
 /** The two wallets of the mockups (§4.3, §9.1), the way the balance service returns them. */
+export const MAIN_WALLET: WalletBalance = {
+  id: "w1",
+  name: "Main",
+  publicKey: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+  createdAt: new Date("2026-09-12T09:00:00Z"),
+  lamports: 2_500_000_000n,
+};
+export const TEST_WALLET: WalletBalance = {
+  id: "w2",
+  name: "Test",
+  publicKey: "3pLmYwq1Z4QhTk9Rcbb3UAHdSjyrpYmG5pDxJHzEAa81",
+  createdAt: new Date("2026-09-15T09:00:00Z"),
+  lamports: 1_750_000_000n,
+};
+
 export const TEST_BALANCES: UserBalances = {
-  wallets: [
-    {
-      id: "w1",
-      name: "Main",
-      publicKey: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
-      createdAt: new Date("2026-09-12T09:00:00Z"),
-      lamports: 2_500_000_000n,
-    },
-    {
-      id: "w2",
-      name: "Test",
-      publicKey: "3pLmYwq1Z4QhTk9Rcbb3UAHdSjyrpYmG5pDxJHzEAa81",
-      createdAt: new Date("2026-09-15T09:00:00Z"),
-      lamports: 1_750_000_000n,
-    },
-  ],
+  wallets: [MAIN_WALLET, TEST_WALLET],
   totalLamports: 4_250_000_000n,
   fetchedAt: BALANCES_READ_AT,
   status: "fresh",
@@ -319,9 +334,11 @@ export function fakeWallets(overrides: Partial<WalletService> = {}): WalletServi
       const wallet = find(walletId);
       return Promise.resolve(wallet === undefined ? null : detailOf(wallet));
     },
-    assertCanAdd: () => Promise.resolve({ ok: true }),
+    getQuota: () => Promise.resolve({ count: list.count, limit: list.limit, reached: false }),
     nextDefaultName: () => Promise.resolve(created.name),
     create: () => Promise.resolve({ ok: true, wallet: created }),
+    // The parsers and the vault are tested in their own packages: here every secret imports.
+    importWallet: () => Promise.resolve({ ok: true, wallet: created }),
     rename: (_userId, walletId, rawName) => {
       const wallet = find(walletId);
       return Promise.resolve(
