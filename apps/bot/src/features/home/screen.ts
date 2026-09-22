@@ -1,0 +1,94 @@
+import {
+  a,
+  cbBtn,
+  code,
+  en,
+  encodeCallback,
+  escapeHtml,
+  formatRemaining,
+  formatSol,
+  formatSolPrice,
+  formatTimeUtc,
+  renderScreen,
+  tree,
+  usdOf,
+  withUsd,
+} from "@launchbot/shared";
+import type { Screen, Ui } from "@launchbot/shared";
+import type { Env } from "@launchbot/shared/server";
+import { legalRow } from "../access/screens.js";
+import { computeNextStep } from "./data.js";
+import type { HomeData } from "./data.js";
+
+/**
+ * Callback data of the main menu (proposal). The ticket of each section handles exactly these
+ * values when it replaces the provisional screen of its domain.
+ */
+export const MENU = {
+  launchCoin: encodeCallback("lc", "open"),
+  simulate: encodeCallback("sim", "open"),
+  subscribe: encodeCallback("sub", "open"),
+  wallets: encodeCallback("wal", "list"),
+  support: encodeCallback("sup", "open"),
+  refresh: encodeCallback("home", "refresh"),
+} as const;
+
+export type HomeEnv = Pick<
+  Env,
+  "WEBAPP_URL" | "CHANNEL_BOT_URL" | "CHANNEL_SUCCESS_URL" | "CHANNEL_ANNOUNCEMENTS_URL"
+>;
+
+function subscriptionLine({ subscription, now }: HomeData): string {
+  if (subscription.kind === "none") return en.home.noSubscription;
+  const plan = en.plans[subscription.plan];
+  const remaining =
+    subscription.kind === "active" ? formatRemaining(subscription.expiresAt, now) : null;
+  return remaining === null
+    ? en.home.subscriptionExpired(plan)
+    : en.home.subscription(plan, remaining);
+}
+
+function walletsLine({ wallets, solUsd }: HomeData): string {
+  if (wallets.count === 0) return en.home.noWallet;
+  const balance =
+    wallets.totalLamports === null
+      ? en.home.balanceUnavailable
+      : withUsd(formatSol(wallets.totalLamports), usdOf(wallets.totalLamports, solUsd));
+  return en.home.wallets(wallets.count, balance);
+}
+
+/**
+ * The home screen (§4.3). Pure: the same data gives the same screen, which is what lets a
+ * Refresh answer "Already up to date". The mockup has no description: the ACCOUNT block and
+ * the next step stand for it.
+ */
+export function buildHomeScreen(ui: Ui, env: HomeEnv, data: HomeData): Screen {
+  const name = data.username !== null ? `@${data.username}` : (data.firstName ?? en.common.none);
+  const account = tree(en.home.account, [
+    escapeHtml(name),
+    en.home.id(code(String(data.telegramId))),
+    subscriptionLine(data),
+    walletsLine(data),
+  ]);
+  const community = tree(en.home.community, [
+    en.home.announcements(a(en.home.announcementsLabel, env.CHANNEL_ANNOUNCEMENTS_URL)),
+    en.home.success(a(en.home.successLabel, env.CHANNEL_SUCCESS_URL)),
+    en.home.botChannel(a(en.home.botChannelLabel, env.CHANNEL_BOT_URL), data.botChannelMembers),
+    en.home.subscribers(data.activeSubscribers),
+  ]);
+
+  return renderScreen({
+    header: ui.screenHeader(en.home.title),
+    info: [account, community, en.home.solPrice(formatSolPrice(data.solUsd))].join("\n\n"),
+    flags: [en.home.nextStep[computeNextStep(data)]],
+    footer: en.common.updated(formatTimeUtc(data.updatedAt)),
+    keyboard: [
+      [cbBtn(en.menu.launchCoin, MENU.launchCoin)],
+      [cbBtn(en.menu.simulate, MENU.simulate)],
+      [cbBtn(en.menu.subscribe, MENU.subscribe)],
+      [cbBtn(en.menu.wallets, MENU.wallets), cbBtn(en.menu.support, MENU.support)],
+      legalRow(env.WEBAPP_URL),
+      [cbBtn(en.btn.refresh, MENU.refresh)],
+    ],
+  });
+}

@@ -103,6 +103,13 @@ export type RateLimit = { limit: number; windowMs: number };
 export const RATE_LIMITS = {
   /** Every update of a user (V1-04). */
   global: { limit: 20, windowMs: 10 * SECOND_MS },
+  /**
+   * Refresh without the balance cache (§4.4): one per user, shared by every Refresh button
+   * (home, wallet detail V1-10, Dev buy V1-36). Over it, the Refresh reads the cache.
+   */
+  refresh: { limit: 1, windowMs: REFRESH_THROTTLE_MS },
+  /** "I've joined": one getChatMember call each (V1-06). */
+  channelCheck: { limit: 5, windowMs: 30 * SECOND_MS },
   /** Generate + AI Generate (V1-16, V1-17). */
   generate: { limit: 20, windowMs: 60 * SECOND_MS },
   /** Simulation creation (V1-22). */

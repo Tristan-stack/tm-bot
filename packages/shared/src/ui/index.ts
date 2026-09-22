@@ -13,6 +13,7 @@ export {
   renderInputScreen,
   renderScreen,
   ScreenTooLongError,
+  tree,
   urlBtn,
   webAppBtn,
 } from "./screen.js";

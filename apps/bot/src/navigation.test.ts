@@ -150,10 +150,11 @@ describe("showScreen", () => {
 describe("blockWithFlag", () => {
   it("shows the alert and writes the flag on the screen (§4.5)", async () => {
     const { bot, api } = minimalBot((ctx) =>
-      blockWithFlag(ctx, {
-        alert: "Add a name and ticker first.",
-        render: () => screen("⚠️ Missing: name, ticker"),
-      }),
+      blockWithFlag(
+        ctx,
+        { alert: "Add a name and ticker first.", flag: "⚠️ Missing: name, ticker" },
+        screen,
+      ),
     );
 
     await feed(bot, callbackUpdate("home:refresh"));
@@ -167,7 +168,7 @@ describe("blockWithFlag", () => {
 
   it("does not fail when the flag is already on the screen", async () => {
     const { bot, api } = minimalBot(
-      (ctx) => blockWithFlag(ctx, { alert: "Blocked.", render: () => screen("⚠️ Flag") }),
+      (ctx) => blockWithFlag(ctx, { alert: "Blocked.", flag: "⚠️ Flag" }, screen),
       { editMessageText: telegramError("editMessageText", "Bad Request: message is not modified") },
     );
 

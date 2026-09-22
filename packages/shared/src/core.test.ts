@@ -96,6 +96,8 @@ describe("texts", () => {
       continue: "➡️ Continue",
       confirm: "✅ Confirm",
       refresh: "🔄 Refresh",
+      terms: "📜 Terms of Service",
+      privacy: "🔒 Privacy Policy",
     });
     expect(en.common.alreadyUpToDate).toBe("Already up to date");
     expect(en.common.updated("14:32 UTC")).toBe("🕒 Updated 14:32 UTC");
@@ -104,10 +106,18 @@ describe("texts", () => {
   });
 
   it("keeps every callback alert within 200 characters", () => {
+    // Every `{ alert, flag }` pair of the file, wherever it sits.
+    const pairedAlerts = (node: unknown): string[] => {
+      if (typeof node !== "object" || node === null) return [];
+      const own = "alert" in node && typeof node.alert === "string" ? [node.alert] : [];
+      return [...own, ...Object.values(node).flatMap(pairedAlerts)];
+    };
     // `common` texts are also answered to callback queries by the router (V1-04).
-    const alerts = [...Object.values(en.alerts), ...Object.values(en.common)].filter(
-      (text) => typeof text === "string",
-    );
+    const alerts = [
+      ...pairedAlerts(en),
+      ...Object.values(en.common).filter((text) => typeof text === "string"),
+    ];
+    expect(pairedAlerts(en)).toContain(en.access.channel.notJoined.alert);
 
     expect(alerts.length).toBeGreaterThan(0);
     for (const text of alerts) expect(text.length).toBeLessThanOrEqual(TG.CALLBACK_ALERT_MAX_CHARS);

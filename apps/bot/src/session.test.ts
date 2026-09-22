@@ -4,6 +4,7 @@ import { createSessionStorage } from "./middleware/session.js";
 import { createBot } from "./index.js";
 import {
   callbackUpdate,
+  fakeData,
   fakePrisma,
   feed,
   interceptApi,
@@ -37,12 +38,12 @@ describe("session storage", () => {
   });
 
   it("drops a row this version cannot read instead of failing every update", async () => {
-    const prisma = fakePrisma(
-      new Map([
+    const prisma = fakePrisma({
+      sessions: new Map([
         ["corrupt", "{not json"],
         ["old", JSON.stringify({ v: 0, wallets: [] })],
       ]),
-    );
+    });
     const storage = createSessionStorage(prisma);
 
     expect(await storage.read("corrupt")).toBeUndefined();
@@ -51,7 +52,7 @@ describe("session storage", () => {
 
   it("skips the write when the session did not change", async () => {
     const rows = new Map([[CHAT_KEY, JSON.stringify({ v: 1, screenMessageId: 42 })]]);
-    const storage = createSessionStorage(fakePrisma(rows));
+    const storage = createSessionStorage(fakePrisma({ sessions: rows }));
 
     const session = await storage.read(CHAT_KEY);
     if (session === undefined) throw new Error("the session was expected to exist");
@@ -67,15 +68,15 @@ describe("session storage", () => {
 
   it("survives a restart of the bot: the row a run wrote is read back by the next", async () => {
     const sessions = new Map<string, string>();
-    const first = fakePrisma(sessions);
-    const bot = createBot(TEST_ENV, first);
+    const first = fakePrisma({ sessions });
+    const bot = createBot(TEST_ENV, first, { data: fakeData() });
     interceptApi(bot);
 
     await feed(bot, callbackUpdate("home:refresh", { messageId: 55 }));
     expect(storedSession(first)).toEqual({ v: 1, screenMessageId: 55 });
 
     // A new process over the same table, with its own client, reads the same session.
-    const second = createSessionStorage(fakePrisma(sessions));
+    const second = createSessionStorage(fakePrisma({ sessions }));
     expect(await second.read(CHAT_KEY)).toEqual({ v: 1, screenMessageId: 55 });
   });
 });

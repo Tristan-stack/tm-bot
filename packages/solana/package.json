@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@launchbot/shared": "workspace:*",
-    "@solana/web3.js": "^1.98.2"
+    "@solana/web3.js": "^1.98.2",
+    "zod": "^4.6.5"
   }
 }

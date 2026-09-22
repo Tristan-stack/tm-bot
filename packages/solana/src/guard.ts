@@ -1,5 +1,5 @@
 import { getClusterConfig, SECOND_MS } from "@launchbot/shared";
-import { Connection } from "@solana/web3.js";
+import { getSolanaRpc } from "./rpc.js";
 
 /** §15: the bot refuses to start if the RPC does not point at devnet. */
 export class DevnetGuardError extends Error {
@@ -20,8 +20,8 @@ export type DevnetGuardParams = {
 /** Proposal. */
 const DEFAULT_TIMEOUT_MS = 10 * SECOND_MS;
 
-const readGenesisHash = (rpcUrl: string): Promise<string> =>
-  new Connection(rpcUrl, "confirmed").getGenesisHash();
+/** On the connection of the process: the endpoint the guard verifies is the one that gets used. */
+const readGenesisHash = (rpcUrl: string): Promise<string> => getSolanaRpc(rpcUrl).getGenesisHash();
 
 /** Only the host is exposed: the query string of an RPC URL can hold an API key. */
 export function rpcHost(rpcUrl: string): string {

@@ -15,12 +15,25 @@ import {
   renderInputScreen,
   renderScreen,
   ScreenTooLongError,
+  tree,
   urlBtn,
   webAppBtn,
 } from "./index.js";
 
 const badge = "🧪 Devnet";
 const keyboard = [navRow(NAV_HOME)];
+
+describe("tree", () => {
+  it("draws a bold title and one branch per line", () => {
+    expect(tree("👤 ACCOUNT", ["@username", "🆔 1", "👛 No wallet yet"])).toBe(
+      "<b>👤 ACCOUNT</b>\n┌ @username\n├ 🆔 1\n└ 👛 No wallet yet",
+    );
+  });
+
+  it("closes a single line", () => {
+    expect(tree("TITLE", ["only"])).toBe("<b>TITLE</b>\n└ only");
+  });
+});
 
 describe("html", () => {
   it("escapes the four characters Telegram parses", () => {

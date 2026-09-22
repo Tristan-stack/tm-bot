@@ -4,7 +4,13 @@ export { EnvValidationError, loadEnv, parseEnv } from "./env.js";
 export type { Env, EnvIssue } from "./env.js";
 export { runProcess } from "./lifecycle.js";
 export type { RunProcessOptions, Service } from "./lifecycle.js";
-export { createLogger, createRootLogger, LOG_LEVELS, setLogDestination } from "./logger.js";
+export {
+  captureLogs,
+  createLogger,
+  createRootLogger,
+  LOG_LEVELS,
+  setLogDestination,
+} from "./logger.js";
 export { consumeRateLimit, resetRateLimits } from "./rate-limit.js";
 export type { RateLimitedAction, RateLimitVerdict } from "./rate-limit.js";
 export type { Logger, LoggerOptions } from "./logger.js";

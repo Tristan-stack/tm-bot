@@ -2,8 +2,10 @@ import type { PrismaClient, User } from "@launchbot/db";
 import type { Env } from "@launchbot/shared/server";
 import { BotError, GrammyError } from "grammy";
 import type { Bot } from "grammy";
-import type { ApiResponse, Update } from "grammy/types";
+import type { ApiResponse, ChatMember, InlineKeyboardMarkup, Update } from "grammy/types";
 import type { BotContext, SessionData } from "./context.js";
+import { createBot } from "./index.js";
+import type { DataServices } from "./services/data.js";
 
 /** Every Telegram call a test made, in order. Never asserted against a real API. */
 export type ApiCall = { method: string; payload: Record<string, unknown> };
@@ -45,9 +47,14 @@ export function interceptApi(bot: Bot<BotContext>, replies: ApiReplies = {}) {
     return Promise.resolve({ ok: true, result } as ApiResponse<never>);
   });
 
+  const of = (method: string) => calls.filter((call) => call.method === method);
   return {
     calls,
-    of: (method: string) => calls.filter((call) => call.method === method),
+    of,
+    /** The text of the nth call of a method: a screen, or the answer to a click. */
+    text: (method: string, index = 0) => String(of(method)[index]?.payload["text"]),
+    keyboard: (method: string, index = 0) =>
+      (of(method)[index]?.payload["reply_markup"] as InlineKeyboardMarkup).inline_keyboard,
   };
 }
 
@@ -67,8 +74,14 @@ function defaultResult(
       text: payload["text"],
     };
   }
+  // By default the user is in every channel, and the bot administers them.
+  if (method === "getChatMember") return chatMember("member");
   return true;
 }
+
+/** A `getChatMember` result. `extra` holds what a status adds (`is_member`, admin rights). */
+export const chatMember = (status: string, extra: Record<string, unknown> = {}) =>
+  ({ status, user: FROM, ...extra }) as unknown as ChatMember;
 
 /**
  * Feeds one update the way long polling does: `handleUpdate` rethrows a failure, and the
@@ -147,31 +160,50 @@ export const channelPost = (): Update =>
     },
   }) as unknown as Update;
 
+/** A user who is through the first access: current Terms accepted, channel joined. */
 export const TEST_USER: User = {
   id: "cjld2cjxh0000qzrmn831i7rn",
   telegramId: BigInt(FROM.id),
   username: FROM.username,
   firstName: FROM.first_name,
-  termsVersion: null,
-  termsAcceptedAt: null,
-  channelCheckedAt: null,
+  termsVersion: 1,
+  termsAcceptedAt: new Date("2026-09-20T14:01:00Z"),
+  channelCheckedAt: new Date("2026-09-20T14:02:00Z"),
   lastActiveAt: new Date("2026-09-20T14:32:00Z"),
   createdAt: new Date("2026-09-20T14:00:00Z"),
 };
 
-/** Only the calls the middlewares make: a session table and a user upsert. */
-export function fakePrisma(sessions = new Map<string, string>()) {
+/** Someone who has never used the bot: no Terms accepted, channel never checked. */
+export const NEW_USER = { termsVersion: null, termsAcceptedAt: null, channelCheckedAt: null };
+
+/**
+ * Only the calls the bot makes: a session table and one user row, which `update` changes so
+ * the next update of a test sees it. By default the channel was checked just now, so a /start
+ * is served from the cache of the membership.
+ */
+export function fakePrisma(options: { sessions?: Map<string, string>; user?: Partial<User> } = {}) {
+  const { sessions = new Map<string, string>() } = options;
   const upserts: { telegramId: bigint; lastActiveAt: Date }[] = [];
+  const updates: Partial<User>[] = [];
+  let user: User = { ...TEST_USER, channelCheckedAt: new Date(), ...options.user };
   const prisma = {
     sessions,
     upserts,
+    updates,
+    currentUser: () => user,
     user: {
+      update: ({ data }: { data: Partial<User> }) => {
+        updates.push(data);
+        user = { ...user, ...data };
+        return Promise.resolve(user);
+      },
       upsert: (args: { create: { telegramId: bigint }; update: { lastActiveAt: Date } }) => {
         upserts.push({
           telegramId: args.create.telegramId,
           lastActiveAt: args.update.lastActiveAt,
         });
-        return Promise.resolve({ ...TEST_USER, lastActiveAt: args.update.lastActiveAt });
+        user = { ...user, lastActiveAt: args.update.lastActiveAt };
+        return Promise.resolve(user);
       },
     },
     session: {
@@ -205,4 +237,57 @@ export const TEST_ENV = {
   BOT_TOKEN: `123456789:${"AbC-dEf_9".repeat(4)}`,
   SOLANA_CLUSTER: "devnet",
   SOLANA_RPC_URL: "https://api.devnet.solana.com",
+  TERMS_VERSION: 1,
+  WEBAPP_URL: "https://launchbot.example.com",
+  CHANNEL_BOT_ID: "-1001000000001",
+  CHANNEL_BOT_URL: "https://t.me/launchbot_channel",
+  CHANNEL_SUCCESS_ID: "-1001000000002",
+  CHANNEL_SUCCESS_URL: "https://t.me/launchbot_success",
+  CHANNEL_ANNOUNCEMENTS_ID: "-1001000000003",
+  CHANNEL_ANNOUNCEMENTS_URL: "https://t.me/launchbot_news",
 } as unknown as Env;
+
+/** When the fake balances were read: the home screen shows it as "Updated 14:32 UTC". */
+export const BALANCES_READ_AT = new Date("2026-09-21T14:32:00Z");
+
+/**
+ * The data behind the home screen, without the RPC, the price provider or a database: the
+ * user of §4.3, with two wallets and no subscription. `overrides` replaces any read.
+ */
+export function fakeData(overrides: Partial<DataServices> = {}): DataServices {
+  const balances = {
+    wallets: [
+      { id: "w1", name: "Main", publicKey: "pk-main", lamports: 4_200_000_000n },
+      { id: "w2", name: "Second", publicKey: "pk-second", lamports: 50_000_000n },
+    ],
+    totalLamports: 4_250_000_000n,
+    fetchedAt: BALANCES_READ_AT,
+    status: "fresh" as const,
+  };
+  return {
+    getUserBalances: () => Promise.resolve(balances),
+    invalidateUserBalances: () => undefined,
+    getSolUsdPrice: () => Promise.resolve(103.36),
+    getSolUsdQuote: () =>
+      Promise.resolve({ price: 103.36, fetchedAt: BALANCES_READ_AT, isFallback: false }),
+    getSubscriptionSummary: () => Promise.resolve({ active: null, lastExpired: null }),
+    countActiveSubscribers: () => Promise.resolve(767),
+    getBotChannelMemberCount: () => Promise.resolve(1248),
+    ...overrides,
+  };
+}
+
+/** The whole bot on fakes: no Telegram, no database, no RPC, no price provider. */
+export function botHarness(
+  options: {
+    user?: Partial<User>;
+    replies?: ApiReplies;
+    env?: Partial<Env>;
+    data?: Partial<DataServices>;
+  } = {},
+) {
+  const prisma = fakePrisma({ user: options.user });
+  const data = fakeData(options.data);
+  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, { data });
+  return { bot, api: interceptApi(bot, options.replies), prisma, data };
+}

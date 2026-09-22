@@ -11,6 +11,8 @@ import { isNotModified, isUneditable } from "./telegram-errors.js";
  */
 export type ShowStatus = "sent" | "edited" | "sent_new" | "not_modified";
 export type ShowResult = { status: ShowStatus; messageId: number };
+/** `new`: always a new message (/start, §4.3). `auto`: a click edits, anything else sends. */
+export type ShowMode = "auto" | "new";
 
 /**
  * Single-message navigation (§4.3, §4.4): the bot edits one screen message instead of sending
@@ -19,7 +21,7 @@ export type ShowResult = { status: ShowStatus; messageId: number };
 export async function showScreen(
   ctx: BotContext,
   screen: Screen,
-  options: { mode?: "auto" | "new" } = {},
+  options: { mode?: ShowMode } = {},
 ): Promise<ShowResult> {
   // /start always sends a new message (§4.3).
   if (options.mode === "new") return send(ctx, screen);
@@ -63,14 +65,18 @@ async function dropOldKeyboard(ctx: BotContext): Promise<void> {
   }
 }
 
+/** The two halves of a blocked click: a pair of en.ts, or `tooManyActions`. */
+export type Block = { alert: string; flag: string };
+
 /**
  * A blocked click (§4.5): the alert is the quick feedback, and the screen is rewritten with
  * the flag that says what is missing. An identical screen means the flag is already there.
  */
 export async function blockWithFlag(
   ctx: BotContext,
-  params: { alert: string; render: () => Screen },
-): Promise<ShowResult> {
-  await notify(ctx, params.alert, { alert: true });
-  return showScreen(ctx, params.render());
+  block: Block,
+  render: (flag: string) => Screen,
+): Promise<void> {
+  await notify(ctx, block.alert, { alert: true });
+  await showScreen(ctx, render(block.flag));
 }

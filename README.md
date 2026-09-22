@@ -155,8 +155,8 @@ Le `.env` de la racine est chargé quel que soit le dossier courant. Les variabl
 dans l'environnement réel priment sur le fichier. Variables optionnelles hors §12 : `LOG_LEVEL`
 (défaut `info`) et `POSTGRES_PORT` (docker-compose).
 
-`WEBAPP_URL` doit être en `https://` dès le démarrage : lancer le tunnel avant le bot, ou mettre
-une URL https provisoire tant que la Mini App n'existe pas.
+`WEBAPP_URL` doit être en `https://` dès le démarrage : lancer le tunnel avant le bot. Avec une URL
+https qui ne répond pas, le bot démarre, mais les boutons Terms et Privacy n'ouvrent rien.
 
 ### Logs
 
@@ -217,8 +217,9 @@ fournisseur de tunnel, y ajouter son hôte, sinon Vite refuse la requête. L'URL
 change à chaque lancement. Variante : deux tunnels (Mini App et API), avec `API_URL` sur le second ;
 le CORS de l'API n'autorise que l'origine de `WEBAPP_URL`.
 
-Tester une page sans attendre les boutons du bot (V1-06) : s'envoyer un bouton `web_app`, depuis le
-chat privé avec le bot, jamais depuis un canal.
+Tester une page : les boutons de l'écran Terms (voir « Premier accès ») ouvrent `/terms` et
+`/privacy`. Pour une autre page, s'envoyer un bouton `web_app`, depuis le chat privé avec le bot,
+jamais depuis un canal.
 
 ```sh
 curl "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
@@ -262,7 +263,7 @@ interdit `@launchbot/solana` : c'est ce qui permet qu'elle démarre sans garde-f
 ## Le bot
 
 `pnpm --filter @launchbot/bot start` lance [apps/bot/src/main.ts](apps/bot/src/main.ts), qui passe
-`createBotService()` à `runProcess` (V1-05 y ajoutera l'API, dans le même process). Tout le démarrage
+`createBotService()` et `createApiService()` à `runProcess` : le bot et l'API, dans le même process. Tout le démarrage
 se fait dans le `start()` du service, donc un refus est loggé proprement (nom et message de l'erreur,
 jamais de stack) et le process sort en code 1. Ordre de démarrage :
 
@@ -272,11 +273,12 @@ jamais de stack) et le process sort en code 1. Ordre de démarrage :
    ne montrent que l'hôte du RPC, jamais sa query, qui peut contenir une clé d'API ;
 3. `SELECT 1` sur PostgreSQL ;
 4. `bot.init()` (le token n'apparaît dans aucun log) ;
-5. `setMyCommands`, puis long polling (`bot.start` supprime lui-même le webhook).
+5. vérification des droits du bot dans ses trois canaux (voir « Premier accès ») ;
+6. `setMyCommands`, puis long polling (`bot.start` supprime lui-même le webhook).
 
 Chaîne de middlewares, dans cet ordre : `privateOnly` (en groupe ou en canal le bot ne fait rien,
 aucune écriture en base), `ensureAnswered`, limite globale de fréquence, `touchUser` (activité, qui
-pilote la purge à 48 h), sessions, conversations, puis les handlers et le routeur de callbacks.
+pilote la purge à 48 h), sessions, `access.gate` (premier accès), conversations, puis `/start` et le routeur de callbacks. Les commandes admin (V1-38) s'enregistrent après la gate.
 `ensureAnswered` **englobe** la suite : une fois les handlers passés, il ferme toute callback query
 restée sans réponse. Placé en fin de chaîne, il serait sauté par tout handler qui n'appelle pas
 `next()`, ce que font les commandes et le plugin conversations. `bot.catch` logge la forme de
@@ -293,6 +295,115 @@ date ». `blockWithFlag` répond une alerte et réécrit l'écran avec le flag (
 Sessions et conversations partagent la table `Session` (préfixe `conversation-` pour les secondes).
 Une session que la version en place ne sait pas lire est jetée et reconstruite, donc un déploiement
 ne casse aucune conversation. **Aucun secret en session** : les lignes sont en clair.
+
+### Accueil et menu principal (V1-08)
+
+`registerHome` ([apps/bot/src/features/home/home.ts](apps/bot/src/features/home/home.ts)) branche
+`/start` (toujours un nouveau message), `nav:home` — la cible unique de Back et de Menu, en édition —,
+le Refresh et la reprise `home` du premier accès.
+
+- `loadHomeData` lit les cinq sources en parallèle. Aucune ne peut empêcher l'affichage : prix
+  inconnu → `SOL —` et **aucun** montant USD ; membres inconnus → `— members` ; soldes jamais lus →
+  `2 wallets · balance unavailable`. `buildHomeScreen` et `computeNextStep` sont purs.
+- **Refresh** (`home:refresh`) : `mayReadFreshBalances(ctx)` autorise une lecture des soldes sans
+  cache au plus une fois par 10 s et par utilisateur (`RATE_LIMITS.refresh`, partagée par tous les
+  boutons Refresh : accueil, détail de wallet, Dev buy). Trop tôt, le Refresh lit le cache, sans
+  message. Le prix n'est jamais forcé. « Updated » est à la minute : un Refresh sans changement dans
+  la même minute donne l'écran identique, que Telegram refuse d'éditer → toast « Already up to date ».
+- Callback data du menu (`MENU` dans
+  [screen.ts](apps/bot/src/features/home/screen.ts)) : `lc:open`, `sim:open`, `sub:open`,
+  `wal:list`, `sup:open`, `home:refresh`, plus `nav:home`. Les tickets de section reprennent
+  **exactement** ces valeurs.
+- Sections pas encore livrées : `registerComingSoon` enregistre un écran **provisoire** sur leur
+  domaine (`router.registerProvisional`). Le `router.register` du ticket d'une section le remplace,
+  sans rien retirer nulle part. `showComingSoon(ctx, ui, section)`
+  ([coming-soon.ts](apps/bot/src/features/home/coming-soon.ts)) sert aussi pour un bouton laissé à
+  un ticket ultérieur.
+
+Routeur de callbacks : `router.register(domain, { action: handler })`. Un domaine ou une action
+inconnus reçoivent « This button has expired » du routeur lui-même, aucun handler n'a à le faire.
+
+Un clic bloqué (§4.5) est une paire `{ alert, flag }` de `en.ts`, passée à `blockWithFlag` : l'alerte
+et la ligne écrite à l'écran vont toujours ensemble. `tooManyActions(retryAfterMs)` donne la paire
+d'une action trop fréquente.
+
+Les tests du bot tournent sur `botHarness()` ([test-harness.ts](apps/bot/src/test-harness.ts)) : faux
+Telegram, fausse base, faux services de données. Sans l'option `data`, `createBot` branche le vrai RPC
+et CoinGecko.
+
+### Services de données (V1-07)
+
+Les lectures derrière l'accueil et les écrans suivants, sans aucun affichage. `createDataServices`
+([apps/bot/src/services/data.ts](apps/bot/src/services/data.ts)) les assemble, une instance par
+process : les caches (§4.3) vivent dedans, en mémoire.
+
+| Service                                                             | Où                  | Cache                                        |
+| ------------------------------------------------------------------- | ------------------- | -------------------------------------------- |
+| `getSolUsdPrice`, `getSolUsdQuote`                                  | `@launchbot/solana` | 60 s, échecs compris ; repli 10 min          |
+| `getUserBalances(userId, { skipCache? })`                           | `@launchbot/db`     | 30 s par utilisateur                         |
+| `countActiveSubscribers`                                            | `@launchbot/db`     | 60 s                                         |
+| `getBotChannelMemberCount`                                          | `apps/bot`          | 10 min ; en erreur, dernière valeur connue   |
+| `getActiveSubscription`, `getSubscriptionSummary`, `getWalletQuota` | `@launchbot/db`     | aucun : une activation se voit tout de suite |
+| `getBalancesFresh(rpc, addresses)`                                  | `@launchbot/solana` | aucun : contrôles internes, un appel groupé  |
+
+- **Prix SOL/USD (D11)** : CoinGecko Simple Price, sans clé, un appel par minute au plus — y compris
+  quand l'API est en panne. En échec, le dernier prix connu sert pendant 10 min (âge recalculé à
+  chaque lecture), puis `null` : les écrans masquent alors **tous** les montants USD, et aucune
+  facture n'est créée. `SOL_PRICE_API_URL` est optionnel ; une autre URL doit répondre au même format
+  `{"solana":{"usd":103.36}}`. Un autre fournisseur s'ajoute derrière `SolPriceProvider`.
+- **RPC** : `getSolanaRpc(env.SOLANA_RPC_URL)` est la seule connexion du process, en `confirmed`,
+  celle que le garde-fou devnet a vérifiée. Chaque appel a un timeout de 5 s et les 429 ne sont pas
+  rejoués en silence : le bot traite une update à la fois, un RPC qui traîne bloquerait tout le monde.
+  Ne jamais loguer son URL (`rpcHost` donne l'hôte).
+- **Soldes** : un seul `getMultipleAccountsInfo` par lecture (par paquets de 100), lamports en
+  `bigint`, un compte inexistant vaut 0. Créer, importer ou supprimer un wallet fait ignorer le
+  cache. `getUserBalances` **ne lève jamais** pour une panne du RPC, et rend toujours les wallets :
+  `status` vaut `fresh`, `stale` (derniers soldes lus) ou `unavailable` (`lamports: null`). Une
+  décision d'argent (retrait, paiement) lit `getBalancesFresh`, qui lève. `@launchbot/db` ne dépend
+  pas de `@launchbot/solana` : le lecteur de lamports est injecté.
+- **Valeurs partagées qui peuvent tomber** (prix, membres du canal) : `createLastKnownValue`
+  (`@launchbot/shared`) met en cache l'issue de la tentative, échecs compris, et sert la dernière
+  valeur connue pendant la panne. Les lectures Telegram qu'un écran attend (`getChatMember`,
+  `getChatMemberCount`) ont un timeout de 5 s (`readTimeout()`).
+- `createTtlCache` (`@launchbot/shared`) sert aux caches à clés : single-flight, un chargement
+  rejeté n'est pas mis en cache, `peek` rend une valeur expirée.
+- Rien ne relit l'environnement en douce : `buildWebAppUrl(path, env.WEBAPP_URL)` et
+  `getSolanaRpc(env.SOLANA_RPC_URL)` reçoivent leur configuration.
+- `usdOf(lamports, price)`, `isWalletReady` et `getWalletLimit` sont dans `@launchbot/shared`.
+
+### Premier accès (V1-06)
+
+Aucun menu avant d'avoir accepté la version courante des Terms (écran 1) puis rejoint le canal du bot
+(écran 2). `createAccess` ([apps/bot/src/features/access/access.ts](apps/bot/src/features/access/access.ts))
+fournit tout ; les parcours s'y branchent depuis `createBot`, comme le fait l'accueil :
+
+- `gate` : à **chaque** message ou clic, `termsVersion !== TERMS_VERSION` → écran 1, puis
+  `channelCheckedAt === null` → écran 2. Seuls les boutons `acc:*` passent toujours. Aucun appel à
+  Telegram ici : `ctx.user` est déjà chargé.
+- `ensureChannelMembership(ctx, { mode, resume, display? })` : `true` si l'utilisateur est dans le
+  canal, sinon affiche l'écran 2 et renvoie `false`. `/start` l'appelle en mode `cached` (10 min,
+  sans appel à Telegram tant que la dernière vérification positive est récente) ; Launch Coin (V1-35)
+  l'appellera en mode `fresh` avec `resume: "launch"`, ce qui ajoute la note « Join the channel to
+  launch a coin. » à l'écran.
+- `registerResume(key, handler)` : où « I've joined » ramène l'utilisateur. `home` est l'accueil ;
+  une clé inconnue retombe sur `home`. Le bouton porte la clé (`acc:join:launch`), donc l'écran se
+  redessine à l'identique après un clic non concluant.
+- `createMembershipCheck` ([channel-membership.ts](apps/bot/src/services/channel-membership.ts)) : la
+  logique seule, sans écran. `channelCheckedAt` est la date de la dernière vérification
+  **positive** : non membre → `null`, erreur de Telegram → inchangé, et refus (fail closed).
+  `ctx.user` suit ce que la vérification a écrit.
+
+« I've joined » est limité à 5 clics par 30 s (`RATE_LIMITS.channelCheck`, proposition) : chaque clic
+coûte un `getChatMember`.
+
+Au démarrage, `checkChannelRights` vérifie que le bot est administrateur des trois canaux avec le
+droit de publier. Un défaut donne un log `error` qui nomme la variable (`CHANNEL_SUCCESS_ID`…) et
+n'arrête pas le bot : on corrige les droits dans Telegram, sans redémarrer. Si le bot n'administre pas
+le canal du bot, `getChatMember` échoue et **personne ne passe l'écran 2**.
+
+Rejouer le premier accès avec son propre compte : remettre `termsVersion` et `channelCheckedAt` à
+`NULL` sur sa ligne `User` (`pnpm db:studio`), ou passer `TERMS_VERSION=2` après avoir ajouté la date
+de la version 2 dans [packages/shared/src/legal.ts](packages/shared/src/legal.ts).
 
 ## Devnet
 

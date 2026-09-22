@@ -5,6 +5,8 @@
  */
 export const PACKAGE_NAME = "@launchbot/shared";
 
+export * from "./cache/last-known.js";
+export * from "./cache/ttl-cache.js";
 export * from "./callback.js";
 export * from "./cluster.js";
 export * from "./constants.js";
@@ -17,3 +19,4 @@ export { DEFAULT_TERMS_VERSION, LEGAL_UPDATED_AT, resolveTermsVersion } from "./
 export * from "./schemas.js";
 export * from "./ui/index.js";
 export { joinUrl, withoutTrailingSlash } from "./url.js";
+export { getWalletLimit, isWalletReady } from "./wallets.js";

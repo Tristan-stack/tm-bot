@@ -54,3 +54,14 @@ export async function resetTestDatabase(suffix?: string): Promise<string> {
   });
   return url.toString();
 }
+
+/** A `Wallet` row with placeholder key material: what a test needs when it is not about keys. */
+export const testWalletData = (userId: string, name: string, publicKey: string) => ({
+  userId,
+  name,
+  publicKey,
+  source: "CREATED" as const,
+  encSecretKey: new Uint8Array([1, 2, 3]),
+  iv: new Uint8Array([4, 5]),
+  authTag: new Uint8Array([6]),
+});

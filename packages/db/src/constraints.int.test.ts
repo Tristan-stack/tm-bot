@@ -3,7 +3,7 @@ import { createPrismaClient } from "./client.js";
 import { isUniqueViolation } from "./errors.js";
 import { Prisma } from "./generated/prisma/client.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
-import { resetTestDatabase } from "./test-db.js";
+import { resetTestDatabase, testWalletData } from "./test-db.js";
 
 // Needs PostgreSQL (`pnpm db:up`). The launchbot_test database is dropped and rebuilt with
 // `prisma migrate deploy`, which also proves that the migrations apply to an empty database.
@@ -20,16 +20,6 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
   });
 
   const createUser = () => prisma.user.create({ data: { telegramId: nextTelegramId++ } });
-
-  const walletData = (userId: string, name: string, publicKey: string) => ({
-    userId,
-    name,
-    publicKey,
-    source: "CREATED" as const,
-    encSecretKey: new Uint8Array([1, 2, 3]),
-    iv: new Uint8Array([4, 5]),
-    authTag: new Uint8Array([6]),
-  });
 
   const paymentData = (userId: string, depositAddress: string) => ({
     userId,
@@ -101,17 +91,17 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
 
   it("keeps wallet names and addresses unique per user only", async () => {
     const [alice, bob] = [await createUser(), await createUser()];
-    await prisma.wallet.create({ data: walletData(alice.id, "Main", "ADDRESS_1") });
+    await prisma.wallet.create({ data: testWalletData(alice.id, "Main", "ADDRESS_1") });
 
     await expect(
-      prisma.wallet.create({ data: walletData(alice.id, "Main", "ADDRESS_2") }),
+      prisma.wallet.create({ data: testWalletData(alice.id, "Main", "ADDRESS_2") }),
     ).rejects.toSatisfy((error) => isUniqueViolation(error, ["userId", "name"]));
     await expect(
-      prisma.wallet.create({ data: walletData(alice.id, "Other", "ADDRESS_1") }),
+      prisma.wallet.create({ data: testWalletData(alice.id, "Other", "ADDRESS_1") }),
     ).rejects.toSatisfy((error) => isUniqueViolation(error, ["userId", "publicKey"]));
     // Another user may reuse the name, and import the same key.
     await expect(
-      prisma.wallet.create({ data: walletData(bob.id, "Main", "ADDRESS_1") }),
+      prisma.wallet.create({ data: testWalletData(bob.id, "Main", "ADDRESS_1") }),
     ).resolves.toMatchObject({ name: "Main" });
   });
 
@@ -125,12 +115,15 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
 
     await expect(
       prisma.wallet.create({
-        data: { ...walletData(user.id, "Seeded", "ADDRESS_S"), ...mnemonic },
+        data: { ...testWalletData(user.id, "Seeded", "ADDRESS_S"), ...mnemonic },
       }),
     ).resolves.toMatchObject({ source: "CREATED" });
     await expect(
       prisma.wallet.create({
-        data: { ...walletData(user.id, "Partial", "ADDRESS_P"), encMnemonic: mnemonic.encMnemonic },
+        data: {
+          ...testWalletData(user.id, "Partial", "ADDRESS_P"),
+          encMnemonic: mnemonic.encMnemonic,
+        },
       }),
     ).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
   });
@@ -164,7 +157,9 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
 
   it("purges a user but keeps payments and withdrawals, detached from the account", async () => {
     const user = await createUser();
-    const wallet = await prisma.wallet.create({ data: walletData(user.id, "Main", "ADDRESS_X") });
+    const wallet = await prisma.wallet.create({
+      data: testWalletData(user.id, "Main", "ADDRESS_X"),
+    });
     const payment = await prisma.payment.create({ data: paymentData(user.id, "DEPOSIT_PURGE") });
     await prisma.subscription.create({ data: subscriptionData(user.id, payment.id) });
     await prisma.aiGeneration.create({ data: { userId: user.id, kind: "TEXT" } });
@@ -206,7 +201,9 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
 
   it("keeps the withdrawals of a deleted wallet", async () => {
     const user = await createUser();
-    const wallet = await prisma.wallet.create({ data: walletData(user.id, "Main", "ADDRESS_W") });
+    const wallet = await prisma.wallet.create({
+      data: testWalletData(user.id, "Main", "ADDRESS_W"),
+    });
     const withdrawal = await prisma.withdrawal.create({
       data: {
         userId: user.id,

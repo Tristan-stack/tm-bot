@@ -10,6 +10,24 @@ export const PACKAGE_NAME = "@launchbot/db";
 
 export { createPrismaClient, disconnectPrisma, prisma } from "./client.js";
 export { isUniqueViolation } from "./errors.js";
-export { touchUser } from "./services/user.js";
+export { createBalancesService } from "./services/balances.js";
+export type {
+  BalancesDeps,
+  BalancesService,
+  UserBalances,
+  WalletBalance,
+} from "./services/balances.js";
+export {
+  createActiveSubscriberCounter,
+  getActiveSubscription,
+  getSubscriptionSummary,
+  getWalletQuota,
+} from "./services/subscriptions.js";
+export type {
+  SubscriptionInfo,
+  SubscriptionSummary,
+  WalletQuota,
+} from "./services/subscriptions.js";
+export { acceptTerms, setChannelCheckedAt, touchUser } from "./services/user.js";
 export type { TelegramIdentity } from "./services/user.js";
 export * from "./generated/prisma/client.js";

@@ -105,6 +105,20 @@ export function renderInputScreen(params: InputScreenParams): Screen {
   return renderScreen({ header, description: prompt, info: [...currentLine, ...rules], keyboard });
 }
 
+/**
+ * A titled list drawn as a tree (§4.3, §9.1). Lines are trusted HTML, like every block.
+ *
+ *     <b>👤 ACCOUNT</b>
+ *     ┌ @username
+ *     ├ 🆔 123456789
+ *     └ 👛 No wallet yet
+ */
+export function tree(title: string, lines: string[]): string {
+  const last = lines.length - 1;
+  const branch = (index: number) => (index === last ? "└" : index === 0 ? "┌" : "├");
+  return [`<b>${title}</b>`, ...lines.map((line, index) => `${branch(index)} ${line}`)].join("\n");
+}
+
 /** `data` comes from `encodeCallback`, which has already checked its format and its size. */
 export const cbBtn = (label: string, data: CallbackData): Button => ({
   text: label,

@@ -1,5 +1,5 @@
 import { en } from "@launchbot/shared";
-import { setLogDestination } from "@launchbot/shared/server";
+import { captureLogs, setLogDestination } from "@launchbot/shared/server";
 import { Bot } from "grammy";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BotContext } from "./context.js";
@@ -13,16 +13,6 @@ import {
   textUpdate,
 } from "./test-harness.js";
 import type { ApiReplies } from "./test-harness.js";
-
-/**
- * Captures what the logger really writes, formatting and scrubbing included: the modules bind
- * their logger at import time, so the destination is where a test can read them.
- */
-function captureLogs() {
-  const lines: string[] = [];
-  setLogDestination({ write: (line) => void lines.push(line) });
-  return lines;
-}
 
 afterEach(() => {
   setLogDestination(undefined);

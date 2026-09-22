@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../generated/prisma/client.js";
-import { touchUser } from "./user.js";
+import { acceptTerms, setChannelCheckedAt, touchUser } from "./user.js";
 
 type UpsertArgs = {
   where: { telegramId: bigint };
@@ -64,5 +64,39 @@ describe("touchUser", () => {
 
     const written = upsert.mock.calls[0]?.[0]?.update["lastActiveAt"] as Date;
     expect(written.getTime()).toBeGreaterThanOrEqual(before);
+  });
+});
+
+function fakeUpdate() {
+  const update = vi.fn((args: { where: { id: string }; data: Record<string, unknown> }) =>
+    Promise.resolve({ id: args.where.id, ...args.data }),
+  );
+  return { prisma: { user: { update } } as unknown as PrismaClient, update };
+}
+
+describe("acceptTerms", () => {
+  it("records the accepted version with its date", async () => {
+    const { prisma, update } = fakeUpdate();
+
+    await acceptTerms(prisma, "u1", 2, NOW);
+
+    expect(update).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "u1" },
+      data: { termsVersion: 2, termsAcceptedAt: NOW },
+    });
+  });
+});
+
+describe("setChannelCheckedAt", () => {
+  it("writes the date of a positive check, and null after a negative one", async () => {
+    const { prisma, update } = fakeUpdate();
+
+    await setChannelCheckedAt(prisma, "u1", NOW);
+    await setChannelCheckedAt(prisma, "u1", null);
+
+    expect(update.mock.calls.map(([args]) => args.data)).toEqual([
+      { channelCheckedAt: NOW },
+      { channelCheckedAt: null },
+    ]);
   });
 });

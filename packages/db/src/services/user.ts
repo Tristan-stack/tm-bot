@@ -25,3 +25,28 @@ export function touchUser(
     update: { username, firstName, lastActiveAt: now },
   });
 }
+
+/** Records the version of the Terms the user accepted, and when (§4.2, §11.2). */
+export function acceptTerms(
+  prisma: PrismaClient,
+  userId: string,
+  version: number,
+  now: Date = new Date(),
+): Promise<User> {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { termsVersion: version, termsAcceptedAt: now },
+  });
+}
+
+/**
+ * `channelCheckedAt` is the date of the last check that found the user in the channel of the
+ * bot: `null` after a check that did not (§4.2).
+ */
+export function setChannelCheckedAt(
+  prisma: PrismaClient,
+  userId: string,
+  at: Date | null,
+): Promise<User> {
+  return prisma.user.update({ where: { id: userId }, data: { channelCheckedAt: at } });
+}

@@ -90,6 +90,16 @@ export function setLogDestination(destination: DestinationStream | undefined): v
   captured = destination;
 }
 
+/**
+ * Test seam: captures what the loggers really write, formatting and scrubbing included. The
+ * caller restores the output with `setLogDestination(undefined)` in an `afterEach`.
+ */
+export function captureLogs(): string[] {
+  const lines: string[] = [];
+  setLogDestination({ write: (line) => void lines.push(line) });
+  return lines;
+}
+
 /** Child logger tagged `{ module: name }`. All processes log through it: `console` is banned. */
 export function createLogger(name: string): Logger {
   if (root === undefined) {

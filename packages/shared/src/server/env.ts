@@ -129,7 +129,7 @@ const envSchema = z.object({
     }),
   TREASURY_WALLET: required().refine(isSolanaAddress, REASON.treasury),
   TERMS_VERSION: integer(REASON.positiveInt, 1).default(DEFAULT_TERMS_VERSION),
-  // Optional here: V1-07 picks the price provider (D11).
+  // Optional: CoinGecko Simple Price by default (D11). Another URL must answer the same shape.
   SOL_PRICE_API_URL: httpUrl().optional(),
   // A key alone does not enable AI Generate: a provider must also be implemented (DEC-02).
   LLM_API_KEY: z.string().optional(),

@@ -1,15 +1,17 @@
+import type { PrismaClient } from "@launchbot/db";
 import { en, encodeCallback } from "@launchbot/shared";
 import { resetRateLimits } from "@launchbot/shared/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createBot, createBotService } from "./index.js";
+import { MENU } from "./features/home/screen.js";
+import { createBotService } from "./index.js";
 import { createCallbackRouter } from "./router/callback-router.js";
 import {
+  botHarness,
   callbackUpdate,
   feed,
   FIRST_MESSAGE_ID,
   channelPost,
   fakePrisma,
-  interceptApi,
   storedSession,
   TEST_ENV,
   telegramError,
@@ -17,14 +19,9 @@ import {
 } from "./test-harness.js";
 import type { ApiReplies } from "./test-harness.js";
 
-const REFRESH = encodeCallback("home", "refresh");
+const REFRESH = MENU.refresh;
 
-function harness(replies: ApiReplies = {}) {
-  const prisma = fakePrisma();
-  const bot = createBot(TEST_ENV, prisma);
-  const api = interceptApi(bot, replies);
-  return { bot, api, prisma };
-}
+const harness = (replies: ApiReplies = {}) => botHarness({ replies });
 
 beforeEach(resetRateLimits);
 
@@ -153,11 +150,21 @@ describe("callback router", () => {
     expect(api.of("editMessageText")).toEqual([]);
   });
 
-  it("refuses two handlers for the same domain", () => {
+  it("refuses two registrations of the same domain", () => {
     const router = createCallbackRouter();
-    router.register("wal", () => undefined);
+    router.register("wal", { list: () => undefined });
 
-    expect(() => router.register("wal", () => undefined)).toThrow(/already registered/);
+    expect(() => router.register("wal", { list: () => undefined })).toThrow(/already registered/);
+  });
+
+  it("lets the ticket of a section replace its provisional screen, in either order", () => {
+    const router = createCallbackRouter();
+    router.registerProvisional("wal", () => undefined);
+
+    expect(() => router.register("wal", { list: () => undefined })).not.toThrow();
+    // Registered after the real one, a placeholder changes nothing.
+    router.registerProvisional("wal", () => undefined);
+    expect(() => router.register("wal", { list: () => undefined })).toThrow(/already registered/);
   });
 });
 
@@ -173,8 +180,8 @@ describe("answering a callback query", () => {
   it("closes the query even when the handler said nothing", async () => {
     const { bot, api } = harness();
 
-    // "sup" has no handler yet: the router answers, and never leaves a click spinning.
-    await feed(bot, callbackUpdate(encodeCallback("sup", "open")));
+    // "adm" has no handler yet: the router answers, and never leaves a click spinning.
+    await feed(bot, callbackUpdate(encodeCallback("adm", "open")));
 
     expect(api.of("answerCallbackQuery")).toHaveLength(1);
   });
@@ -215,6 +222,22 @@ describe("createBotService", () => {
 
     await expect(service.start()).rejects.toThrow(/not a devnet RPC/);
     expect(getGenesisHash).toHaveBeenCalledOnce();
+  });
+
+  it("names the database when it cannot be reached, without its URL", async () => {
+    const down = Object.assign(new Error("connect ECONNREFUSED postgresql://user:pw@host/db"), {
+      code: "ECONNREFUSED",
+    });
+    const prisma = { ...fakePrisma(), $queryRaw: () => Promise.reject(down) } as PrismaClient;
+    const getGenesisHash = vi
+      .fn()
+      .mockResolvedValue("EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG");
+    const service = createBotService({ env: TEST_ENV, prisma, getGenesisHash });
+
+    const start = service.start();
+
+    await expect(start).rejects.toThrow("cannot reach the database of DATABASE_URL (ECONNREFUSED)");
+    await expect(start).rejects.not.toThrow("user:pw");
   });
 
   it("does nothing until it is started: building the service has no side effect", () => {
