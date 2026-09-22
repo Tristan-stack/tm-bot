@@ -218,7 +218,7 @@ describe("loadHomeData", () => {
     loadHomeData(fakeData(overrides), TEST_USER, { skipBalanceCache: false, now: NOW });
 
   const balancesOf = (lamports: bigint | null): UserBalances => ({
-    wallets: [{ id: "w1", name: "Main", publicKey: "pk-main", lamports }],
+    wallets: [{ id: "w1", name: "Main", publicKey: "pk-main", createdAt: NOW, lamports }],
     totalLamports: lamports,
     fetchedAt: BALANCES_READ_AT,
     status: lamports === null ? "unavailable" : "fresh",
@@ -388,7 +388,7 @@ describe("provisional screens", () => {
     ["launch", "<b>🚀 LAUNCH COIN</b> · 🧪 Devnet", MENU.launchCoin],
     ["simulate", "<b>📊 SIMULATE A LAUNCH</b> · 🧪 Devnet", MENU.simulate],
     ["subscribe", "<b>⭐ SUBSCRIBE</b> · 🧪 Devnet", MENU.subscribe],
-    ["wallets", "<b>👛 WALLETS</b> · 🧪 Devnet", MENU.wallets],
+    // wallets: delivered by V1-10, tested in features/wallets.
     ["support", "<b>🆘 SUPPORT</b> · 🧪 Devnet", MENU.support],
   ];
 

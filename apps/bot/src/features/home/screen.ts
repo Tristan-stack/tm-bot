@@ -6,13 +6,11 @@ import {
   encodeCallback,
   escapeHtml,
   formatRemaining,
-  formatSol,
   formatSolPrice,
+  formatSolWithUsd,
   formatTimeUtc,
   renderScreen,
   tree,
-  usdOf,
-  withUsd,
 } from "@launchbot/shared";
 import type { Screen, Ui } from "@launchbot/shared";
 import type { Env } from "@launchbot/shared/server";
@@ -53,7 +51,7 @@ function walletsLine({ wallets, solUsd }: HomeData): string {
   const balance =
     wallets.totalLamports === null
       ? en.home.balanceUnavailable
-      : withUsd(formatSol(wallets.totalLamports), usdOf(wallets.totalLamports, solUsd));
+      : formatSolWithUsd(wallets.totalLamports, solUsd);
   return en.home.wallets(wallets.count, balance);
 }
 

@@ -80,6 +80,18 @@ export default defineConfig(
     },
   },
   {
+    // The only function that returns a stored key in clear (V1-09, proposal): its import is
+    // reserved to the /getall command (V1-43) and to tests. Listed per folder because a
+    // no-restricted-imports block replaces the options of the blocks above.
+    files: ["apps/bot/**", "apps/worker/**", "packages/db/**"],
+    ignores: ["apps/bot/src/features/admin/**", "**/*.test.ts"],
+    rules: restrictImports([
+      ["@launchbot/solana"],
+      "revealWalletSecrets returns a private key in clear: /getall (apps/bot/src/features/admin) only.",
+      ["revealWalletSecrets"],
+    ]),
+  },
+  {
     files: ["packages/sim-engine/**"],
     rules: restrictImports([
       ["@launchbot/*", "node:*"],

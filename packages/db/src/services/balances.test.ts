@@ -56,7 +56,7 @@ describe("getUserBalances", () => {
     expect(findMany).toHaveBeenCalledExactlyOnceWith({
       where: { userId: "u1" },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, publicKey: true },
+      select: { id: true, name: true, publicKey: true, createdAt: true },
     });
     expect(readLamports).toHaveBeenCalledExactlyOnceWith(["pk-a", "pk-b", "pk-c"]);
     expect(balances).toEqual({

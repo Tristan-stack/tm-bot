@@ -1,10 +1,8 @@
-import { en } from "@launchbot/shared";
 import type { Ui } from "@launchbot/shared";
 import type { Composer } from "grammy";
 import type { BotContext } from "../../context.js";
 import { mayReadFreshBalances } from "../../middleware/rate-limit.js";
-import { notify } from "../../navigation/notify.js";
-import { showScreen } from "../../navigation/show-screen.js";
+import { notifyIfUnchanged, showScreen } from "../../navigation/show-screen.js";
 import type { ShowMode, ShowResult } from "../../navigation/show-screen.js";
 import type { CallbackRouter } from "../../router/callback-router.js";
 import type { Access } from "../access/access.js";
@@ -48,11 +46,7 @@ export function registerHome(
   router.register("nav", { home: (ctx) => showHome(ctx) });
 
   router.register("home", {
-    async refresh(ctx) {
-      const { status } = await showHome(ctx, { skipBalanceCache: mayReadFreshBalances(ctx) });
-      // "Updated" shows minutes: a Refresh with nothing new in the same minute is the same
-      // screen, which Telegram refuses to edit.
-      if (status === "not_modified") await notify(ctx, en.common.alreadyUpToDate);
-    },
+    refresh: async (ctx) =>
+      notifyIfUnchanged(ctx, await showHome(ctx, { skipBalanceCache: mayReadFreshBalances(ctx) })),
   });
 }

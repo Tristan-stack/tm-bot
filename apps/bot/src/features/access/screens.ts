@@ -43,7 +43,7 @@ export const buildChannelScreen = (
     header: ui.screenHeader(en.access.channel.title),
     description: en.access.channel.description,
     info: resume === "launch" ? en.access.channel.launchNote : [],
-    flags: flag === undefined ? [] : [flag],
+    flags: [flag],
     keyboard: [
       [urlBtn(en.access.channel.btnJoin, env.CHANNEL_BOT_URL)],
       [cbBtn(en.access.channel.btnJoined, joinedCallback(resume))],

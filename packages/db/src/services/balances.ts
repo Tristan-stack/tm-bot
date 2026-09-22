@@ -4,10 +4,19 @@ import type { PrismaClient } from "../generated/prisma/client.js";
 
 const log = createLogger("db:balances");
 
+/** The columns of a wallet the screens show: never a key column (§9.6). */
+export const WALLET_SUMMARY_SELECT = {
+  id: true,
+  name: true,
+  publicKey: true,
+  createdAt: true,
+} as const;
+
 export type WalletBalance = {
   id: string;
   name: string;
   publicKey: string;
+  createdAt: Date;
   /** `null` when the balances are `unavailable`. */
   lamports: bigint | null;
 };
@@ -60,7 +69,7 @@ export function createBalancesService(deps: BalancesDeps): BalancesService {
       const wallets = await prisma.wallet.findMany({
         where: { userId },
         orderBy: { createdAt: "asc" },
-        select: { id: true, name: true, publicKey: true },
+        select: WALLET_SUMMARY_SELECT,
       });
       const fetchedAt = new Date(now());
       if (wallets.length === 0) {

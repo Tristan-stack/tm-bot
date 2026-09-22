@@ -14,7 +14,7 @@ export {
 export { consumeRateLimit, resetRateLimits } from "./rate-limit.js";
 export type { RateLimitedAction, RateLimitVerdict } from "./rate-limit.js";
 export type { Logger, LoggerOptions } from "./logger.js";
-export { addSecretScrubber, scrubError, scrubSecrets } from "./scrub.js";
+export { addSecretScrubber, CENSOR, scrubError, scrubSecrets } from "./scrub.js";
 export type { SecretScrubber } from "./scrub.js";
 export { buildWebAppUrl } from "./webapp-url.js";
 export type { WebAppPath } from "./webapp-url.js";

@@ -17,6 +17,8 @@ export type Screen = {
 
 type Block = string | string[];
 type BlockName = "description" | "info" | "flags" | "footer";
+/** A line that may not be there: `condition && text`, or an optional field, is dropped. */
+export type OptionalLine = string | false | undefined;
 
 export type ScreenParams = {
   header: string;
@@ -28,7 +30,7 @@ export type ScreenParams = {
    * Blockers and warnings in plain text, with the object and what is missing:
    * `⚠️ Insufficient funds (0.650 SOL missing)`. Written counterpart of every alert (§4.5).
    */
-  flags?: string[];
+  flags?: OptionalLine[];
   /** `🕒 Updated 14:32 UTC` */
   footer?: string;
   keyboard: Button[][];
@@ -45,9 +47,9 @@ export class ScreenTooLongError extends Error {
   }
 }
 
-const blockText = (block: Block | undefined): string =>
+const blockText = (block: Block | OptionalLine[] | undefined): string =>
   (typeof block === "string" ? [block] : (block ?? []))
-    .filter((line) => line.trim() !== "")
+    .filter((line): line is string => typeof line === "string" && line.trim() !== "")
     .join("\n");
 
 /**
@@ -90,19 +92,27 @@ export type InputScreenParams = {
   current?: string | null;
   /** Length, format, bounds. */
   rules: string[];
+  /** What was wrong with the last input (§4.5): the screen is shown again with it. */
+  flags?: OptionalLine[];
   keyboard: Button[][];
 };
 
 /** Input screen (§4.5): shows the current value and the rules, and always has a Cancel button. */
 export function renderInputScreen(params: InputScreenParams): Screen {
-  const { header, prompt, current, rules, keyboard } = params;
+  const { header, prompt, current, rules, flags, keyboard } = params;
   // §15: every input has a "Cancel".
   if (!keyboard.flat().some((button) => button.text === en.btn.cancel)) {
     throw new Error(`An input screen needs a "${en.btn.cancel}" button`);
   }
   const currentLine =
     current === undefined ? [] : [en.common.current(escapeHtml(current ?? en.common.none))];
-  return renderScreen({ header, description: prompt, info: [...currentLine, ...rules], keyboard });
+  return renderScreen({
+    header,
+    description: prompt,
+    info: [...currentLine, ...rules],
+    flags,
+    keyboard,
+  });
 }
 
 /**

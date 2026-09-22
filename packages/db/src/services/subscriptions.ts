@@ -1,4 +1,5 @@
 import { CACHE_TTL_MS, createTtlCache, getWalletLimit } from "@launchbot/shared";
+import type { Db } from "../client.js";
 import type { PrismaClient, Subscription } from "../generated/prisma/client.js";
 
 // Reads only, and never cached (except the counter): an activation (V1-27, V1-28) must show
@@ -16,7 +17,7 @@ const isActive = (now: Date) => ({ status: "ACTIVE", expiresAt: { gt: now } }) a
 
 /** With several active subscriptions: Premium first, then the one that ends last. */
 export function getActiveSubscription(
-  prisma: PrismaClient,
+  prisma: Db,
   userId: string,
   now: Date = new Date(),
 ): Promise<SubscriptionInfo | null> {
@@ -35,7 +36,7 @@ export type SubscriptionSummary = {
 };
 
 export async function getSubscriptionSummary(
-  prisma: PrismaClient,
+  prisma: Db,
   userId: string,
   now: Date = new Date(),
 ): Promise<SubscriptionSummary> {
@@ -58,7 +59,7 @@ export type WalletQuota = {
 };
 
 export async function getWalletQuota(
-  prisma: PrismaClient,
+  prisma: Db,
   userId: string,
   now: Date = new Date(),
 ): Promise<WalletQuota> {

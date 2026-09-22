@@ -223,6 +223,19 @@ describe("renderInputScreen", () => {
     expect(() => renderInputScreen({ ...base, keyboard })).toThrow(/Cancel/);
     expect(() => renderInputScreen({ ...base, keyboard: [] })).toThrow(/Cancel/);
   });
+
+  it("writes what was wrong with the last input under the rules", () => {
+    const screen = renderInputScreen({
+      ...base,
+      current: "Main",
+      flags: ["⚠️ Too long: 41 characters (32 max)."],
+      keyboard: cancel,
+    });
+
+    expect(screen.text).toBe(
+      "<b>✏️ NAME</b>\n\nSend the token name.\n\nCurrent: Main\n32 bytes max\n\n⚠️ Too long: 41 characters (32 max).",
+    );
+  });
 });
 
 describe("buttons", () => {

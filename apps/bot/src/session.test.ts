@@ -25,6 +25,16 @@ describe("session data", () => {
     ["an unknown version", { v: 99, screenMessageId: 42 }, false],
     ["no version", { screenMessageId: 42 }, false],
     ["a screen id of the wrong type", { v: SESSION_VERSION, screenMessageId: "42" }, false],
+    [
+      "a pending rename",
+      { v: SESSION_VERSION, pendingInput: { kind: "wallet_rename", walletId: "w1" } },
+      true,
+    ],
+    [
+      "a pending input of an unknown kind",
+      { v: SESSION_VERSION, pendingInput: { kind: "x" } },
+      false,
+    ],
     ["null", null, false],
     ["a string", "session", false],
   ])("accepts %s: %j", (_label, value, expected) => {

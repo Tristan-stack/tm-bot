@@ -30,4 +30,19 @@ export type {
 } from "./services/subscriptions.js";
 export { acceptTerms, setChannelCheckedAt, touchUser } from "./services/user.js";
 export type { TelegramIdentity } from "./services/user.js";
+export { createWalletService } from "./services/wallets.js";
+export type {
+  CreateWalletResult,
+  DeleteCheck,
+  DeleteResult,
+  GeneratedWallet,
+  RenameIssue,
+  RenameResult,
+  WalletDetailData,
+  WalletListData,
+  WalletsDeps,
+  WalletService,
+  WalletSummary,
+  WalletVault,
+} from "./services/wallets.js";
 export * from "./generated/prisma/client.js";

@@ -10,6 +10,7 @@ export {
   formatSol,
   formatSolAmount,
   formatSolPrice,
+  formatSolWithUsd,
   formatUsd,
   parseSolToLamports,
   usdOf,

@@ -2,7 +2,7 @@ import { DAY_MS, HOUR_MS, SECOND_MS } from "@launchbot/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createPrismaClient } from "../client.js";
 import type { Plan, PrismaClient, SubscriptionStatus } from "../generated/prisma/client.js";
-import { resetTestDatabase, testWalletData } from "../test-db.js";
+import { createTestUser, resetTestDatabase, testWalletData } from "../test-db.js";
 import {
   createActiveSubscriberCounter,
   getActiveSubscription,
@@ -16,7 +16,7 @@ const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs);
 // Needs PostgreSQL (`pnpm db:up`), in a database of its own: suites run in parallel.
 describe.skipIf(!process.env["RUN_DB_TESTS"])("subscription reads (db)", () => {
   let prisma: PrismaClient;
-  let nextTelegramId = 7000n;
+  const createUser = () => createTestUser(prisma);
 
   beforeAll(async () => {
     prisma = createPrismaClient(await resetTestDatabase("subscriptions"));
@@ -29,8 +29,6 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("subscription reads (db)", () => {
   beforeEach(async () => {
     await prisma.subscription.deleteMany();
   });
-
-  const createUser = () => prisma.user.create({ data: { telegramId: nextTelegramId++ } });
 
   const subscribe = (
     userId: string,

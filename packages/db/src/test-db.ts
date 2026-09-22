@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { loadDotenvOnce } from "@launchbot/shared/server";
 import { createPrismaClient } from "./client.js";
+import type { PrismaClient } from "./generated/prisma/client.js";
 
 /** Matches docker-compose.yml: used when no .env exists yet. */
 const DEFAULT_DATABASE_URL = "postgresql://launchbot:launchbot@localhost:5440/launchbot";
@@ -54,6 +55,12 @@ export async function resetTestDatabase(suffix?: string): Promise<string> {
   });
   return url.toString();
 }
+
+let nextTelegramId = 7_000_000n;
+
+/** A fresh user per test: the Telegram ids of a process never collide. */
+export const createTestUser = (prisma: PrismaClient) =>
+  prisma.user.create({ data: { telegramId: nextTelegramId++ } });
 
 /** A `Wallet` row with placeholder key material: what a test needs when it is not about keys. */
 export const testWalletData = (userId: string, name: string, publicKey: string) => ({

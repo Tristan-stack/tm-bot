@@ -45,6 +45,13 @@ export const FEE_MARGIN_LAMPORTS = 50_000_000n;
 /** 1.050 SOL: a wallet is "ready" from 1 SOL + the fee margin (D13). */
 export const WALLET_READY_MIN_LAMPORTS = LAMPORTS_PER_SOL + FEE_MARGIN_LAMPORTS;
 
+// Fee budget of a SOL transfer (V1-11, proposal until V1-13 estimates fees for real)
+/** Base fee of one signature. */
+export const BASE_FEE_LAMPORTS = 5_000n;
+/** A transfer with compute budget instructions uses a few hundred units: a deliberate ceiling. */
+export const TRANSFER_COMPUTE_UNIT_LIMIT = 1_000;
+export const MICROLAMPORTS_PER_LAMPORT = 1_000_000;
+
 // Dev buy (§6, §10.1)
 export const DEV_BUY_MIN_SOL = 1;
 export const DEV_BUY_MAX_SOL = 20;

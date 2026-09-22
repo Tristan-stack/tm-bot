@@ -29,6 +29,7 @@
     "dotenv": "^18.0.1"
   },
   "devDependencies": {
+    "@launchbot/solana": "workspace:*",
     "prisma": "7.10.0"
   }
 }

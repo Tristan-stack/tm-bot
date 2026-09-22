@@ -1,8 +1,8 @@
 import { writeSync } from "node:fs";
-import bs58 from "bs58";
 import { z } from "zod";
 import { SOLANA_CLUSTERS } from "../cluster.js";
 import { DEFAULT_TERMS_VERSION } from "../legal.js";
+import { isValidSolanaAddress } from "../solana-address.js";
 import { withoutTrailingSlash } from "../url.js";
 import { loadDotenvOnce } from "./dotenv.js";
 import { createLogger, LOG_LEVELS } from "./logger.js";
@@ -49,14 +49,6 @@ function decodeEncryptionKey(value: string): Uint8Array | undefined {
   if (!BASE64.test(value) || value.length % 4 !== 0) return undefined;
   const bytes = new Uint8Array(Buffer.from(value, "base64"));
   return bytes.length === 32 ? bytes : undefined;
-}
-
-function isSolanaAddress(value: string): boolean {
-  try {
-    return bs58.decode(value).length === 32;
-  } catch {
-    return false;
-  }
 }
 
 function parseAdminIds(value: string | undefined): number[] | undefined {
@@ -127,7 +119,7 @@ const envSchema = z.object({
       }
       return ids;
     }),
-  TREASURY_WALLET: required().refine(isSolanaAddress, REASON.treasury),
+  TREASURY_WALLET: required().refine(isValidSolanaAddress, REASON.treasury),
   TERMS_VERSION: integer(REASON.positiveInt, 1).default(DEFAULT_TERMS_VERSION),
   // Optional: CoinGecko Simple Price by default (D11). Another URL must answer the same shape.
   SOL_PRICE_API_URL: httpUrl().optional(),

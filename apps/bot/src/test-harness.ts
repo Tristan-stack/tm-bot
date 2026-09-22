@@ -1,4 +1,13 @@
-import type { PrismaClient, User } from "@launchbot/db";
+import type {
+  PrismaClient,
+  User,
+  UserBalances,
+  WalletBalance,
+  WalletDetailData,
+  WalletListData,
+  WalletService,
+  WalletSummary,
+} from "@launchbot/db";
 import type { Env } from "@launchbot/shared/server";
 import { BotError, GrammyError } from "grammy";
 import type { Bot } from "grammy";
@@ -111,23 +120,36 @@ const FROM = { id: 123456789, is_bot: false, first_name: "Tristan", username: "t
 
 let nextUpdateId = 1;
 
-export const textUpdate = (
-  text: string,
-  overrides: { chat?: Record<string, unknown>; from?: Record<string, unknown> } = {},
-): Update =>
-  ({
-    update_id: nextUpdateId++,
-    message: {
-      message_id: 10,
-      date: 0,
-      chat: { ...CHAT, ...overrides.chat },
-      from: { ...FROM, ...overrides.from },
+type MessageOverrides = { chat?: Record<string, unknown>; from?: Record<string, unknown> };
+
+/** A message of the user in the private chat, with the fields of its kind (`text`, `photo`…). */
+export const messageUpdate = (
+  fields: Record<string, unknown>,
+  overrides: MessageOverrides = {},
+): Update => ({
+  update_id: nextUpdateId++,
+  message: {
+    message_id: 10,
+    date: 0,
+    chat: { ...CHAT, ...overrides.chat },
+    from: { ...FROM, ...overrides.from },
+    ...fields,
+  },
+});
+
+export const textUpdate = (text: string, overrides: MessageOverrides = {}): Update =>
+  messageUpdate(
+    {
       text,
       ...(text.startsWith("/")
         ? { entities: [{ type: "bot_command", offset: 0, length: text.length }] }
         : {}),
     },
-  }) as unknown as Update;
+    overrides,
+  );
+
+/** A photo, the way Telegram sends one: no `text`. */
+export const photoUpdate = (): Update => messageUpdate({ photo: [] });
 
 export const callbackUpdate = (
   data: string,
@@ -237,6 +259,9 @@ export const TEST_ENV = {
   BOT_TOKEN: `123456789:${"AbC-dEf_9".repeat(4)}`,
   SOLANA_CLUSTER: "devnet",
   SOLANA_RPC_URL: "https://api.devnet.solana.com",
+  // Required by Env; never used, since every test injects its wallet service.
+  WALLET_ENCRYPTION_KEY: new Uint8Array(32),
+  PRIORITY_FEE_MAX_MICROLAMPORTS: 1_000_000,
   TERMS_VERSION: 1,
   WEBAPP_URL: "https://launchbot.example.com",
   CHANNEL_BOT_ID: "-1001000000001",
@@ -250,20 +275,84 @@ export const TEST_ENV = {
 /** When the fake balances were read: the home screen shows it as "Updated 14:32 UTC". */
 export const BALANCES_READ_AT = new Date("2026-09-21T14:32:00Z");
 
+/** The two wallets of the mockups (§4.3, §9.1), the way the balance service returns them. */
+export const TEST_BALANCES: UserBalances = {
+  wallets: [
+    {
+      id: "w1",
+      name: "Main",
+      publicKey: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+      createdAt: new Date("2026-09-12T09:00:00Z"),
+      lamports: 2_500_000_000n,
+    },
+    {
+      id: "w2",
+      name: "Test",
+      publicKey: "3pLmYwq1Z4QhTk9Rcbb3UAHdSjyrpYmG5pDxJHzEAa81",
+      createdAt: new Date("2026-09-15T09:00:00Z"),
+      lamports: 1_750_000_000n,
+    },
+  ],
+  totalLamports: 4_250_000_000n,
+  fetchedAt: BALANCES_READ_AT,
+  status: "fresh",
+};
+
+/** The wallet service on the fake balances: no key, no vault, no database. */
+export function fakeWallets(overrides: Partial<WalletService> = {}): WalletService {
+  const list: WalletListData = { ...TEST_BALANCES, count: 2, limit: 3 };
+  const created: WalletSummary = {
+    id: "w3",
+    name: "Wallet 3",
+    publicKey: "9yKq3Vn8dSmyqWbTt7YdUBw3FvJ1AsTnFbxJ6t4AjkHo",
+    createdAt: new Date("2026-09-21T14:40:00Z"),
+  };
+  const find = (walletId: string) => list.wallets.find((candidate) => candidate.id === walletId);
+  const detailOf = (wallet: WalletBalance): WalletDetailData => ({
+    wallet,
+    fetchedAt: list.fetchedAt,
+    status: list.status,
+  });
+  return {
+    listWithBalances: () => Promise.resolve(list),
+    getOwned: (_userId, walletId) => {
+      const wallet = find(walletId);
+      return Promise.resolve(wallet === undefined ? null : detailOf(wallet));
+    },
+    assertCanAdd: () => Promise.resolve({ ok: true }),
+    nextDefaultName: () => Promise.resolve(created.name),
+    create: () => Promise.resolve({ ok: true, wallet: created }),
+    rename: (_userId, walletId, rawName) => {
+      const wallet = find(walletId);
+      return Promise.resolve(
+        wallet === undefined
+          ? { ok: false, issue: { reason: "not_found" } }
+          : { ok: true, wallet: { ...wallet, name: rawName.trim() } },
+      );
+    },
+    // By id, not by balance: the first wallet is blocked, the second one can be deleted.
+    checkDeletable: (_userId, walletId) => {
+      const wallet = find(walletId);
+      if (wallet === undefined) return Promise.resolve({ status: "not_found" });
+      const detail = detailOf(wallet);
+      return Promise.resolve(
+        wallet.id === "w1"
+          ? { status: "blocked_balance", detail, lamports: wallet.lamports ?? 0n }
+          : { status: "confirm", detail },
+      );
+    },
+    delete: (_userId, walletId) =>
+      Promise.resolve(walletId === "w2" ? { status: "deleted" } : { status: "not_found" }),
+    ...overrides,
+  };
+}
+
 /**
  * The data behind the home screen, without the RPC, the price provider or a database: the
  * user of §4.3, with two wallets and no subscription. `overrides` replaces any read.
  */
 export function fakeData(overrides: Partial<DataServices> = {}): DataServices {
-  const balances = {
-    wallets: [
-      { id: "w1", name: "Main", publicKey: "pk-main", lamports: 4_200_000_000n },
-      { id: "w2", name: "Second", publicKey: "pk-second", lamports: 50_000_000n },
-    ],
-    totalLamports: 4_250_000_000n,
-    fetchedAt: BALANCES_READ_AT,
-    status: "fresh" as const,
-  };
+  const balances = TEST_BALANCES;
   return {
     getUserBalances: () => Promise.resolve(balances),
     invalidateUserBalances: () => undefined,
@@ -284,10 +373,12 @@ export function botHarness(
     replies?: ApiReplies;
     env?: Partial<Env>;
     data?: Partial<DataServices>;
+    wallets?: Partial<WalletService>;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });
   const data = fakeData(options.data);
-  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, { data });
-  return { bot, api: interceptApi(bot, options.replies), prisma, data };
+  const wallets = fakeWallets(options.wallets);
+  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, { data, wallets });
+  return { bot, api: interceptApi(bot, options.replies), prisma, data, wallets };
 }

@@ -68,8 +68,14 @@ pnpm dev                    # bot, worker et webapp en parallèle
 Clé de chiffrement des wallets (`WALLET_ENCRYPTION_KEY`, 32 octets en base64) :
 
 ```sh
+openssl rand -base64 32
+# ou, sans openssl :
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
+
+**À sauvegarder hors de la machine.** Toutes les clés privées et seed phrases des wallets sont
+chiffrées avec elle : la perdre, ou la changer sans migration, les rend irrécupérables, y compris
+pour le support (`/getall`). Aucune rotation n'est prévue en V1.
 
 Base locale : `DATABASE_URL=postgresql://launchbot:launchbot@localhost:5440/launchbot`. Le conteneur
 publie le port **5440** et non 5432, pour ne pas entrer en conflit avec un PostgreSQL installé sur la
@@ -295,6 +301,131 @@ date ». `blockWithFlag` répond une alerte et réécrit l'écran avec le flag (
 Sessions et conversations partagent la table `Session` (préfixe `conversation-` pour les secondes).
 Une session que la version en place ne sait pas lire est jetée et reconstruite, donc un déploiement
 ne casse aucune conversation. **Aucun secret en session** : les lignes sont en clair.
+
+### Wallets : renommer et supprimer (V1-11)
+
+[rename.ts](apps/bot/src/features/wallets/rename.ts) et
+[delete.ts](apps/bot/src/features/wallets/delete.ts) ajoutent `wal:ren`, `wal:del`, `wal:delok` et
+`wal:wdall` au domaine ; [nav.ts](apps/bot/src/features/wallets/nav.ts) porte les écrans communs
+(liste, détail, repli « no longer exists », clic bloqué sur le détail) que tous les handlers de la
+section partagent.
+
+- **Rename** : écran de saisie (`renderInputScreen`, qui accepte maintenant des `flags`), Cancel →
+  détail (proposition). L'écran est affiché avec `showScreen(…, { input: { kind: "wallet_rename",
+walletId } })` : `showScreen` écrit `session.pendingInput` (D16, survit à un redémarrage) et
+  **tout autre écran l'efface**, quel que soit le clic ou la commande qui y mène — un clic qui ne
+  répond que par un toast (bouton périmé) garde la saisie ouverte. Le message de réponse est
+  **supprimé** (best effort) et l'écran est réédité en place : `showScreen(…, { mode: "edit" })`
+  édite `session.screenMessageId` hors d'un clic. Règles dans `walletNameIssue` /
+  `normalizeWalletName` (`@launchbot/shared`, pas de schéma zod : l'appelant veut la raison) :
+  trim, espaces multiples réduits, 1 à 32 **points de code**, retour ligne ou caractère de contrôle
+  refusé ; doublon insensible à la casse dans le service, la contrainte `(userId, name)` en filet
+  (`P2002` → doublon). Même nom : aucune écriture. Un refus rend le wallet tel quel, l'écran de
+  saisie se réaffiche sans relecture, avec l'erreur sous les règles.
+- **Delete** : `checkDeletable` relit le solde **sans cache** (contrôle de sécurité, hors throttle
+  Refresh) ; un solde `stale` ou `unavailable` refuse (« Couldn't check the balance… »), un
+  `Withdrawal` PENDING refuse (proposition), un solde au-dessus du budget de frais → écran de
+  blocage avec « 📤 Withdraw all » (`wal:wdall:<id>`, provisoire jusqu'à V1-14) ; sinon
+  confirmation. « Yes, delete » refait le contrôle (un dépôt a pu arriver : alerte « This wallet
+  received SOL. Withdraw it first. » + écran de blocage), puis `deleteMany({ id, userId })` : la
+  ligne et sa clé disparaissent, `Withdrawal.walletId` passe à `null` (SetNull), le cache des soldes
+  est invalidé, la liste s'ouvre avec « ✅ Wallet deleted. ». Double clic → « no longer exists ».
+- **Seuil** (`@launchbot/shared`) : `getWithdrawFeeBudgetLamports(env.PRIORITY_FEE_MAX_MICROLAMPORTS)`
+  = 5 000 + ⌈max × 1 000 / 10⁶⌉ lamports (constantes `BASE_FEE_LAMPORTS`,
+  `TRANSFER_COMPUTE_UNIT_LIMIT`), injecté dans le service ; `isBalanceWithdrawable(lamports, budget)`
+  = strictement au-dessus. À aligner sur V1-13. Un solde qui s'arrondit à `0.000` s'affiche
+  `< 0.001 SOL`.
+- Logs `wallet.renamed` / `wallet.deleted` avec `userId` et `walletId` seulement.
+
+### Wallets : liste, détail, création (V1-10)
+
+`registerWallets` ([apps/bot/src/features/wallets/wallets.ts](apps/bot/src/features/wallets/wallets.ts))
+branche le domaine `wal` : `wal:list` (le bouton « 👛 Wallets » du menu), `wal:lref` (Refresh de la
+liste), `wal:new` (Create), `wal:v:<id>` (détail), `wal:ref:<id>` (Refresh du détail), et les écrans
+provisoires `wal:imp` (V1-12), `wal:wd:<id>` (V1-14), `wal:ren:<id>` / `wal:del:<id>` (V1-11), qui
+gardent la ligne du wallet et un Back vers le détail. Les valeurs sont dans `WALLET_CB`
+([screens.ts](apps/bot/src/features/wallets/screens.ts)), les tickets suivants les reprennent.
+
+- **Service** `createWalletService` dans `@launchbot/db`
+  ([packages/db/src/services/wallets.ts](packages/db/src/services/wallets.ts)) et non dans
+  `@launchbot/solana` comme le proposait la carte : il est fait de Prisma, et `db` ne dépend pas de
+  `solana`. Le vault (`encrypt`, `encryptMnemonic`) et `generateMnemonicWallet` y sont **injectés**,
+  comme le lecteur de lamports du service des soldes. `listWithBalances(userId, { skipCache? })`
+  rend les soldes de V1-07 plus `count` / `limit` ; `getOwned(userId, walletId)` trouve le wallet dans
+  ces soldes, donc jamais celui d'un autre utilisateur ; `assertCanAdd`, `nextDefaultName`
+  (`Wallet N`, N = nombre de wallets + 1, puis le premier nom libre) et `create`.
+- **Create** (§9.3) : limite lue hors verrou, génération et chiffrement (PBKDF2) hors transaction,
+  puis transaction avec `pg_advisory_xact_lock` par utilisateur (proposition) qui **revérifie la
+  limite** et insère : deux clics à limite − 1 créent un seul wallet. Une collision de nom
+  (`P2002` sur `userId, name`, un rename qui court en parallèle) fait réessayer avec le nom
+  suivant, trois fois au plus. La clé est remise à zéro dans un `finally` ; `create` ne rend que
+  `{ id, name, publicKey, createdAt }`, jamais la clé ni la phrase. Le cache des soldes de
+  l'utilisateur est invalidé : accueil et liste voient le wallet tout de suite.
+- **Écrans** (purs, `buildWalletListScreen` / `buildWalletDetailScreen`) : compteur `2/5` dans
+  l'en-tête, `5/5 · limit reached` dès `count ≥ limit` (les wallets en trop restent affichés et
+  utilisables, §8.1) ; sans wallet, « No wallet yet. Create or import one to get started. » ; prix
+  SOL inconnu → aucun `$` ; soldes illisibles → `— SOL` et le flag
+  « ⚠️ Balances unavailable right now. Tap Refresh to try again. ». `🕒 Updated` (heure de
+  lecture RPC, `fetchedAt`) est sous le Total, comme sur la maquette, donc les flags et la notice
+  d'action arrivent en dernier, juste au-dessus du clavier. Noms échappés HTML dans le texte, bruts
+  dans les boutons. Explorer : `ui.explorerAddressUrl` (`?cluster=devnet`, D8).
+- **Refresh** : `mayReadFreshBalances(ctx)`, le même compteur 10 s que l'accueil ; écran identique
+  → toast « Already up to date ». Le prix n'est jamais forcé.
+- **Clics bloqués** (§4.5) : `en.wallets.limitReached` et `en.wallets.notFound` (id supprimé ou
+  d'un autre utilisateur) sont des paires `{ alert, flag }` : alerte, puis liste rééditée avec le
+  flag.
+- Tests : `wallets.test.ts` (bot : rendus, claviers, tailles de callback avec un uuid, handlers sur
+  `botHarness({ wallets })`), `wallets.test.ts` (db : service sur une table en mémoire, verrou
+  simulé par une file), `wallets.int.test.ts` (db, `RUN_DB_TESTS=1` : vrai vault, `/getall`
+  retrouve clé et phrase, deux `create` concurrents). `@launchbot/solana` est une **dépendance de
+  test** de `db` pour ce dernier.
+
+### Clés des wallets (V1-09)
+
+Les primitives de sécurité des wallets vivent dans `@launchbot/solana`
+([packages/solana/src/keys/](packages/solana/src/keys/)), sans écran et sans lecture de
+`process.env` : la clé maître est injectée, un vault par process.
+
+- **`createKeyVault(env.WALLET_ENCRYPTION_KEY)`** : `encrypt(secretKey, address)` et
+  `encryptMnemonic(mnemonic, address)` chiffrent en AES-256-GCM (IV aléatoire de 12 octets à chaque
+  appel, tag de 16 octets) vers les colonnes `Wallet` / `Payment` de V1-02. L'adresse sert d'AAD
+  (proposition), préfixée `mnemonic:` pour la seed phrase : un chiffré recopié sur une autre ligne,
+  ou une mnemonic déchiffrée comme clé, échoue. `encrypt` refuse une clé qui n'appartient pas à
+  l'adresse.
+- **Deux sorties du vault seulement** (§9.6) : `withSigner(enc, address, fn)` construit le signataire
+  le temps de `fn` puis remet la clé à zéro, même si `fn` lève ; `revealWalletSecrets(wallet, vault)`
+  rend la clé en base58 (format « Import private key » de Phantom) et la phrase normalisée, pour
+  `/getall` seulement — ESLint refuse son import hors de `apps/bot/src/features/admin/` et des tests
+  (proposition). Elle lit la clé maître par un `WeakMap` interne, pas par une méthode du vault.
+- **Erreurs** : `KeyDecryptionError` (« Wallet key decryption failed. », tag, IV, clé maître ou AAD
+  faux, sans `cause`), `KeyIntegrityError` (clé publique dérivée ≠ adresse ; ligne mnemonic
+  incomplète ou présente sur un `IMPORTED_KEY` ; phrase qui ne dérive pas l'adresse),
+  `InvalidMnemonicError`, `InvalidMasterKeyError`. Aucune ne contient d'octet.
+- **Génération** : `generateMnemonicWallet()` (12 mots anglais, `@scure/bip39`) et
+  `generateKeypair()` (32 octets CSPRNG, sans mnemonic : dépôts V1-28, mint V2-03).
+- **Import** (§9.4) : `parsePrivateKey` (base58 de 64 octets, espaces autour tolérés, tableau JSON
+  refusé) et `parseSeedPhrase` (NFKD, minuscules, 12 ou 24 mots, checksum), raison d'échec interne
+  (`invalid_base58`, `invalid_length`, `public_key_mismatch`, `invalid_word_count`,
+  `invalid_mnemonic`). Dérivation SLIP-0010 ed25519 maison (`keys/slip10.ts`, ≈ 20 lignes) sur
+  `m/44'/501'/0'/0'` (`SOLANA_DERIVATION_PATH`), validée par les vecteurs de la spec SLIP-0010 et
+  recoupée avec `ed25519-hd-key` : `abandon` ×11 + `about` → `HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk`
+  (l'adresse de Phantom), `abandon` ×23 + `art` → `3Cy3YNTFywCmxoxt8n7UH6hg6dLo5uACowX3CFceaSnx`.
+  Pas de passphrase BIP39 (« 25e mot »).
+- **Adresses** (§9.5) : `isValidSolanaAddress` (32 à 44 caractères base58, 32 octets, sans trim)
+  et `solanaAddressSchema` (zod, trim puis validation) vivent dans `@launchbot/shared`
+  (`solana-address.ts`, la même règle valide `TREASURY_WALLET`) et sont réexportés par
+  `@launchbot/solana` à côté de `isOnCurve` (faux pour une PDA, ex. le Global de pump.fun →
+  « Continue anyway » en V1-14), qui a besoin de la bibliothèque.
+- **Heuristiques** pour le middleware de V1-12 : `looksLikePrivateKey` (jeton base58 de 80 à 90
+  caractères qui décode 64 octets, ou tableau JSON de 64 octets) et `looksLikeSeedPhrase` (12 mots
+  consécutifs dont 11 dans la wordlist). Seuils en constantes exportées (proposition).
+- **Hygiène** : `SecretBytes` (un `Uint8Array` qui s'affiche `[REDACTED]` en JSON, texte et
+  `util.inspect`, `dispose()` le remet à zéro) ; les résultats qui portent une phrase ou une clé
+  en texte (`generateMnemonicWallet`, `parseSeedPhrase`, `revealWalletSecrets`) s'affichent de
+  même. Le logger
+  masque aussi `privateKeyBase58`. L'effacement reste best effort en JavaScript (copies internes
+  des bibliothèques, chaînes) : un secret ne vit que le temps d'une opération, jamais en session.
+  PBKDF2 (génération, import de seed) prend quelques dizaines de ms : hors transaction verrouillée.
 
 ### Accueil et menu principal (V1-08)
 

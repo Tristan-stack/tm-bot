@@ -24,6 +24,7 @@ const SECRET_KEYS = [
   "secretKey",
   "encSecretKey",
   "privateKey",
+  "privateKeyBase58",
   "seed",
   "seedPhrase",
   "mnemonic",

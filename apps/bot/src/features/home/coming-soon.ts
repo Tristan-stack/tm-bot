@@ -32,7 +32,6 @@ const SECTIONS: [CallbackDomain, ComingSoonSection][] = [
   ["lc", "launch"], // V1-35
   ["sim", "simulate"], // V1-16, then V1-22
   ["sub", "subscribe"], // V1-29
-  ["wal", "wallets"], // V1-10
   ["sup", "support"], // V1-40
 ];
 

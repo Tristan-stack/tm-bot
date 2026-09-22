@@ -1,6 +1,10 @@
 import { loadDotenvOnce } from "@launchbot/shared/server";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "./generated/prisma/client.js";
+import type { Prisma } from "./generated/prisma/client.js";
+
+/** A read that works on the client and inside an interactive transaction (`tx`). */
+export type Db = Prisma.TransactionClient;
 
 /**
  * Query logging is never enabled: query parameters hold encSecretKey, iv, authTag and

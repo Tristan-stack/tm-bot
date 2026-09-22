@@ -65,6 +65,10 @@ export const usdOf = (lamports: bigint, solUsd: number | null): number | null =>
 export const withUsd = (solText: string, usd: number | null): string =>
   usd === null ? solText : `${solText} (${formatUsd(usd)})`;
 
+/** The balance line of every screen: `formatSol` with its USD value, when there is a price. */
+export const formatSolWithUsd = (lamports: bigint, solUsd: number | null): string =>
+  withUsd(formatSol(lamports), usdOf(lamports, solUsd));
+
 /** `SOL $103.36`, or `SOL —` when the price is unknown. */
 export const formatSolPrice = (solUsd: number | null): string =>
   `SOL ${solUsd === null ? "—" : formatUsd(solUsd)}`;

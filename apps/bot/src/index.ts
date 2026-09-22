@@ -2,12 +2,12 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { conversations } from "@grammyjs/conversations";
 import type { ConversationData, VersionedState } from "@grammyjs/conversations";
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
-import { prisma as defaultPrisma } from "@launchbot/db";
-import type { PrismaClient } from "@launchbot/db";
-import { createUi, en } from "@launchbot/shared";
+import { createWalletService, prisma as defaultPrisma } from "@launchbot/db";
+import type { PrismaClient, WalletService } from "@launchbot/db";
+import { createUi, en, getWithdrawFeeBudgetLamports } from "@launchbot/shared";
 import { createLogger, loadEnv } from "@launchbot/shared/server";
 import type { Env, Service } from "@launchbot/shared/server";
-import { assertDevnet, rpcHost } from "@launchbot/solana";
+import { assertDevnet, createKeyVault, generateMnemonicWallet, rpcHost } from "@launchbot/solana";
 import { Bot, session } from "grammy";
 import { initialSession } from "./context.js";
 import type { BotContext } from "./context.js";
@@ -16,6 +16,7 @@ import { createAccess } from "./features/access/access.js";
 import { checkChannelRights } from "./features/access/startup-check.js";
 import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
+import { registerWallets } from "./features/wallets/wallets.js";
 import { privateOnly } from "./middleware/private-only.js";
 import { globalRateLimit } from "./middleware/rate-limit.js";
 import { CONVERSATION_KEY_PREFIX, createSessionStorage } from "./middleware/session.js";
@@ -38,14 +39,24 @@ export type BotServiceOptions = {
 export function createBot(
   env: Env,
   prisma: PrismaClient,
-  /** Test seam: the real services read the RPC and the price provider. */
-  options: { data?: DataServices } = {},
+  /** Test seam: the real services read the RPC, the price provider and the wallet table. */
+  options: { data?: DataServices; wallets?: WalletService } = {},
 ): Bot<BotContext> {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
   const ui = createUi(env.SOLANA_CLUSTER);
   const router = createCallbackRouter();
   const access = createAccess({ env, prisma, api: bot.api, ui });
   const data = options.data ?? createDataServices({ prisma, api: bot.api, env });
+  const wallets =
+    options.wallets ??
+    createWalletService({
+      prisma,
+      balances: data,
+      generateWallet: generateMnemonicWallet,
+      // The one vault of the process: nothing else holds the master key.
+      vault: createKeyVault(env.WALLET_ENCRYPTION_KEY),
+      withdrawFeeBudgetLamports: getWithdrawFeeBudgetLamports(env.PRIORITY_FEE_MAX_MICROLAMPORTS),
+    });
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
   // unlimited retry would stall every user, and would hang the startup instead of failing it.
@@ -79,6 +90,7 @@ export function createBot(
 
   access.register(router);
   registerHome(bot, router, access, { ui, env, data });
+  registerWallets(bot, router, { ui, wallets, data });
   // Until the ticket of a section registers its domain.
   registerComingSoon(router, ui);
   // Admin commands (V1-38) go here, after the gate: an admin accepts the Terms too.

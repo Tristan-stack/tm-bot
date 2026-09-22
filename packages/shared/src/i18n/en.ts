@@ -157,6 +157,101 @@ export const en = {
     },
   },
 
+  // Wallets (§9.1, §9.2, §9.3). Names arrive escaped, amounts and dates formatted.
+  wallets: {
+    title: `${E.wallets} WALLETS`,
+    /** The counter of the header: `2/5`, or `5/5 · limit reached` (placement proposed). */
+    counter: (count: number, limit: number) =>
+      count >= limit ? `${count}/${limit} · limit reached` : `${count}/${limit}`,
+    description: "Your wallets on the bot. Tap one to see its address, withdraw or rename it.",
+    empty: "No wallet yet. Create or import one to get started.",
+    /** `line` is `7xKX…gAsU · 2.500 SOL ($258.40)`. */
+    entry: (index: number, name: string, line: string) => `${index}. ${name}\n   └ ${line}`,
+    total: (balance: string) => `Total: ${balance}`,
+    /** In place of an amount the RPC could not give. */
+    unavailableSol: "— SOL",
+    // proposed text (D19)
+    balancesUnavailable: `${E.warning} Balances unavailable right now. Tap Refresh to try again.`,
+    // proposed text (D19)
+    balanceUnavailable: `${E.warning} Balance unavailable right now. Tap Refresh to try again.`,
+    limitReached: {
+      alert: "Wallet limit reached. Upgrade to get more.",
+      flag: `${E.warning} Wallet limit reached. Upgrade to get more.`,
+    },
+    // proposed text (D19)
+    notFound: {
+      alert: "This wallet no longer exists.",
+      flag: `${E.warning} This wallet no longer exists.`,
+    },
+    detail: {
+      title: (name: string) => `${E.wallets} ${name}`,
+      // proposed text (D19): §4.5 wants a description, the mockup of §9.2 has none
+      description: "Tap the address to copy it.",
+      balance: (balance: string) => `${E.balance} ${balance}`,
+      /** `date` comes from `formatDate`: `12 Sep 2026`. */
+      created: (date: string) => `${E.created} Created ${date}`,
+    },
+    created: `${E.confirm} Wallet created. Send SOL to this address to fund it.`,
+    /** The wallet line of the provisional screens: `👛 Main · 2.500 SOL ($258.40)`. */
+    walletLine: (name: string, balance: string) => `${E.wallets} ${name} · ${balance}`,
+    btnWallet: (name: string) => `${E.wallets} ${name}`,
+    btnCreate: `${E.create} Create`,
+    btnImport: `${E.import} Import`,
+    btnWithdraw: `${E.withdraw} Withdraw`,
+    btnRename: `${E.rename} Rename`,
+    btnDelete: `${E.delete} Delete`,
+    btnExplorer: `${E.explorer} Explorer`,
+    // Rename (§9.3). The header, "Current" and the rule line are proposed texts (D19).
+    rename: {
+      title: `${E.rename} RENAME WALLET`,
+      prompt: "Send the new name.",
+      rules: (max: number) => `1 to ${max} characters, different from your other wallets.`,
+      // proposed texts (D19): shown on the input screen, which stays open
+      errors: {
+        empty: `${E.warning} The name can't be empty.`,
+        tooLong: (length: number, max: number) =>
+          `${E.warning} Too long: ${formatInt(length)} characters (${max} max).`,
+        /** `name` arrives escaped. */
+        duplicate: (name: string) => `${E.warning} You already have a wallet named "${name}".`,
+        notText: `${E.warning} Send the name as a text message.`,
+        oneLine: `${E.warning} Send the name on one line.`,
+      },
+      done: `${E.confirm} Wallet renamed.`,
+    },
+    // Delete (§9.3): the confirmation and the blocking texts are the ones of the context.
+    delete: {
+      title: `${E.delete} DELETE WALLET`,
+      /** `name` arrives escaped, `address` shortened. */
+      confirm: (name: string, address: string) =>
+        `Delete wallet "${name}" (${address})?\nIts encrypted key will be erased. This cannot be undone.`,
+      /** `balance` is `2.500 SOL ($258.40)`, `2.500 SOL`, or `&lt; 0.001 SOL`. */
+      blocked: (name: string, balance: string) =>
+        `${E.warning} ${name} still holds ${balance}. Withdraw it before deleting: a deleted wallet can't be recovered.`,
+      // proposed text (D19): a balance that rounds to 0.000. Escaped by the caller, like a name.
+      dust: "< 0.001 SOL",
+      // proposed text (D19): alert of "Yes, delete" when SOL arrived since the confirmation
+      receivedSol: "This wallet received SOL. Withdraw it first.",
+      // proposed text (D19)
+      checkFailed: {
+        alert: "Couldn't check the balance. Try again in a moment.",
+        flag: `${E.warning} Couldn't check the balance. Try again in a moment.`,
+      },
+      // proposed text (D19): shown on the detail of that wallet, whose name is the header.
+      pendingWithdrawal: {
+        alert: "A withdrawal from this wallet is still pending. Try again in a moment.",
+        flag: `${E.warning} A withdrawal from this wallet is still pending. Try again in a moment.`,
+      },
+      done: `${E.confirm} Wallet deleted.`,
+      btnYes: `${E.confirm} Yes, delete`,
+      btnWithdrawAll: `${E.withdraw} Withdraw all`,
+    },
+    // Provisional screens, replaced by V1-12 and V1-14. proposed texts (D19)
+    comingSoon: {
+      withdraw: { title: `${E.withdraw} WITHDRAW`, description: "Withdrawals are coming soon." },
+      import: { title: `${E.import} IMPORT WALLET`, description: "Wallet import is coming soon." },
+    },
+  },
+
   plans: {
     CLASSIC: "Classic",
     PREMIUM: "Premium",

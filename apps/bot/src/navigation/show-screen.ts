@@ -1,5 +1,6 @@
+import { en } from "@launchbot/shared";
 import type { Screen } from "@launchbot/shared";
-import type { BotContext } from "../context.js";
+import type { BotContext, PendingInput } from "../context.js";
 import { notify } from "./notify.js";
 import { isNotModified, isUneditable } from "./telegram-errors.js";
 
@@ -11,8 +12,13 @@ import { isNotModified, isUneditable } from "./telegram-errors.js";
  */
 export type ShowStatus = "sent" | "edited" | "sent_new" | "not_modified";
 export type ShowResult = { status: ShowStatus; messageId: number };
-/** `new`: always a new message (/start, §4.3). `auto`: a click edits, anything else sends. */
-export type ShowMode = "auto" | "new";
+/**
+ * - `auto`: a click edits the message that carries the button, anything else sends.
+ * - `new`: always a new message (/start, §4.3).
+ * - `edit`: edits the screen message of the session even outside a click, after the message
+ *   of the user was deleted (an input answered in place, V1-11); sends when there is none.
+ */
+export type ShowMode = "auto" | "new" | "edit";
 
 /**
  * Single-message navigation (§4.3, §4.4): the bot edits one screen message instead of sending
@@ -21,22 +27,30 @@ export type ShowMode = "auto" | "new";
 export async function showScreen(
   ctx: BotContext,
   screen: Screen,
-  options: { mode?: ShowMode } = {},
+  options: { mode?: ShowMode; input?: PendingInput } = {},
 ): Promise<ShowResult> {
-  // /start always sends a new message (§4.3).
-  if (options.mode === "new") return send(ctx, screen);
+  const { mode = "auto", input } = options;
+  // The input a screen waits for lives exactly as long as that screen is the live one: every
+  // other screen shown clears it, whatever click or command led there.
+  if (input === undefined) delete ctx.session.pendingInput;
+  else ctx.session.pendingInput = input;
 
-  // A click edits the message that carries the button. Anything else (a user input) sends a
-  // new screen, so it stays at the bottom of the chat, and unarms the previous keyboard.
-  const messageId = ctx.callbackQuery?.message?.message_id;
-  if (messageId === undefined) {
+  // /start always sends a new message (§4.3).
+  if (mode === "new") return send(ctx, screen);
+
+  const messageId =
+    ctx.callbackQuery?.message?.message_id ??
+    (mode === "edit" ? ctx.session.screenMessageId : undefined);
+  // A user input gets a new screen, so it stays at the bottom of the chat, and the previous
+  // keyboard is unarmed.
+  if (messageId === undefined || ctx.chatId === undefined) {
     await dropOldKeyboard(ctx);
     return send(ctx, screen);
   }
 
   try {
     const { text, ...rest } = screen;
-    await ctx.editMessageText(text, rest);
+    await ctx.api.editMessageText(ctx.chatId, messageId, text, rest);
   } catch (error) {
     // Identical content: no exception, the caller answers "Already up to date" if it wants to.
     if (isNotModified(error)) return { status: "not_modified", messageId };
@@ -76,7 +90,16 @@ export async function blockWithFlag(
   ctx: BotContext,
   block: Block,
   render: (flag: string) => Screen,
+  options: { mode?: ShowMode } = {},
 ): Promise<void> {
   await notify(ctx, block.alert, { alert: true });
-  await showScreen(ctx, render(block.flag));
+  await showScreen(ctx, render(block.flag), options);
+}
+
+/**
+ * After a Refresh (§4.4): "Updated" shows minutes, so a Refresh with nothing new in the same
+ * minute is the same screen, which Telegram refuses to edit. The user hears it as a toast.
+ */
+export async function notifyIfUnchanged(ctx: BotContext, result: ShowResult | null): Promise<void> {
+  if (result?.status === "not_modified") await notify(ctx, en.common.alreadyUpToDate);
 }
