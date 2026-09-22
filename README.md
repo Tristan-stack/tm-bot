@@ -411,6 +411,24 @@ SOL de test : https://faucet.solana.com. Le bot refuse de démarrer hors devnet,
 ce garde-fou, pas même les tests (le RPC est simulé). Aucune valeur « devnet » n'est codée en dur :
 tout dérive de `SOLANA_CLUSTER` (centralisé en V1-03).
 
+## Branches
+
+`main` porte le socle stable : monorepo, base, bot qui répond en privé, premier accès (Terms et
+canal) et écran d'accueil (V1-01 à V1-08, jusqu'au commit `0d7c2d8`). Depuis ce socle, **une
+branche par feature**, nommée `feat/<feature>` et regroupant les tickets de la feature :
+
+| Branche              | Tickets       |
+| -------------------- | ------------- |
+| `feat/wallets`       | V1-09 à V1-14 |
+| `feat/token`         | V1-15 à V1-17 |
+| `feat/simulation`    | V1-18 à V1-26 |
+| `feat/subscribe`     | V1-27 à V1-34 |
+| `feat/launch-coin`   | V1-35 à V1-37 |
+| `feat/admin-support` | V1-38 à V1-45 |
+
+Sur une branche : un commit par ticket, `pnpm lint`, `pnpm typecheck` et `pnpm test` verts avant
+chaque commit. La branche est fusionnée dans `main` quand tous ses tickets sont en ✅ Terminé.
+
 ## Décisions techniques
 
 | Date       | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
