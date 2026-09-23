@@ -10,6 +10,7 @@ import {
   formatRemaining,
   formatSol,
   formatSolAmount,
+  formatSolExact,
   formatSolPrice,
   formatTimeUtc,
   formatTokenAmount,
@@ -72,6 +73,17 @@ describe("formatSol", () => {
   });
 });
 
+describe("formatSolExact", () => {
+  it("keeps every decimal that is not zero, and three at least", () => {
+    expect(formatSolExact(1_250_000_000n)).toBe("1.250 SOL");
+    expect(formatSolExact(5_000n)).toBe("0.000005 SOL");
+    expect(formatSolExact(2_499_995_000n)).toBe("2.499995 SOL");
+    expect(formatSolExact(1n)).toBe("0.000000001 SOL");
+    expect(formatSolExact(0n)).toBe("0.000 SOL");
+    expect(formatSolExact(3n * SOL)).toBe("3.000 SOL");
+  });
+});
+
 describe("parseSolToLamports", () => {
   it("accepts a dot or a comma, up to 9 decimals", () => {
     expect(parseSolToLamports("5")).toBe(5n * SOL);
@@ -82,12 +94,30 @@ describe("parseSolToLamports", () => {
     expect(parseSolToLamports("0")).toBe(0n);
   });
 
-  it.each(["", "abc", "-1", "+1", "1e3", "1.0000000001", "1.", ".5", "1.2.3", "1 000", "0x10"])(
-    "rejects %j",
-    (input) => {
-      expect(parseSolToLamports(input)).toBeNull();
-    },
-  );
+  it("accepts the unit after the number", () => {
+    expect(parseSolToLamports("1 SOL")).toBe(SOL);
+    expect(parseSolToLamports("0,5sol")).toBe(500_000_000n);
+    expect(parseSolToLamports(" 0.000000001 SOL ")).toBe(1n);
+  });
+
+  it.each([
+    "",
+    "abc",
+    "-1",
+    "+1",
+    "1e3",
+    "1.0000000001",
+    "1.",
+    ".5",
+    "1.2.3",
+    "1 000",
+    "0x10",
+    "SOL",
+    "1 SOL SOL",
+    "1 sol 2",
+  ])("rejects %j", (input) => {
+    expect(parseSolToLamports(input)).toBeNull();
+  });
 });
 
 describe("USD", () => {

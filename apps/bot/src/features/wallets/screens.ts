@@ -28,7 +28,7 @@ const IMPORT_CODE = { KEY: "key", SEED: "seed" } as const satisfies Record<Impor
 export const importFormatOf = (code: string | undefined): ImportFormat | undefined =>
   (Object.keys(IMPORT_CODE) as ImportFormat[]).find((format) => IMPORT_CODE[format] === code);
 
-/** Callback data of the section (§4.4). V1-14 takes over the withdrawal values. */
+/** Callback data of the section (§4.4). The steps of a withdrawal are in `WITHDRAW_CB`. */
 export const WALLET_CB = {
   list: encodeCallback("wal", "list"),
   refreshList: encodeCallback("wal", "lref"),
@@ -41,7 +41,7 @@ export const WALLET_CB = {
   rename: (id: string) => encodeCallback("wal", "ren", id),
   delete: (id: string) => encodeCallback("wal", "del", id),
   confirmDelete: (id: string) => encodeCallback("wal", "delok", id),
-  /** V1-14 opens the withdrawal with Max already chosen. */
+  /** From the Delete blocking (§9.3): the withdrawal with Max already chosen. */
   withdrawAll: (id: string) => encodeCallback("wal", "wdall", id),
 } as const;
 
@@ -137,17 +137,6 @@ export function buildWalletDetailScreen(
       ],
       navRow(WALLET_CB.list),
     ],
-  });
-}
-
-/** Withdraw until V1-14: the wallet line, and Back to the detail. */
-export function buildWithdrawSoonScreen(ui: Ui, view: WalletDetailView): Screen {
-  const { wallet } = view;
-  return renderScreen({
-    header: ui.screenHeader(en.wallets.comingSoon.withdraw.title),
-    description: en.wallets.comingSoon.withdraw.description,
-    info: en.wallets.walletLine(escapeHtml(wallet.name), balanceText(wallet.lamports, view.solUsd)),
-    keyboard: [navRow(WALLET_CB.view(wallet.id))],
   });
 }
 

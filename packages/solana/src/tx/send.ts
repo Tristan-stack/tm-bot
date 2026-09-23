@@ -5,7 +5,6 @@ import type { VersionedTransaction } from "@solana/web3.js";
 import type { SolanaSigner } from "../keys/vault.js";
 import { compileTransaction, programsOf } from "./compute-units.js";
 import {
-  describeError,
   failureOfThrown,
   logsOf,
   messageOf,
@@ -15,6 +14,7 @@ import {
 } from "./errors.js";
 import type { TxFailure } from "./errors.js";
 import { estimateFees, isTxFailure, refreshPriorityFee } from "./fees.js";
+import { lookupSignature, outcomeOf } from "./status.js";
 import type { FeeEstimate, SignerSource, TxContext, TxDraft, TxSuccess } from "./types.js";
 
 const log = createLogger("solana:tx");
@@ -92,12 +92,12 @@ function unknownConfirmation(error: unknown, signature: string): TxFailure {
 }
 
 /** It landed and failed (§5): the fees were paid, a new attempt would pay them again. */
-const landedFailure = (err: unknown, signature: string): TxFailure => ({
+const landedFailure = (detail: string | undefined, signature: string): TxFailure => ({
   ok: false,
   code: "TRANSACTION_REJECTED",
   landed: "yes",
   signature,
-  detail: describeError(err),
+  detail,
 });
 
 /**
@@ -146,26 +146,24 @@ async function attemptOnce(
       const {
         value: [status],
       } = await ctx.rpc.getSignatureStatuses([signature]);
-      if (status !== null && status !== undefined) {
-        if (status.err !== null) return landedFailure(status.err, signature);
-        if (
-          status.confirmationStatus === "confirmed" ||
-          status.confirmationStatus === "finalized"
-        ) {
-          return success(status.slot);
-        }
-        // In a block, waiting for its confirmation: nothing to broadcast again.
-        continue;
-      }
+      const seen = outcomeOf(status);
+      if (seen.status === "confirmed") return success(seen.slot);
+      if (seen.status === "failed") return landedFailure(seen.detail, signature);
+      // In a block, waiting for its confirmation: nothing to broadcast again.
+      if (seen.status === "processed") continue;
 
       if ((await ctx.rpc.getBlockHeight("confirmed")) > lastValidBlockHeight) {
-        // The blockhash can no longer be included. One last look, history included: found means
-        // it did land, absent means it never will and a new attempt is free to re-sign.
-        const {
-          value: [last],
-        } = await ctx.rpc.getSignatureStatuses([signature], { searchTransactionHistory: true });
-        if (last === null || last === undefined) return notSent("BLOCKHASH_EXPIRED");
-        return last.err !== null ? landedFailure(last.err, signature) : success(last.slot);
+        // The blockhash can no longer be included. One last look, history included: landed
+        // means success, gone means a new attempt is free to re-sign. A block still being
+        // voted on is neither: polled again, and never signed over.
+        const last = await lookupSignature(ctx.rpc, signature);
+        if (last.status === "confirmed") return success(last.slot);
+        if (last.status === "failed") return landedFailure(last.detail, signature);
+        if (last.status === "not_found") return notSent("BLOCKHASH_EXPIRED");
+        if (last.status === "unavailable") {
+          return unknownConfirmation(new Error("The RPC did not answer"), signature);
+        }
+        continue;
       }
 
       try {

@@ -9,6 +9,7 @@ export { formatClock, formatInt, formatPct, formatTokenAmount } from "./number.j
 export {
   formatSol,
   formatSolAmount,
+  formatSolExact,
   formatSolPrice,
   formatSolWithUsd,
   formatUsd,

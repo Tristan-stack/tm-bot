@@ -1,20 +1,17 @@
-import type { WalletDetailData, WalletService } from "@launchbot/db";
+import type { WalletDetailData, WalletService, WithdrawalService } from "@launchbot/db";
 import { en } from "@launchbot/shared";
 import type { Screen, Ui } from "@launchbot/shared";
 import type { BotContext } from "../../context.js";
 import { blockWithFlag, showScreen } from "../../navigation/show-screen.js";
 import type { Block, ShowMode, ShowResult } from "../../navigation/show-screen.js";
 import type { DataServices } from "../../services/data.js";
-import {
-  buildWalletDetailScreen,
-  buildWalletListScreen,
-  buildWithdrawSoonScreen,
-} from "./screens.js";
+import { buildWalletDetailScreen, buildWalletListScreen } from "./screens.js";
 import type { WalletDetailView } from "./screens.js";
 
 export type WalletsDeps = {
   ui: Ui;
   wallets: WalletService;
+  withdrawals: WithdrawalService;
   data: Pick<DataServices, "getSolUsdPrice">;
 };
 
@@ -22,7 +19,7 @@ type RenderOptions = { notice?: string; flag?: string };
 type ShowOptions = { skipCache?: boolean; mode?: ShowMode };
 
 /** The screens every handler of the section reaches: list, detail, and the two fallbacks. */
-export function createWalletNav({ ui, wallets, data }: WalletsDeps) {
+export function createWalletNav({ ui, wallets, withdrawals, data }: WalletsDeps) {
   /** The list as a render, so a blocked click can add its flag to it (§4.5). */
   async function listRender(
     ctx: BotContext,
@@ -85,20 +82,19 @@ export function createWalletNav({ ui, wallets, data }: WalletsDeps) {
     ctx: BotContext,
     detail: WalletDetailData,
     block: Block,
+    mode?: ShowMode,
   ): Promise<void> {
     const solUsd = await data.getSolUsdPrice();
     const view = { ...detail, solUsd };
-    await blockWithFlag(ctx, block, (flag) => buildWalletDetailScreen(ui, view, { flag }));
-  }
-
-  async function showWithdrawSoon(ctx: BotContext, walletId: string | undefined): Promise<void> {
-    const view = await loadDetail(ctx, walletId);
-    if (view !== null) await showScreen(ctx, buildWithdrawSoonScreen(ui, view));
+    await blockWithFlag(ctx, block, (flag) => buildWalletDetailScreen(ui, view, { flag }), {
+      mode,
+    });
   }
 
   return {
     ui,
     wallets,
+    withdrawals,
     data,
     listRender,
     showList,
@@ -107,7 +103,6 @@ export function createWalletNav({ ui, wallets, data }: WalletsDeps) {
     loadDetail,
     showDetail,
     blockOnDetail,
-    showWithdrawSoon,
   };
 }
 

@@ -32,6 +32,10 @@ export const transferFeeLamports = (microLamportsPerCu: bigint): bigint =>
 export const getWithdrawFeeBudgetLamports = (priorityFeeMaxMicrolamports: number): bigint =>
   transferFeeLamports(BigInt(priorityFeeMaxMicrolamports));
 
+/** What is left to send once the fees are paid (§9.5): 0 is a valid amount, never less. */
+export const computeMaxAmount = (balance: bigint, fee: bigint): bigint =>
+  balance > fee ? balance - fee : 0n;
+
 /** §9.3: a wallet that still holds more than the fees of a withdrawal cannot be deleted. */
 export const isBalanceWithdrawable = (lamports: bigint, feeBudgetLamports: bigint): boolean =>
   lamports > feeBudgetLamports;

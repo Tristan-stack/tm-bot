@@ -7,7 +7,7 @@ import type { CallbackHandler } from "../../router/callback-router.js";
 import type { WalletNav } from "./nav.js";
 import { buildDeleteBlockedScreen, buildDeleteConfirmScreen } from "./screens.js";
 
-/** `wal:del:<id>`, `wal:delok:<id>` and `wal:wdall:<id>` (§9.3). */
+/** `wal:del:<id>` and `wal:delok:<id>` (§9.3); `wal:wdall:<id>` belongs to the withdrawal. */
 export function deleteHandlers(nav: WalletNav): Record<string, CallbackHandler> {
   /** The screen of what the check found: confirmation, blocking, or a flag on the detail. */
   async function showCheck(ctx: BotContext, check: DeleteCheck): Promise<void> {
@@ -52,8 +52,5 @@ export function deleteHandlers(nav: WalletNav): Record<string, CallbackHandler> 
       }
       await showCheck(ctx, result);
     },
-
-    // V1-14 opens the withdrawal with Max already chosen; the provisional screen until then.
-    wdall: (ctx, [id]) => nav.showWithdrawSoon(ctx, id),
   };
 }

@@ -15,7 +15,6 @@ import {
   vaultSigner,
 } from "./test-rpc.js";
 import {
-  computeMaxAmount,
   estimateTransferFee,
   prepareTransfer,
   sendTransfer,
@@ -29,17 +28,6 @@ const FEE = 5_001n;
 
 afterEach(() => {
   setLogDestination(undefined);
-});
-
-describe("computeMaxAmount", () => {
-  it("leaves the fees behind", () => {
-    expect(computeMaxAmount(1_000_000n, 5_000n)).toBe(995_000n);
-  });
-
-  it("is 0 when the balance does not even cover the fees", () => {
-    expect(computeMaxAmount(5_000n, 5_000n)).toBe(0n);
-    expect(computeMaxAmount(1_000n, 5_000n)).toBe(0n);
-  });
 });
 
 describe("validateTransfer", () => {
@@ -206,10 +194,18 @@ describe("prepareTransfer", () => {
         to: destination.to,
         amount: milliSol,
       }),
-    ).toMatchObject({ code: "DESTINATION_BELOW_RENT", landed: "no" });
+    ).toMatchObject({
+      code: "DESTINATION_BELOW_RENT",
+      landed: "no",
+      rentMinLamports: DEVNET_RENT_MIN,
+    });
     expect(
       await prepareTransfer(payer.ctx, { from: payer.from, to: payer.to, amount: milliSol }),
-    ).toMatchObject({ code: "REMAINING_BELOW_RENT", landed: "no" });
+    ).toMatchObject({
+      code: "REMAINING_BELOW_RENT",
+      landed: "no",
+      rentMinLamports: DEVNET_RENT_MIN,
+    });
   });
 
   it("maps the insufficient funds of the System program", async () => {
@@ -223,6 +219,7 @@ describe("prepareTransfer", () => {
       code: "INSUFFICIENT_FUNDS",
       landed: "no",
       detail: '{"InstructionError":[2,{"Custom":1}]}',
+      rentMinLamports: DEVNET_RENT_MIN,
     });
   });
 
@@ -339,6 +336,27 @@ describe("sendTransfer", () => {
       LAMPORTS_PER_SOL - FEE,
     );
     expect(transferredLamports(VersionedTransaction.deserialize(sent[1]!))).toBe(amount);
+  });
+
+  it("hands the quote over before signing, then the signature before the confirmation", async () => {
+    const { ctx, from, to, signer } = harness();
+    const seen: string[] = [];
+
+    const result = await sendTransfer(ctx, quoteOf({ from, to }), signer, {
+      onPrepared: (quote) => {
+        seen.push(`prepared:${quote.amountLamports}`);
+        return Promise.resolve();
+      },
+      onSubmitted: (signature) => {
+        seen.push(`submitted:${signature.slice(0, 4)}`);
+        return Promise.resolve();
+      },
+    });
+
+    expect(result.ok && seen).toEqual([
+      `prepared:${milliSol}`,
+      `submitted:${result.ok ? result.signature.slice(0, 4) : ""}`,
+    ]);
   });
 
   it("hands the signature over before the confirmation", async () => {

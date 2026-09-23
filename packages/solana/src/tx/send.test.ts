@@ -178,6 +178,25 @@ describe("sendAndConfirm", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("never signs over a transaction still in a block once the blockhash expired", async () => {
+    captureLogs();
+    const { ctx, draft, signer, of, sent } = harness({
+      // Unseen, then the height passes; the history says processed twice, then confirmed.
+      statuses: [
+        null,
+        { confirmationStatus: "processed", slot: 5 },
+        { confirmationStatus: "confirmed", slot: 6 },
+      ],
+      heights: [201],
+      lastValidBlockHeight: 200,
+      historyStatus: { confirmationStatus: "processed", slot: 5 },
+    });
+
+    expect(await sendAndConfirm(ctx, draft, [signer])).toMatchObject({ ok: true, slot: 6 });
+    expect(of("withSigner")).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+  });
+
   it("is a success when the expired transaction is found in the history", async () => {
     const { ctx, draft, signer, sent } = harness({
       statuses: [null],

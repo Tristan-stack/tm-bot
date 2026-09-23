@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { loadDotenvOnce } from "@launchbot/shared/server";
+import type { TransferQuote } from "@launchbot/solana";
 import { createPrismaClient } from "./client.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
 
@@ -71,4 +72,23 @@ export const testWalletData = (userId: string, name: string, publicKey: string) 
   encSecretKey: new Uint8Array([1, 2, 3]),
   iv: new Uint8Array([4, 5]),
   authTag: new Uint8Array([6]),
+});
+
+/** A quote of V1-13 as the withdrawal tests need one: 540 units at 1 000 µL, 5 001 lamports. */
+export const testTransferQuote = (overrides: Partial<TransferQuote> = {}): TransferQuote => ({
+  from: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+  to: "3pLmYwq1Z4QhTk9Rcbb3UAHdSjyrpYmG5pDxJHzEAa81",
+  mode: "exact",
+  amountLamports: 1_000_000n,
+  balanceLamports: 2_500_000_000n,
+  destinationLamports: 890_880n,
+  rentMinLamports: 890_880n,
+  fee: {
+    microLamportsPerCu: 1_000n,
+    computeUnitLimit: 540,
+    baseFeeLamports: 5_000n,
+    priorityFeeLamports: 1n,
+    totalFeeLamports: 5_001n,
+  },
+  ...overrides,
 });

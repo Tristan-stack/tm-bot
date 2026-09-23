@@ -17,8 +17,10 @@ import type {
 import type { Db } from "../client.js";
 import { isUniqueViolation } from "../errors.js";
 import type { PrismaClient, WalletSource } from "../generated/prisma/client.js";
-import { WALLET_SUMMARY_SELECT } from "./balances.js";
-import type { BalancesService, UserBalances, WalletBalance } from "./balances.js";
+import { readFreshWallet, WALLET_SUMMARY_SELECT } from "./balances.js";
+import type { BalancesService, UserBalances, WalletBalance, WalletDetailData } from "./balances.js";
+
+export type { WalletDetailData } from "./balances.js";
 import { getActiveSubscription, getWalletQuota } from "./subscriptions.js";
 import type { WalletQuota } from "./subscriptions.js";
 
@@ -32,10 +34,6 @@ export type WalletListData = UserBalances & {
   count: number;
   /** `count` can exceed it: wallets are kept after an expiry or a downgrade (§8.1). */
   limit: number;
-};
-
-export type WalletDetailData = Pick<UserBalances, "fetchedAt" | "status"> & {
-  wallet: WalletBalance;
 };
 
 /** A wallet added to the list, or the reason it was not: one shape, three reason sets. */
@@ -213,20 +211,16 @@ export function createWalletService(deps: WalletsDeps): WalletService {
   }
 
   async function checkDeletable(userId: string, walletId: string): Promise<DeleteCheck> {
-    const [read, pending] = await Promise.all([
-      balances.getUserBalances(userId, { skipCache: true }),
+    const [fresh, pending] = await Promise.all([
+      readFreshWallet(balances, userId, walletId),
       prisma.withdrawal.count({ where: { walletId, status: "PENDING" } }),
     ]);
-    const wallet = read.wallets.find((candidate) => candidate.id === walletId);
-    if (wallet === undefined) return { status: "not_found" };
-    const detail = { wallet, fetchedAt: read.fetchedAt, status: read.status };
-    // A stale balance is not a check: only a read of this very moment lets a key be erased.
-    if (read.status !== "fresh" || wallet.lamports === null) {
-      return { status: "balance_unavailable", detail };
-    }
+    // Only a read of this very moment lets a key be erased.
+    if (fresh.status !== "fresh") return fresh;
+    const { detail, lamports } = fresh;
     if (pending > 0) return { status: "blocked_pending_withdrawal", detail };
-    if (isBalanceWithdrawable(wallet.lamports, withdrawFeeBudgetLamports)) {
-      return { status: "blocked_balance", detail, lamports: wallet.lamports };
+    if (isBalanceWithdrawable(lamports, withdrawFeeBudgetLamports)) {
+      return { status: "blocked_balance", detail, lamports };
     }
     return { status: "confirm", detail };
   }

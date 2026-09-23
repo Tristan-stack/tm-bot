@@ -1,6 +1,6 @@
 import { en } from "@launchbot/shared";
 import type { Screen } from "@launchbot/shared";
-import type { BotContext, PendingInput } from "../context.js";
+import type { BotContext, PendingInput, WithdrawState } from "../context.js";
 import { notify } from "./notify.js";
 import { isNotModified, isUneditable } from "./telegram-errors.js";
 
@@ -24,16 +24,27 @@ export type ShowMode = "auto" | "new" | "edit";
  * Single-message navigation (§4.3, §4.4): the bot edits one screen message instead of sending
  * a new one on every click. `screen` comes from `renderScreen` (HTML, link previews disabled).
  */
+export type ShowOptions = {
+  mode?: ShowMode;
+  /** The input this screen waits for. */
+  input?: PendingInput;
+  /** The withdrawal this screen belongs to (V1-14): any other screen ends it. */
+  withdraw?: WithdrawState;
+};
+
 export async function showScreen(
   ctx: BotContext,
   screen: Screen,
-  options: { mode?: ShowMode; input?: PendingInput } = {},
+  options: ShowOptions = {},
 ): Promise<ShowResult> {
-  const { mode = "auto", input } = options;
-  // The input a screen waits for lives exactly as long as that screen is the live one: every
-  // other screen shown clears it, whatever click or command led there.
+  const { mode = "auto", input, withdraw } = options;
+  // The input a screen waits for, and the flow a screen is part of, live exactly as long as
+  // that screen is the live one: every other screen shown clears them, whatever click or
+  // command led there.
   if (input === undefined) delete ctx.session.pendingInput;
   else ctx.session.pendingInput = input;
+  if (withdraw === undefined) delete ctx.session.withdraw;
+  else ctx.session.withdraw = withdraw;
 
   // /start always sends a new message (§4.3).
   if (mode === "new") return send(ctx, screen);
@@ -90,7 +101,7 @@ export async function blockWithFlag(
   ctx: BotContext,
   block: Block,
   render: (flag: string) => Screen,
-  options: { mode?: ShowMode } = {},
+  options: Omit<ShowOptions, "input"> = {},
 ): Promise<void> {
   await notify(ctx, block.alert, { alert: true });
   await showScreen(ctx, render(block.flag), options);

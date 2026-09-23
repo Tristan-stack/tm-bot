@@ -34,6 +34,11 @@ export type UserBalances = {
   status: "fresh" | "stale" | "unavailable";
 };
 
+/** The detail screen (§9.2): one wallet, with when and how well its balance was read. */
+export type WalletDetailData = Pick<UserBalances, "fetchedAt" | "status"> & {
+  wallet: WalletBalance;
+};
+
 export type BalancesDeps = {
   prisma: PrismaClient;
   /** `getBalancesFresh` of @launchbot/solana: this package does not depend on it. */
@@ -116,4 +121,30 @@ export function createBalancesService(deps: BalancesDeps): BalancesService {
       }
     },
   };
+}
+
+/** A wallet of the user with its balance read this very moment, or why it cannot be used. */
+export type FreshWalletRead =
+  | { status: "not_found" }
+  | { status: "balance_unavailable"; detail: WalletDetailData }
+  | { status: "fresh"; detail: WalletDetailData; lamports: bigint };
+
+/**
+ * What a decision about money starts from (Delete of V1-11, a withdrawal of V1-14): the rows
+ * come with the balances, so an id of another user is simply not there, and a stale balance is
+ * not a check — money moves on a read of this very moment only. Not the Refresh: no throttle.
+ */
+export async function readFreshWallet(
+  balances: Pick<BalancesService, "getUserBalances">,
+  userId: string,
+  walletId: string,
+): Promise<FreshWalletRead> {
+  const read = await balances.getUserBalances(userId, { skipCache: true });
+  const wallet = read.wallets.find((candidate) => candidate.id === walletId);
+  if (wallet === undefined) return { status: "not_found" };
+  const detail = { wallet, fetchedAt: read.fetchedAt, status: read.status };
+  if (read.status !== "fresh" || wallet.lamports === null) {
+    return { status: "balance_unavailable", detail };
+  }
+  return { status: "fresh", detail, lamports: wallet.lamports };
 }

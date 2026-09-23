@@ -1,4 +1,4 @@
-import { transferFeeLamports } from "@launchbot/shared";
+import { computeMaxAmount, transferFeeLamports } from "@launchbot/shared";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { getBalancesFresh } from "../lamports.js";
 import { notSent, rpcReadFailure } from "./errors.js";
@@ -29,10 +29,6 @@ export const transferDraft = (from: string, to: string, lamports: Lamports): TxD
     }),
   ],
 });
-
-/** What is left to send once the fees are paid: 0 is a valid amount, a negative one is not. */
-export const computeMaxAmount = (balance: Lamports, fee: Lamports): Lamports =>
-  balance - fee > 0n ? balance - fee : 0n;
 
 export type TransferChecks = {
   balance: Lamports;
@@ -130,7 +126,8 @@ export async function prepareTransfer(
   // never the whole balance, which would fail for want of fees.
   const simulated = amount === "max" ? (balance < rentMin ? 0n : rentMin) : amount;
   const fee = await estimateFees(ctx, transferDraft(from, to, simulated));
-  if (isTxFailure(fee)) return fee;
+  // The runtime refuses on rent without saying the minimum: the screen needs it (§9.5).
+  if (isTxFailure(fee)) return { ...fee, rentMinLamports: rentMin };
 
   const amountLamports =
     amount === "max" ? computeMaxAmount(balance, fee.totalFeeLamports) : amount;
@@ -155,24 +152,31 @@ export async function prepareTransfer(
   };
 }
 
+/** What identifies a transfer to send: a quote, or the four fields a screen kept of it. */
+export type TransferRequest = Pick<TransferQuote, "from" | "to" | "mode" | "amountLamports">;
+
 /**
- * Signs and sends the transfer of a quote. The quote is made again first — the balances move,
- * and the fees of a minute ago are not the fees of now — so a quote the user confirmed late is
- * refused rather than sent wrong. The key is decrypted only inside `sendAndConfirm`, to sign.
+ * Signs and sends a transfer. The quote is made again first — the balances move, and the fees
+ * of a minute ago are not the fees of now — so a request the user confirmed late is refused
+ * rather than sent wrong. The key is decrypted only inside `sendAndConfirm`, to sign.
  */
 export async function sendTransfer(
   ctx: TxContext,
-  quote: TransferQuote,
+  request: TransferRequest,
   signer: SignerSource,
-  options: Pick<SendTxOptions, "onSubmitted"> = {},
+  options: Pick<SendTxOptions, "onSubmitted"> & {
+    /** The quote of this send, before anything is signed: V1-14 records its row from it. */
+    onPrepared?: (quote: TransferQuote) => Promise<void>;
+  } = {},
 ): Promise<TxSuccess | TxFailure> {
-  const { from, to, mode } = quote;
+  const { from, to, mode } = request;
   const fresh = await prepareTransfer(ctx, {
     from,
     to,
-    amount: mode === "max" ? "max" : quote.amountLamports,
+    amount: mode === "max" ? "max" : request.amountLamports,
   });
   if (isTxFailure(fresh)) return fresh;
+  await options.onPrepared?.(fresh);
 
   // The amount of an attempt follows its fee: `max` leaves exactly 0 lamport, whatever the
   // priority fee of a second attempt, and the rules of §9.5 are checked again for it.

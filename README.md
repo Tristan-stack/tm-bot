@@ -366,6 +366,103 @@ chat, la session, les logs ni en clair en base.
   adresse Phantom du vecteur 12 mots, phrase stockée normalisée même saisie en majuscules, aucun
   octet lisible dans la ligne `Wallet`).
 
+### Wallets : retrait de SOL (V1-14)
+
+Le seul moyen de sortir des fonds du bot (aucune clé n'est montrée, décision du 16/09/2026) :
+adresse, avertissement éventuel, montant, confirmation, résultat. Il remplace les écrans provisoires
+« Withdraw » (V1-10) et « Withdraw all » (V1-11), et consomme la brique V1-13.
+
+- **Service** (`createWithdrawalService`, [withdrawals.ts](packages/db/src/services/withdrawals.ts),
+  dans `db` comme les wallets de V1-10 : la table `Withdrawal` est aussi lue par `/getall` V1-43 et
+  écrite par le balayage V1-45) : V1-13 est injecté sous la forme d'un `TransferApi`
+  (`estimateFee`, `rentMin`, `prepare`, `send`, `lookup`, construit par
+  [services/transfer.ts](apps/bot/src/services/transfer.ts) sur la connexion du process et les
+  bornes de `.env`), avec le vault et le budget de frais de V1-11. `check(userId, walletId)` part
+  de `readFreshWallet` ([balances.ts](packages/db/src/services/balances.ts), la lecture **sans
+  cache** que Delete partage : pas le Refresh, pas de throttle), refuse un solde non lu ou sous le
+  budget de frais (`nothing_to_withdraw`) et donne les frais estimés, Max (`computeMaxAmount`, dans
+  `shared` désormais) et le minimum rent-exempt ; `quote(userId, walletId, to, amount)` résout
+  25 % / 50 % sur le solde frais (`resolveWithdrawAmount`, arrondi inférieur au lamport, proposition)
+  puis appelle `prepareTransfer` ; `execute(userId, walletId, to, amount)` lit les colonnes de clé de
+  la ligne `Wallet` — la seule lecture hors vault, remise à `sendTransfer` qui déchiffre au moment
+  de signer —, refuse une ligne PENDING de moins de `WITHDRAWAL_IN_FLIGHT_MS` (2 min, proposition :
+  **le verrou qui survit à un redémarrage**), règle une ligne PENDING plus vieille depuis la chaîne
+  (`lookupSignature` : posée → CONFIRMED, échouée → FAILED, absente → FAILED `BLOCKHASH_EXPIRED`,
+  jamais diffusée → FAILED `NEVER_SENT`, encore en cours de vote → laissée PENDING), puis envoie :
+  **une seule quote**, celle de V1-13, dont `onPrepared` écrit la ligne PENDING avant la diffusion,
+  puis `onSubmitted` la signature avant la confirmation, et la fin en CONFIRMED (signature,
+  `feeLamports`, `lamports` réellement déplacés — Max est recalculé à l'envoi) ou FAILED (`error` =
+  code + détail court de V1-13, jamais un secret, 500 caractères) ; un résultat `landed: 'unknown'`
+  laisse la ligne PENDING avec sa signature (proposition). `resolve(userId, walletId)` relit depuis
+  la chaîne la dernière ligne PENDING du wallet — la base est la seule source de « en vol », pas la
+  session. Une signature écrite par `onSubmitted` n'est jamais effacée par l'échec qui suit.
+- **Écrans** ([withdraw-screens.ts](apps/bot/src/features/wallets/withdraw-screens.ts)) : en-tête
+  de parcours V1-03 `📤 WITHDRAW` en 3 étapes « Address › Amount › Confirm », ou 2 en mode
+  Withdraw all (`flows.WITHDRAW` / `flows.WITHDRAW_ALL`, proposition) ; les textes du contexte sont
+  « Send the destination address. » et les libellés des boutons, tout le reste est proposé (D19).
+  Étape 1 : saisie de l'adresse avec la ligne From, le solde et, en mode all, « Amount: Max ». Étape
+  1 bis : avertissement hors courbe ed25519 avec « ⚠️ Continue anyway ». Étape 2 : Available, « ⛽
+  Fees: ≈ 0.000005 SOL · Max: 2.499995 SOL » (`estimateTransferFee`, un appel RPC), 25 % / 50 % /
+  Max / ✏️ Custom ; la saisie Custom écrit les bornes. Étape 3 : From, adresse complète en `code`,
+  montant et frais **exacts** (`formatSolExact` : toutes les décimales non nulles, 3 au moins),
+  « (Max) » quand c'est le solde, réseau. Résultat : succès avec la signature en lien
+  `explorer.solana.com/tx/…?cluster=devnet` (D8), Back to wallet / Menu ; échec avec la raison
+  (`txFailureText`, sur `en.tx.errors`), « Nothing was sent. » seulement sur `landed: 'no'`, le lien
+  de la signature sur `unknown`, Try again / Back to wallet. Un montant refusé à l'étape 2 prend
+  les deux textes plus courts de §9.5 (`en.wallets.withdraw.amount.refused`, par code) et sinon le
+  texte de V1-13 (`refusalOf`, sur `warn`). Le minimum rent-exempt s'affiche « 0.00089 SOL » (5
+  décimales, §9.5), pas au lamport.
+- **Parcours** ([withdraw.ts](apps/bot/src/features/wallets/withdraw.ts)) : `openWithdraw(ctx,
+walletId, { preset })` (nom fixé par V1-11) sur `wal:wd:<id>` et `wal:wdall:<id>` ; les étapes
+  sont `wal:wx:<step>` (`go`, `p25`, `p50`, `max`, `cus`, `ok:<token>`, `re`), l'état en session
+  `withdraw = { walletId, mode, toAddress?, amount?, confirmToken? }` (montant en chaîne, JSON n'a
+  pas de bigint ; jamais un secret ni un solde) et les saisies `pendingInput = { kind:
+"withdraw_address" | "withdraw_amount" }`. **L'état vit exactement le temps des écrans du
+  parcours** : `showScreen` reçoit `withdraw: state` sur chacun d'eux et tout autre écran — Cancel
+  et Back to wallet (`wal:v:<id>`), Menu, la liste, un blocage, le résultat d'un succès — l'efface,
+  comme `pendingInput` ; un vieux bouton d'étape est « This button has expired ». Adresse :
+  `solanaAddressSchema`, refus de celle du wallet source, `isOnCurve` (V1-09) pour le 1 bis ; un
+  autre wallet de l'utilisateur est accepté. Chaque choix de montant passe par `quote` : refusé →
+  étape 2 avec le flag et l'alerte de la règle (`⚠️ Insufficient funds (0.100 SOL missing)`, minimum
+  rent-exempt, adresse vide) ; en mode all, un Max refusé bascule en mode normal (proposition). La
+  confirmation est requotée à l'affichage et **porte un jeton** (`wal:wx:ok:<8 hex>`, rangé en
+  session, remplacé à chaque affichage et dépensé avant l'envoi) : un second clic est un bouton
+  périmé — ce jeton et la ligne PENDING remplacent le drapeau `inFlight` en session que la carte
+  proposait (la session n'est écrite qu'à la fin de l'update, elle ne survivrait pas à un arrêt en
+  plein envoi ; grammY traite les updates l'un après l'autre). Sur Confirm : refus à bas coût
+  d'abord, avec alerte (`resolve` trouve une tentative encore PENDING, `RATE_LIMITS.withdrawal`
+  5 / 10 min), puis la query est répondue tout de suite (`acknowledge`), l'écran « ⏳ Sending 1.250
+  SOL… » sans bouton, `execute`, le résultat. Try again : `resolve` d'abord — confirmée → succès,
+  encore PENDING → confirmation avec « ⚠️ A previous attempt may still go through. Check the
+  explorer first. », sinon confirmation requotée (solde, frais).
+- **Saisies** ([navigation/inputs.ts](apps/bot/src/navigation/inputs.ts)) : le routeur de saisies
+  annoncé en V1-12 — un `createInputRouter()` où chaque section enregistre son handler par `kind`
+  (`wallet_rename` de V1-11, `withdraw_address`, `withdraw_amount`), un seul `bot.on("message")`
+  monté après le gate. Il porte les deux règles du garde V1-12, qui les lui emprunte désormais :
+  `deleteMessageNow` (le message de l'utilisateur supprimé au mieux, proposition) et `isCommand` (une
+  commande suit son cours). L'import reste consommé par le garde, avant la limite de fréquence.
+- **Partagé** : `formatSolExact` (`formatSol` avec `minDecimals`) et `parseSolToLamports` qui accepte
+  l'unité (`1 SOL`, `0,5sol`) dans `format/sol.ts` ; `computeMaxAmount` dans `wallets.ts` ;
+  `WITHDRAWAL_PRESETS_PCT`, `WITHDRAWAL_IN_FLIGHT_MS`, `WITHDRAWAL_ERROR_MAX_CHARS` ;
+  `en.wallets.withdraw.*` et `warn(text)` exporté (la paire `{ alert, flag }` d'une phrase) ;
+  `E.destination` ; les textes `tx.errors` des règles de rente et de fonds acceptent un montant
+  absent (une simulation refuse sans chiffre). V1-13 : `sendTransfer` prend un `TransferRequest`
+  (les quatre champs qu'il relit) et un `onPrepared(quote)`, tout refus de `prepareTransfer` porte
+  `rentMinLamports`, `lookupSignature` lit l'historique d'une signature et `outcomeOf` est la
+  seule lecture d'un statut de signature — l'envoi l'utilise aussi, et un statut `processed` n'est
+  **jamais** re-signé, même une fois le blockhash expiré (le bloc peut encore être confirmé).
+- **Tests** : [withdraw.test.ts](apps/bot/src/features/wallets/withdraw.test.ts) (écrans sur les
+  maquettes de §9.5, adresse invalide / du wallet / hors courbe, Cancel et Menu qui ferment le
+  parcours, parts, Custom avec virgule et unité, refus avec flag, Confirm → Sending → résultat, double
+  Confirm → un seul envoi, limite de fréquence, tentative en vol, échec → Try again, résultat inconnu
+  → `resolve`, Withdraw all en deux étapes) ;
+  [withdrawals.test.ts](packages/db/src/services/withdrawals.test.ts) (V1-13 simulé : lignes
+  CONFIRMED / FAILED / PENDING, Max recalculé, verrou en vol, règlement d'une ligne périmée, bloc
+  encore en cours de vote) et
+  [withdrawals.int.test.ts](packages/db/src/services/withdrawals.int.test.ts) (vraie base : §13,
+  ligne conservée sans wallet après suppression). Le harnais du bot expose `fakeWithdrawals`,
+  `testQuote`, `testWithdrawal` ; celui de `db` `testTransferQuote`.
+
 ### Transactions Solana : frais, envoi et confirmation (V1-13)
 
 La brique d'envoi vit dans [packages/solana/src/tx/](packages/solana/src/tx/) : aucun écran, aucune
@@ -485,7 +582,7 @@ walletId } })` : `showScreen` écrit `session.pendingInput` (D16, survit à un r
 - **Delete** : `checkDeletable` relit le solde **sans cache** (contrôle de sécurité, hors throttle
   Refresh) ; un solde `stale` ou `unavailable` refuse (« Couldn't check the balance… »), un
   `Withdrawal` PENDING refuse (proposition), un solde au-dessus du budget de frais → écran de
-  blocage avec « 📤 Withdraw all » (`wal:wdall:<id>`, provisoire jusqu'à V1-14) ; sinon
+  blocage avec « 📤 Withdraw all » (`wal:wdall:<id>`, le retrait de V1-14 avec Max choisi) ; sinon
   confirmation. « Yes, delete » refait le contrôle (un dépôt a pu arriver : alerte « This wallet
   received SOL. Withdraw it first. » + écran de blocage), puis `deleteMany({ id, userId })` : la
   ligne et sa clé disparaissent, `Withdrawal.walletId` passe à `null` (SetNull), le cache des soldes
@@ -502,9 +599,9 @@ walletId } })` : `showScreen` écrit `session.pendingInput` (D16, survit à un r
 `registerWallets` ([apps/bot/src/features/wallets/wallets.ts](apps/bot/src/features/wallets/wallets.ts))
 branche le domaine `wal` : `wal:list` (le bouton « 👛 Wallets » du menu), `wal:lref` (Refresh de la
 liste), `wal:new` (Create), `wal:v:<id>` (détail), `wal:ref:<id>` (Refresh du détail), l'import
-(V1-12), le rename et le delete (V1-11), et l'écran provisoire `wal:wd:<id>` (V1-14), qui garde la
-ligne du wallet et un Back vers le détail. Les valeurs sont dans `WALLET_CB`
-([screens.ts](apps/bot/src/features/wallets/screens.ts)), les tickets suivants les reprennent.
+(V1-12), le rename et le delete (V1-11), et le retrait `wal:wd:<id>` / `wal:wx:<step>` (V1-14).
+Les valeurs sont dans `WALLET_CB` ([screens.ts](apps/bot/src/features/wallets/screens.ts)) et
+`WITHDRAW_CB`, les tickets suivants les reprennent.
 
 - **Service** `createWalletService` dans `@launchbot/db`
   ([packages/db/src/services/wallets.ts](packages/db/src/services/wallets.ts)) et non dans

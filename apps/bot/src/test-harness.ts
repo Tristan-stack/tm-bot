@@ -1,3 +1,4 @@
+import { resolveWithdrawAmount } from "@launchbot/db";
 import type {
   PrismaClient,
   User,
@@ -7,7 +8,12 @@ import type {
   WalletListData,
   WalletService,
   WalletSummary,
+  Withdrawal,
+  WithdrawalService,
+  WithdrawCheck,
 } from "@launchbot/db";
+import { computeMaxAmount } from "@launchbot/shared";
+import type { TransferQuote } from "@launchbot/solana";
 import type { Env } from "@launchbot/shared/server";
 import { BotError, GrammyError } from "grammy";
 import type { Bot } from "grammy";
@@ -61,9 +67,10 @@ export function interceptApi(bot: Bot<BotContext>, replies: ApiReplies = {}) {
     calls,
     of,
     /** The text of the nth call of a method: a screen, or the answer to a click. */
-    text: (method: string, index = 0) => String(of(method)[index]?.payload["text"]),
+    /** The text of the nth call of a method (`-1`: the last one): a screen, or a toast. */
+    text: (method: string, index = 0) => String(of(method).at(index)?.payload["text"]),
     keyboard: (method: string, index = 0) =>
-      (of(method)[index]?.payload["reply_markup"] as InlineKeyboardMarkup).inline_keyboard,
+      (of(method).at(index)?.payload["reply_markup"] as InlineKeyboardMarkup).inline_keyboard,
   };
 }
 
@@ -313,6 +320,15 @@ export const TEST_BALANCES: UserBalances = {
   status: "fresh",
 };
 
+/** A wallet of the fake balances, by id. */
+const findTestWallet = (walletId: string) =>
+  TEST_BALANCES.wallets.find((candidate) => candidate.id === walletId);
+const detailOf = (wallet: WalletBalance): WalletDetailData => ({
+  wallet,
+  fetchedAt: TEST_BALANCES.fetchedAt,
+  status: TEST_BALANCES.status,
+});
+
 /** The wallet service on the fake balances: no key, no vault, no database. */
 export function fakeWallets(overrides: Partial<WalletService> = {}): WalletService {
   const list: WalletListData = { ...TEST_BALANCES, count: 2, limit: 3 };
@@ -322,12 +338,7 @@ export function fakeWallets(overrides: Partial<WalletService> = {}): WalletServi
     publicKey: "9yKq3Vn8dSmyqWbTt7YdUBw3FvJ1AsTnFbxJ6t4AjkHo",
     createdAt: new Date("2026-09-21T14:40:00Z"),
   };
-  const find = (walletId: string) => list.wallets.find((candidate) => candidate.id === walletId);
-  const detailOf = (wallet: WalletBalance): WalletDetailData => ({
-    wallet,
-    fetchedAt: list.fetchedAt,
-    status: list.status,
-  });
+  const find = findTestWallet;
   return {
     listWithBalances: () => Promise.resolve(list),
     getOwned: (_userId, walletId) => {
@@ -383,6 +394,104 @@ export function fakeData(overrides: Partial<DataServices> = {}): DataServices {
   };
 }
 
+/** `getMinimumBalanceForRentExemption(0)` on devnet, as the fake withdrawals answer it. */
+export const TEST_RENT_MIN = 890_880n;
+/** The fee of a transfer in the fakes: the base fee, no priority fee, as devnet mostly is. */
+export const TEST_FEE = 5_000n;
+/**
+ * The signature of the mockup of §9.5 (`5KtP…x9Qm`), as the fake send answers it. Built at
+ * runtime: 88 base58 characters in a source file look like a secret key to a scanner.
+ */
+export const TEST_SIGNATURE = `5KtP${"1".repeat(80)}x9Qm`;
+
+/** A quote of V1-13 as the fakes make it: 1.250 SOL from Main to Test unless told otherwise. */
+export const testQuote = (overrides: Partial<TransferQuote> = {}): TransferQuote => ({
+  from: MAIN_WALLET.publicKey,
+  to: TEST_WALLET.publicKey,
+  mode: "exact",
+  amountLamports: 1_250_000_000n,
+  balanceLamports: MAIN_WALLET.lamports ?? 0n,
+  destinationLamports: TEST_RENT_MIN,
+  rentMinLamports: TEST_RENT_MIN,
+  fee: {
+    microLamportsPerCu: 0n,
+    computeUnitLimit: 540,
+    baseFeeLamports: TEST_FEE,
+    priorityFeeLamports: 0n,
+    totalFeeLamports: TEST_FEE,
+  },
+  ...overrides,
+});
+
+/** The row of a withdrawal the fake service records, CONFIRMED unless told otherwise. */
+export const testWithdrawal = (overrides: Partial<Withdrawal> = {}): Withdrawal => ({
+  id: "wd1",
+  userId: TEST_USER.id,
+  walletId: MAIN_WALLET.id,
+  fromAddress: MAIN_WALLET.publicKey,
+  toAddress: TEST_WALLET.publicKey,
+  lamports: 1_250_000_000n,
+  feeLamports: TEST_FEE,
+  signature: TEST_SIGNATURE,
+  status: "CONFIRMED",
+  error: null,
+  kind: "USER",
+  userTelegramId: null,
+  createdAt: new Date("2026-09-23T14:35:00Z"),
+  ...overrides,
+});
+
+/**
+ * The withdrawal service on the fake balances: every wallet can withdraw, every quote is
+ * accepted as V1-13 would price it, every send confirms, and nothing is ever in flight.
+ */
+export function fakeWithdrawals(overrides: Partial<WithdrawalService> = {}): WithdrawalService {
+  const check = (walletId: string): WithdrawCheck => {
+    const wallet = findTestWallet(walletId);
+    if (wallet === undefined) return { status: "not_found" };
+    const lamports = wallet.lamports ?? 0n;
+    return {
+      status: "ok",
+      detail: detailOf(wallet),
+      lamports,
+      feeLamports: TEST_FEE,
+      maxLamports: computeMaxAmount(lamports, TEST_FEE),
+      rentMinLamports: TEST_RENT_MIN,
+    };
+  };
+  return {
+    check: (_userId, walletId) => Promise.resolve(check(walletId)),
+    quote: (_userId, walletId, to, amount) => {
+      const checked = check(walletId);
+      if (checked.status !== "ok") return Promise.resolve(checked);
+      const lamports = resolveWithdrawAmount(checked.lamports, amount);
+      const quote = testQuote({
+        from: checked.detail.wallet.publicKey,
+        to,
+        mode: lamports === "max" ? "max" : "exact",
+        amountLamports: lamports === "max" ? checked.maxLamports : lamports,
+        balanceLamports: checked.lamports,
+      });
+      return Promise.resolve({ status: "ok", check: checked, quote });
+    },
+    execute: (_userId, walletId, to, amount) => {
+      const wallet = findTestWallet(walletId);
+      if (wallet === undefined) return Promise.resolve({ status: "not_found" });
+      const lamports =
+        amount.kind === "max" ? computeMaxAmount(wallet.lamports ?? 0n, TEST_FEE) : amount.lamports;
+      const withdrawal = testWithdrawal({
+        walletId,
+        fromAddress: wallet.publicKey,
+        toAddress: to,
+        lamports,
+      });
+      return Promise.resolve({ status: "sent", withdrawal });
+    },
+    resolve: () => Promise.resolve(null),
+    ...overrides,
+  };
+}
+
 /** The whole bot on fakes: no Telegram, no database, no RPC, no price provider. */
 export function botHarness(
   options: {
@@ -391,11 +500,13 @@ export function botHarness(
     env?: Partial<Env>;
     data?: Partial<DataServices>;
     wallets?: Partial<WalletService>;
+    withdrawals?: Partial<WithdrawalService>;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });
   const data = fakeData(options.data);
   const wallets = fakeWallets(options.wallets);
-  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, { data, wallets });
-  return { bot, api: interceptApi(bot, options.replies), prisma, data, wallets };
+  const withdrawals = fakeWithdrawals(options.withdrawals);
+  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, { data, wallets, withdrawals });
+  return { bot, api: interceptApi(bot, options.replies), prisma, data, wallets, withdrawals };
 }

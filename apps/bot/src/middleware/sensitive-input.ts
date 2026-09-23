@@ -1,15 +1,8 @@
 import { en } from "@launchbot/shared";
-import { createLogger } from "@launchbot/shared/server";
 import { looksLikePrivateKey, looksLikeSeedPhrase } from "@launchbot/solana";
 import type { MiddlewareFn } from "grammy";
-import type { Message } from "grammy/types";
 import type { BotContext } from "../context.js";
-import { isUndeletable } from "../navigation/telegram-errors.js";
-
-const log = createLogger("bot:sensitive");
-
-/** §9.4: one retry for a transport failure, then the user is told to delete it themselves. */
-const DELETE_ATTEMPTS = 2;
+import { deleteMessageNow, isCommand } from "../navigation/inputs.js";
 
 /** What the consumer of an import receives: its message is already out of the chat. */
 export type SecretMessage = {
@@ -28,30 +21,6 @@ export type SecretConsumer<Waiting> = {
   waiting: (ctx: BotContext) => Waiting | undefined;
   consume: (ctx: BotContext, waiting: Waiting, message: SecretMessage) => Promise<void>;
 };
-
-/** A command follows its normal course (§9.4): it cancels the import instead of feeding it. */
-const isCommand = (message: Message): boolean =>
-  message.entities?.[0]?.type === "bot_command" && message.entities[0].offset === 0;
-
-/**
- * Deletes the message being handled. Nothing of it is logged: it may be the secret itself. A
- * refusal Telegram will repeat is not retried, and 429 or 5xx are already retried by `autoRetry`.
- * `true` when the message is gone from the chat.
- */
-async function deleteNow(ctx: BotContext): Promise<boolean> {
-  for (let attempt = 1; attempt <= DELETE_ATTEMPTS; attempt++) {
-    try {
-      await ctx.deleteMessage();
-      return true;
-    } catch (error) {
-      if (attempt === DELETE_ATTEMPTS || isUndeletable(error)) {
-        log.warn({ userId: ctx.from?.id, err: error }, "Sensitive message not deleted");
-        return false;
-      }
-    }
-  }
-  return false;
-}
 
 /**
  * The one place a private key or a seed phrase may reach (§9.4, §14). It runs on private
@@ -80,7 +49,7 @@ export function sensitiveMessageGuard<Waiting>(
     if (waiting !== undefined) {
       // Deleted first, whatever the text turns out to be: the consumer may fail, the chat is
       // clean either way.
-      const deleted = await deleteNow(ctx);
+      const deleted = await deleteMessageNow(ctx);
       await consumer.consume(ctx, waiting, { text, deleted });
       return;
     }
@@ -88,7 +57,7 @@ export function sensitiveMessageGuard<Waiting>(
     if (text === undefined || !(looksLikePrivateKey(text) || looksLikeSeedPhrase(text))) {
       return next();
     }
-    const deleted = await deleteNow(ctx);
+    const deleted = await deleteMessageNow(ctx);
     const { sensitive } = en.wallets;
     // A separate message (proposal): the screen the user is on keeps its place and its buttons.
     await ctx.reply(

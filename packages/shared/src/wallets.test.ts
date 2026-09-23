@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeMaxAmount,
   getWalletLimit,
   getWithdrawFeeBudgetLamports,
   isBalanceWithdrawable,
@@ -37,6 +38,12 @@ describe("wallet rules", () => {
     expect(getWithdrawFeeBudgetLamports(1_000_000)).toBe(6_000n);
     // 1 500 microlamports × 1 000 units = 1.5 lamport, rounded up.
     expect(getWithdrawFeeBudgetLamports(1_500)).toBe(5_002n);
+  });
+
+  it("leaves the fees behind for Max, and never goes below 0", () => {
+    expect(computeMaxAmount(1_000_000n, 5_000n)).toBe(995_000n);
+    expect(computeMaxAmount(5_000n, 5_000n)).toBe(0n);
+    expect(computeMaxAmount(1_000n, 5_000n)).toBe(0n);
   });
 
   it("lets a wallet be deleted at the fee budget, not one lamport above", () => {

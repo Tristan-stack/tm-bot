@@ -43,6 +43,12 @@ export async function notify(
 }
 
 /**
+ * Answers the query with nothing, now: the client stops its spinner while a long action runs
+ * (a withdrawal takes seconds, V1-14). Nothing can be said to that query afterwards.
+ */
+export const acknowledge = (ctx: BotContext): Promise<void> => answer(ctx);
+
+/**
  * Wraps the whole chain: once the handlers are done, a query nobody answered is closed with
  * no text, so the client stops its spinner. A wrapper cannot be skipped by a handler that
  * does not call `next()`, which is what commands and conversations do.

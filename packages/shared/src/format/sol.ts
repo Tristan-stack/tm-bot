@@ -9,11 +9,13 @@ export type FormatSolOptions = {
   rounding?: SolRounding;
   /** Drops trailing zeros: `3`, `0.05`. */
   trim?: boolean;
+  /** With `trim`, the decimals kept whatever the zeros: `{ trim: true, minDecimals: 3 }` → `1.250`. */
+  minDecimals?: number;
 };
 
 /** `2.500`: SOL amount without its unit. Computed on lamports, never on floats. */
 export function formatSolAmount(lamports: bigint, options: FormatSolOptions = {}): string {
-  const { decimals = 3, rounding = "floor", trim = false } = options;
+  const { decimals = 3, rounding = "floor", trim = false, minDecimals = 0 } = options;
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > SOL_DECIMALS) {
     throw new RangeError(`decimals must be an integer from 0 to ${SOL_DECIMALS}`);
   }
@@ -33,7 +35,11 @@ export function formatSolAmount(lamports: bigint, options: FormatSolOptions = {}
   const digits = scaled.toString().padStart(decimals + 1, "0");
   const integer = digits.slice(0, digits.length - decimals);
   let text = decimals === 0 ? integer : `${integer}.${digits.slice(-decimals)}`;
-  if (trim && decimals > 0) text = trimTrailingZeros(text);
+  if (trim && decimals > 0) {
+    const [whole = "0", fraction = ""] = trimTrailingZeros(text).split(".");
+    const kept = fraction.padEnd(minDecimals, "0");
+    text = kept === "" ? whole : `${whole}.${kept}`;
+  }
   return negative && scaled > 0n ? `-${text}` : text;
 }
 
@@ -41,9 +47,20 @@ export function formatSolAmount(lamports: bigint, options: FormatSolOptions = {}
 export const formatSol = (lamports: bigint, options?: FormatSolOptions): string =>
   `${formatSolAmount(lamports, options)} SOL`;
 
-const SOL_INPUT = /^(\d{1,10})(?:[.,](\d{1,9}))?$/;
+/**
+ * Exact to the lamport, for what is about to be sent or was charged (§9.5, V1-14): every
+ * decimal that is not zero, and three at least, so that a fee reads `0.000005 SOL` and an
+ * amount `1.250 SOL`, never `0.000 SOL`.
+ */
+export const formatSolExact = (lamports: bigint): string =>
+  formatSol(lamports, { decimals: SOL_DECIMALS, trim: true, minDecimals: 3 });
 
-/** Parses a typed amount: `.` or `,`, 9 decimals max, no sign, no exponent. `null` if invalid. */
+const SOL_INPUT = /^(\d{1,10})(?:[.,](\d{1,9}))?(?:\s*sol)?$/i;
+
+/**
+ * Parses a typed amount: `.` or `,`, 9 decimals max, no sign, no exponent, the unit allowed
+ * after the number (`1 SOL`, V1-14). `null` if invalid.
+ */
 export function parseSolToLamports(input: string): bigint | null {
   const match = SOL_INPUT.exec(input.trim());
   if (match === null) return null;

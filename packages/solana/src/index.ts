@@ -44,14 +44,15 @@ export { isTxFailure } from "./tx/fees.js";
 export { getRentExemptMinimum } from "./tx/rent.js";
 export { sendAndConfirm } from "./tx/send.js";
 export type { SendTxOptions } from "./tx/send.js";
+export { lookupSignature, outcomeOf } from "./tx/status.js";
+export type { SignatureOutcome } from "./tx/status.js";
 export {
-  computeMaxAmount,
   estimateTransferFee,
   prepareTransfer,
   sendTransfer,
   validateTransfer,
 } from "./tx/transfer.js";
-export type { TransferChecks } from "./tx/transfer.js";
+export type { TransferChecks, TransferRequest } from "./tx/transfer.js";
 export type {
   FeeEstimate,
   Lamports,

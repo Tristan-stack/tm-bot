@@ -1,7 +1,7 @@
 import type { RenameIssue, WalletSummary } from "@launchbot/db";
 import { en, escapeHtml, WALLET_NAME_MAX_CHARS } from "@launchbot/shared";
-import type { MiddlewareFn } from "grammy";
 import type { BotContext } from "../../context.js";
+import type { InputHandler } from "../../navigation/inputs.js";
 import { showScreen } from "../../navigation/show-screen.js";
 import type { ShowMode } from "../../navigation/show-screen.js";
 import type { CallbackHandler } from "../../router/callback-router.js";
@@ -44,20 +44,13 @@ export const renameHandlers = (nav: WalletNav): Record<string, CallbackHandler> 
 });
 
 /**
- * The message that answers "Send the new name.". The message of the user is deleted (best
+ * The message that answers "Send the new name.". The input router already deleted it (best
  * effort, proposal) and the screen is edited in place: the chat keeps one screen.
  */
-export function handleRenameInput(nav: WalletNav): MiddlewareFn<BotContext> {
-  return async (ctx, next) => {
-    const pending = ctx.session.pendingInput;
-    if (pending?.kind !== "wallet_rename" || ctx.message === undefined) return next();
-
-    // Not waited for: the rename does not depend on it.
-    const deleting = ctx.deleteMessage().catch(() => undefined);
-    const text = ctx.message.text;
+export function renameInput(nav: WalletNav): InputHandler<"wallet_rename"> {
+  return async (ctx, pending, text) => {
     const result =
       text === undefined ? null : await nav.wallets.rename(ctx.user.id, pending.walletId, text);
-    await deleting;
 
     if (result === null) {
       // A photo, a sticker: the input stays open, with the wallet read again for its name.

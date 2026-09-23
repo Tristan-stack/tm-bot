@@ -18,6 +18,12 @@ import { enWebapp } from "./en-webapp.js";
  * - A blocked click (§4.5) is a pair `{ alert, flag }`: the alert of `answerCallbackQuery`
  *   (200 characters max, checked by a test on every pair) and the line written on the screen.
  */
+/** The two halves of a blocked click (§4.5) from one sentence: the alert bare, the flag marked. */
+export const warn = (text: string): { alert: string; flag: string } => ({
+  alert: text,
+  flag: `${E.warning} ${text}`,
+});
+
 export const en = {
   btn: {
     back: `${E.back} Back`,
@@ -289,9 +295,90 @@ export const en = {
       notDeleted: `${E.warning} Couldn't delete your message. Delete it yourself now.`,
       advice: `Never share it with anyone. To add a wallet, use ${E.wallets} Wallets › ${E.import} Import.`,
     },
-    // Provisional screen, replaced by V1-14. proposed text (D19)
-    comingSoon: {
-      withdraw: { title: `${E.withdraw} WITHDRAW`, description: "Withdrawals are coming soon." },
+    // Withdraw (§9.5, V1-14). The prompt of step 1 and the button labels come from the context;
+    // every other text is proposed (D19). Amounts arrive formatted, exact where §9.5 asks.
+    withdraw: {
+      title: `${E.withdraw} WITHDRAW`,
+      /** The balance does not even cover the fees of a transfer: the rule of V1-11. */
+      nothingToWithdraw: warn("Nothing to withdraw: the balance doesn't cover the fees."),
+      /** `name` arrives escaped, `address` shortened. */
+      from: (name: string, address: string) => `${E.wallets} From: ${name} · ${address}`,
+      /** `address` shortened on the steps, `code(address)` on the confirmation and the result. */
+      to: (address: string) => `${E.destination} To: ${address}`,
+      address: {
+        prompt: "Send the destination address.",
+        balance: (balance: string) => `${E.balance} Balance: ${balance}`,
+        amountMax: `${E.balance} Amount: Max (balance − fees)`,
+        rules: "Format: a Solana address, different from this wallet.",
+        invalid: `${E.warning} Invalid address. Send a Solana address.`,
+        /** `name` arrives escaped. */
+        sameWallet: (name: string) =>
+          `${E.warning} This is the address of ${name}. Send a different address.`,
+        notText: `${E.warning} Send the address as a text message.`,
+      },
+      offCurve: {
+        warning: `${E.warning} This address is not on the ed25519 curve. It is often a program account: SOL sent there may be lost.`,
+        btnContinue: `${E.warning} Continue anyway`,
+      },
+      amount: {
+        prompt: "Choose how much SOL to send.",
+        available: (balance: string) => `${E.balance} Available: ${balance}`,
+        /** `fee` and `max` are exact: `0.000005 SOL`, `2.499995 SOL`. */
+        feesAndMax: (fee: string, max: string) => `${E.fees} Fees: ≈ ${fee} · Max: ${max}`,
+        btnPct: (pct: number) => `${pct}%`,
+        btnMax: "Max",
+        btnCustom: `${E.edit} Custom`,
+        custom: {
+          prompt: "Send the amount in SOL.",
+          rules: (max: string, rentMin: string) =>
+            `Rules: a number like 0.5 (up to 9 decimals), at most ${max}. The balance left must be 0 or at least ${rentMin}.`,
+          invalid: `${E.warning} Invalid amount. Send a number like 0.5.`,
+          notText: `${E.warning} Send the amount as a text message.`,
+        },
+        // Two rules of §9.5 said shorter on the amount step; every other code reads `tx.errors`.
+        refused: {
+          /** `missing` is exact, or absent when the simulation refused without a number. */
+          INSUFFICIENT_FUNDS: (missing?: string) =>
+            warn(
+              missing === undefined
+                ? "Insufficient funds"
+                : `Insufficient funds (${missing} missing)`,
+            ),
+          REMAINING_BELOW_RENT: (rentMin?: string) =>
+            warn(
+              rentMin === undefined
+                ? "The balance left would be below the rent-exempt minimum. Choose Max or a smaller amount."
+                : `The balance left would be below the rent-exempt minimum (${rentMin}). Choose Max or a smaller amount.`,
+            ),
+        } satisfies Partial<
+          Record<TxFailureCode, (amount?: string) => { alert: string; flag: string }>
+        >,
+      },
+      confirm: {
+        prompt: "Check the withdrawal. A sent transaction can't be reversed.",
+        amount: (amount: string) => `${E.balance} Amount: ${amount}`,
+        amountMax: (amount: string) => `${E.balance} Amount: ${amount} (Max)`,
+        fees: (fee: string) => `${E.fees} Fees: ≈ ${fee}`,
+        /** `name` is `ui.config.networkName`: `Solana Devnet`. */
+        network: (name: string) => `${E.devnet} Network: Solana ${name}`,
+        inProgress: warn("A withdrawal is already in progress."),
+        tooMany: warn("Too many withdrawals. Try again in a few minutes."),
+        previousMayLand: `${E.warning} A previous attempt may still go through. Check the explorer first.`,
+        /** The screen without a button while the transaction is sent and confirmed. */
+        sending: (amount: string) => `${E.waiting} Sending ${amount}…`,
+      },
+      result: {
+        sent: `${E.confirm} Withdrawal sent.`,
+        failed: `${E.fail} Withdrawal failed.`,
+        /** `text` is one of `tx.errors`. */
+        reason: (text: string) => `Reason: ${text}`,
+        amount: (amount: string) => `${E.balance} Amount: ${amount}`,
+        fees: (fee: string) => `${E.fees} Fees: ${fee}`,
+        /** `link` is `a(shortSignature, explorerTxUrl)`. */
+        signature: (link: string) => `${E.explorer} Signature: ${link}`,
+        btnTryAgain: `${E.retry} Try again`,
+        btnBackToWallet: `${E.back} Back to wallet`,
+      },
     },
   },
 
@@ -301,14 +388,20 @@ export const en = {
   tx: {
     errors: {
       INVALID_AMOUNT: "Enter an amount greater than 0.",
-      /** `missing` is how much SOL the amount plus its fees goes over the balance by. */
-      INSUFFICIENT_FUNDS: (missing: string) =>
-        `Not enough SOL for this amount plus fees (${missing} SOL missing).`,
-      /** `rentMin` is the rent-exempt minimum of an empty account, about 0.00089 SOL. */
-      REMAINING_BELOW_RENT: (rentMin: string) =>
-        `The balance left would be below the rent-exempt minimum (${rentMin} SOL). Send Max or leave at least ${rentMin} SOL.`,
-      DESTINATION_BELOW_RENT: (rentMin: string) =>
-        `This address is empty: send at least ${rentMin} SOL.`,
+      /** `missing` is how much the amount plus its fees goes over the balance by, when known. */
+      INSUFFICIENT_FUNDS: (missing?: string) =>
+        missing === undefined
+          ? "Not enough SOL for this amount plus fees."
+          : `Not enough SOL for this amount plus fees (${missing} missing).`,
+      /** `rentMin` is the rent-exempt minimum of an empty account, `0.00089 SOL`. */
+      REMAINING_BELOW_RENT: (rentMin?: string) =>
+        rentMin === undefined
+          ? "The balance left would be below the rent-exempt minimum. Send Max or leave more."
+          : `The balance left would be below the rent-exempt minimum (${rentMin}). Send Max or leave at least ${rentMin}.`,
+      DESTINATION_BELOW_RENT: (rentMin?: string) =>
+        rentMin === undefined
+          ? "This address is empty: send at least the rent-exempt minimum."
+          : `This address is empty: send at least ${rentMin}.`,
       TRANSACTION_REJECTED: "The network rejected the transaction.",
       BLOCKHASH_EXPIRED: "The network didn't confirm the transaction in time.",
       CONFIRMATION_UNKNOWN:
@@ -346,6 +439,16 @@ export const en = {
     LAUNCH: {
       title: `${E.launchCoin} LAUNCH`,
       steps: ["Wallet", "Dev buy", "Token", "Recap"],
+    },
+    // Withdraw (§9.5, proposal: the context has no mockup of its header).
+    WITHDRAW: {
+      title: `${E.withdraw} WITHDRAW`,
+      steps: ["Address", "Amount", "Confirm"],
+    },
+    /** Withdraw all (§9.3): Max is chosen, so the amount step is skipped. */
+    WITHDRAW_ALL: {
+      title: `${E.withdraw} WITHDRAW`,
+      steps: ["Address", "Confirm"],
     },
   },
 

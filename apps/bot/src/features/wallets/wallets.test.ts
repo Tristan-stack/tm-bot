@@ -23,7 +23,6 @@ import {
   buildRenameScreen,
   buildWalletDetailScreen,
   buildWalletListScreen,
-  buildWithdrawSoonScreen,
   WALLET_CB,
 } from "./screens.js";
 import type { WalletDetailView, WalletListView } from "./screens.js";
@@ -220,23 +219,6 @@ describe("buildWalletDetailScreen", () => {
   });
 });
 
-describe("provisional withdraw screen", () => {
-  it("shows the wallet line and goes back to the detail", () => {
-    const screen = buildWithdrawSoonScreen(ui, detail());
-
-    expect(screen.text).toBe(
-      [
-        "<b>📤 WITHDRAW</b> · 🧪 Devnet",
-        "",
-        "Withdrawals are coming soon.",
-        "",
-        "👛 Main · 2.500 SOL ($258.40)",
-      ].join("\n"),
-    );
-    expect(keyboardOf(screen)).toEqual([[{ text: "⬅️ Back", callback_data: "wal:v:w1" }]]);
-  });
-});
-
 describe("wallet handlers", () => {
   it("opens the list from the menu button, by editing the screen", async () => {
     const { bot, api } = botHarness();
@@ -291,7 +273,7 @@ describe("wallet handlers", () => {
   it.each([
     ["the detail", WALLET_CB.view],
     ["a Refresh", WALLET_CB.refresh],
-    ["a provisional screen", WALLET_CB.withdraw],
+    ["a withdrawal", WALLET_CB.withdraw],
   ])(
     "falls back to the list with a flag when %s targets a wallet that is gone",
     async (_label, build) => {
@@ -333,17 +315,6 @@ describe("wallet handlers", () => {
     await feed(bot, callbackUpdate(WALLET_CB.refresh("w1")));
 
     expect(api.of("answerCallbackQuery")[0]?.payload["text"]).toBe(en.common.alreadyUpToDate);
-  });
-
-  it.each([
-    ["withdraw", WALLET_CB.withdraw("w1"), "Withdrawals are coming soon."],
-    ["withdraw all", WALLET_CB.withdrawAll("w1"), "Withdrawals are coming soon."],
-  ])("shows the provisional screen of %s", async (_label, data, text) => {
-    const { bot, api } = botHarness();
-
-    await feed(bot, callbackUpdate(data));
-
-    expect(api.text("editMessageText")).toContain(text);
   });
 });
 

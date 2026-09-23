@@ -14,13 +14,14 @@ export * from "./format/index.js";
 export { E } from "./i18n/emoji.js";
 export type { EmojiName } from "./i18n/emoji.js";
 export { enWebapp } from "./i18n/en-webapp.js";
-export { en } from "./i18n/en.js";
+export { en, warn } from "./i18n/en.js";
 export { DEFAULT_TERMS_VERSION, LEGAL_UPDATED_AT, resolveTermsVersion } from "./legal.js";
 export * from "./schemas.js";
 export * from "./solana-address.js";
 export * from "./ui/index.js";
 export { joinUrl, withoutTrailingSlash } from "./url.js";
 export {
+  computeMaxAmount,
   getWalletLimit,
   getWithdrawFeeBudgetLamports,
   isBalanceWithdrawable,

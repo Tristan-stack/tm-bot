@@ -10,10 +10,11 @@ export const PACKAGE_NAME = "@launchbot/db";
 
 export { createPrismaClient, disconnectPrisma, prisma } from "./client.js";
 export { isUniqueViolation } from "./errors.js";
-export { createBalancesService } from "./services/balances.js";
+export { createBalancesService, readFreshWallet } from "./services/balances.js";
 export type {
   BalancesDeps,
   BalancesService,
+  FreshWalletRead,
   UserBalances,
   WalletBalance,
 } from "./services/balances.js";
@@ -47,4 +48,16 @@ export type {
   WalletSummary,
   WalletVault,
 } from "./services/wallets.js";
+export { createWithdrawalService, resolveWithdrawAmount } from "./services/withdrawals.js";
+export type {
+  TransferApi,
+  WithdrawAmount,
+  WithdrawalsDeps,
+  WithdrawalService,
+  WithdrawCheck,
+  WithdrawOkCheck,
+  WithdrawOutcome,
+  WithdrawQuote,
+  WithdrawRequest,
+} from "./services/withdrawals.js";
 export * from "./generated/prisma/client.js";

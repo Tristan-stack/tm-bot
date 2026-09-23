@@ -61,6 +61,7 @@ export const E = {
   balance: "💰",
   privateKey: "🔑",
   seedPhrase: "🌱",
+  destination: "📍",
 
   // Flows
   devBuy: "💰",

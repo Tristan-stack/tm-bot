@@ -43,6 +43,18 @@ export const IMPORT_INPUT_TIMEOUT_MS = 120 * SECOND_MS;
 /** Refused before parsing (V1-12): a 24-word phrase is about 200 characters, a key 88. */
 export const IMPORT_SECRET_MAX_CHARS = 1_000;
 
+// Withdrawals (§9.5, V1-14)
+/** The two shares of the balance the amount step offers, next to Max and Custom. */
+export const WITHDRAWAL_PRESETS_PCT = [25, 50] as const;
+export type WithdrawalPresetPct = (typeof WITHDRAWAL_PRESETS_PCT)[number];
+/**
+ * A withdrawal still PENDING after this is not in flight any more (proposal): its transaction
+ * either landed, and the next attempt finds it, or its blockhash expired long ago.
+ */
+export const WITHDRAWAL_IN_FLIGHT_MS = 2 * MINUTE_MS;
+/** `Withdrawal.error` (proposal): a code and a short reason, never a secret. */
+export const WITHDRAWAL_ERROR_MAX_CHARS = 500;
+
 // SOL amounts, always in lamports
 export const SOL_DECIMALS = 9;
 export const LAMPORTS_PER_SOL = 10n ** BigInt(SOL_DECIMALS);
