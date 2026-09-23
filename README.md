@@ -307,6 +307,119 @@ Sessions et conversations partagent la table `Session` (préfixe `conversation-`
 Une session que la version en place ne sait pas lire est jetée et reconstruite, donc un déploiement
 ne casse aucune conversation. **Aucun secret en session** : les lignes sont en clair.
 
+### Générateur : AI Generate (V1-17)
+
+Le clic sur « AI Generate » est réservé aux abonnés Premium, limité à 50 générations par jour UTC
+(D9), et utilise en V1 le générateur local : aucun fournisseur IA n'est branché avant DEC-02.
+
+- **Fournisseurs** : `AiTokenTextProvider` et `AiTokenLogoProvider`
+  ([packages/shared/src/ai/types.ts](packages/shared/src/ai/types.ts)) reçoivent le token précédent et
+  un `AbortSignal`, rien d'autre (§11.3). `createAiProviders(env)`
+  ([providers.ts](apps/bot/src/services/ai/providers.ts)) renvoie `{ text: null, logo: null }`
+  même avec `LLM_API_KEY` / `IMAGE_API_KEY`, et logue au démarrage un avertissement qui nomme la
+  variable, jamais sa valeur (les deux clés sont déjà dans la liste des secrets masqués du logger).
+  `isAiModelAvailable(providers)` = un fournisseur texte existe : c'est la règle qui retire la
+  mention « coming soon » de l'écran Token et, en V1-29, de l'écran des offres.
+- **Quota** : `createAiQuotaStore({ prisma })`
+  ([ai-generations.ts](packages/db/src/services/ai-generations.ts)) — `reserveText(userId, now)`
+  compte les lignes `AiGeneration` TEXT depuis `startOfUtcDay(now)` et en insère une, dans une
+  transaction sous verrou consultatif par utilisateur (deux clics à 49/50 n'en acceptent qu'un,
+  test d'intégration `RUN_DB_TESTS=1`) ; `recordLogo` ajoute une ligne LOGO non comptée
+  (proposition : un clic = une génération). `nextUtcMidnight` donne le `resetsAt`.
+- **Service** : `createAiGenerateService({ quota, providers, hasActivePremium })`
+  ([ai-generate.ts](apps/bot/src/services/ai/ai-generate.ts)), testable sans Telegram.
+  `generate(userId, previous)` relit l'offre, réserve le quota, puis prend le texte du fournisseur
+  (délai `AI_TEXT_TIMEOUT_MS`, sortie validée par `generatedTokenSchema`) ou du générateur local ;
+  un fournisseur en échec, trop lent ou hors règles donne `source: "LOCAL_FALLBACK"` et le clic
+  compte quand même. Le logo (délai `AI_LOGO_TIMEOUT_MS`) est renvoyé en octets, `null` en échec.
+  Résultats : `NOT_PREMIUM`, `QUOTA_REACHED { used, limit, resetsAt }`, `OK { token, logo, source,
+used, limit }`.
+- **Hooks de l'écran Token** ([ai-hooks.ts](apps/bot/src/features/token-step/ai-hooks.ts),
+  construits par `createTokenStep` lui-même à partir de `ai` et `providers`) : `extraLines` donne la ligne
+  `🤖 AI generations today: 13/50` aux Premium (info, après le bloc) et la mention
+  `🤖 AI model coming soon: AI Generate uses the standard generator for now.` à tout le monde
+  (note, après les flags) tant que `isAiModelAvailable` est faux. Le clic : limite de fréquence
+  `RATE_LIMITS.generate` (partagée avec Generate) → alerte + flag ; `NOT_PREMIUM` → alerte
+  « 🔒 AI Generate is a Premium feature. » + flag « 🔒 AI Generate: Premium only » ;
+  `QUOTA_REACHED` → alerte + flag « daily limit reached (50/50). Resets at 00:00 UTC. » ; `OK` →
+  `applyTokenValues` (nom, ticker, description ; image et liens conservés) et le flag
+  « AI model unavailable: used the standard generator. » en repli. Avec un fournisseur, la query
+  est répondue tout de suite et l'écran affiche « 🤖 Generating… » pendant l'appel ; un logo est
+  envoyé par `sendPhoto` dans le chat, le message supprimé, et son `file_id` remplace
+  `imageFileId` (proposition à valider en DEC-02).
+
+### Générateur : écran Token réutilisable (V1-16)
+
+L'étape Token (§5) est un composant unique, `createTokenStep({ ui, drafts, data, ai, providers })`
+([token-step.ts](apps/bot/src/features/token-step/token-step.ts)), configuré par parcours : étape
+1/3 de Simulate a Launch, étape 3/4 de Launch Coin. `tokenStep.mount(router, inputs)` branche une
+fois le domaine `tok` et la saisie `token_field` ; chaque parcours appelle
+`tokenStep.registerFlow(config)` avec la cible de son Back (`backData` : `nav:home` pour la
+simulation, l'étape 2 pour le launch — un bouton qui ne fait que naviguer, comme partout), ses
+lignes de résumé (`summaryLines`, LAUNCH : wallet et dev buy) et son `onContinue(ctx, draft)` — qui
+reçoit toujours un brouillon avec `name` et `symbol` non nuls. L'id du brouillon vit dans la session
+du step, par parcours. Les hooks d'AI Generate (V1-17, lignes d'info et de notes sur l'écran, et le
+clic) sont construits par le step à partir de `ai` et `providers` ; le libellé du bouton vient de
+`data.hasActivePremium(userId)` (`🔒` sans Premium actif, `🤖` avec).
+
+- **Écrans** ([screens.ts](apps/bot/src/features/token-step/screens.ts)), purs et testés sur le
+  mockup du §5 : `renderTokenStep(ui, { flow, draft, isPremium, backData, summaryLines, infos,
+flags, notes })` (en-tête de parcours, description, résumé, bloc TOKEN, infos, flags, notes,
+  clavier), l'écran de choix
+  d'Edit, et `buildFieldInputScreen(ui, flow, field, draft)` pour les sept saisies (valeur
+  courante, règle, erreur, Cancel — et « 🗑 Remove » pour image et liens déjà remplis). Champ vide
+  → `—`, ticker via `formatTicker`, liens via `formatLinkForDisplay`, toute valeur utilisateur
+  échappée. Callback data `tok:<op>:<s|l>[:<champ>]` (`TOKEN_CB`), toutes sous 20 octets : le
+  routeur dispatche sur l'op, chaque handler relit le parcours avec `tokenFlowOf`.
+- **Brouillon** : `createTokenDraftService({ prisma })`
+  ([token-drafts.ts](packages/db/src/services/token-drafts.ts)) avec `getOwnedDraft(userId, id)`
+  (null pour le brouillon d'un autre) et `write(userId, id | null, patch)` : création paresseuse à
+  la première écriture, **copie à l'écriture** si une `Simulation` référence le brouillon (D14 : une
+  simulation garde le token avec lequel elle a été créée), mise à jour sinon. `applyTokenValues`
+  garde en session l'id renvoyé, et passe le brouillon écrit à `showTokenStep({ draft })` pour que
+  l'écran ne le relise pas.
+- **Session** : `tokenStep[flow] = { draftId?, showMissing? }`, conservé d'un écran à l'autre (le
+  menu retrouve le même brouillon) ; la saisie est le `pendingInput`
+  `{ kind: "token_field", flow, field, since }` de V1-11, donc fermée par tout autre écran, et
+  ignorée après `TOKEN_INPUT_TIMEOUT_MS` (10 min, proposition) avec le flag « This input expired ».
+- **Boutons** : Generate = `generateLocalToken({ previous })` (nom, ticker, description
+  remplacés ; image et liens conservés), limité par `RATE_LIMITS.generate` (alerte + flag
+  `tooManyActions`). Continue sans nom ou sans ticker : alerte « Add a name and ticker first. » et
+  flag `⚠️ Missing: name, ticker` (ou le seul champ manquant), qui **reste** et suit les champs
+  jusqu'à ce que les deux soient là (proposition). Remove met la colonne à null.
+- **Saisies** : texte brut → `parseTokenField` → écriture ou écran de saisie avec l'erreur
+  (`errorTextOf`, un texte par code de V1-15) ; image → `imageFileIdOf(message)` : la plus grande
+  taille d'une photo, ou un document `image/jpeg|png|webp` ≤ `TOKEN_IMAGE_MAX_BYTES` (20 MB, limite
+  de `getFile`), tout autre message est refusé à l'écran. Après une saisie, l'écran revient en
+  place (`mode: "edit"`).
+- **Provisoire** ([simulation/provisional.ts](apps/bot/src/features/simulation/provisional.ts),
+  remplacé par V1-22) : `sim:open` (le bouton du menu) ouvre l'étape Token en SIMULATION, son Back
+  est `nav:home`, Continue affiche l'étape 2/3 « The dev buy step is coming soon. » avec Back →
+  `sim:open` et Menu.
+
+### Générateur : générateur local et règles des champs (V1-15)
+
+Module pur de `packages/shared` ([src/token/](packages/shared/src/token/)), sans API Node : la
+Mini App peut l'embarquer. `generateLocalToken({ rng?, previous? })` compose `<Adjectif> <Nom>`
+depuis les listes de [words.ts](packages/shared/src/token/words.ts) (128 × 128, ASCII, ≤ 12
+caractères, aucune marque ni promesse de gain — test de liste noire), un ticker de 3 à 6 lettres
+selon trois stratégies (`OTTR`, `MOTTER`, `MOTR`) et une description de 1 à 3 phrases. Avec
+`previous`, le résultat diffère toujours sur le nom **et** le ticker : 20 tirages, puis parcours
+déterministe des combinaisons. Chaque sortie passe `generatedTokenSchema`.
+
+`parseTokenField(field, raw)` ([fields.ts](packages/shared/src/token/fields.ts)) normalise et valide
+les six champs texte du §5 — NFC, retours à la ligne en espaces, caractères de contrôle refusés,
+longueurs du nom et du ticker en **octets UTF-8** (`utf8ByteLength`, jamais `.length`), ticker
+mesuré **après** upper-case et NFC (`ΐ` passe de 2 à 4 octets), description de 1 à 3 phrases et
+280 caractères, site en `https://` seulement, X et Telegram normalisés en `https://x.com/<handle>`
+et `https://t.me/<username>` (invitations en `t.me/+<hash>`). Erreurs typées
+`{ field, code, max?, actual?, unit? }` sans texte ; les schémas zod `token*Schema` enveloppent les
+mêmes fonctions et portent l'erreur dans `issue.params` (`tokenFieldErrorOf`). Les limites sont des
+constantes uniques de `constants.ts` (`TOKEN_NAME_MAX_BYTES`, `TOKEN_TICKER_MAX_BYTES`,
+`TOKEN_DESCRIPTION_MAX_SENTENCES`, `TOKEN_DESCRIPTION_MAX_CHARS`, `TOKEN_URL_MAX_LENGTH`), à relire
+en V2-01 face à `create_v2`. `display.ts` fournit `formatTicker`, `formatLinkForDisplay` et
+`missingRequiredFields` (nom et ticker seulement, §5).
+
 ### Wallets : import et messages sensibles (V1-12)
 
 Deuxième façon d'obtenir un wallet, et le point le plus sensible de la V1 : aucun secret dans le
@@ -705,9 +818,9 @@ le Refresh et la reprise `home` du premier accès.
   **exactement** ces valeurs.
 - Sections pas encore livrées : `registerComingSoon` enregistre un écran **provisoire** sur leur
   domaine (`router.registerProvisional`). Le `router.register` du ticket d'une section le remplace,
-  sans rien retirer nulle part. `showComingSoon(ctx, ui, section)`
-  ([coming-soon.ts](apps/bot/src/features/home/coming-soon.ts)) sert aussi pour un bouton laissé à
-  un ticket ultérieur.
+  sans rien retirer nulle part (`sim` est sorti de la liste avec V1-16). `showComingSoon(ctx, ui,
+section)` ([coming-soon.ts](apps/bot/src/features/home/coming-soon.ts)) sert aussi pour un
+  bouton laissé à un ticket ultérieur.
 
 Routeur de callbacks : `router.register(domain, { action: handler })`. Un domaine ou une action
 inconnus reçoivent « This button has expired » du routeur lui-même, aucun handler n'a à le faire.

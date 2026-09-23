@@ -5,6 +5,7 @@
  */
 export const PACKAGE_NAME = "@launchbot/shared";
 
+export * from "./ai/types.js";
 export * from "./cache/last-known.js";
 export * from "./cache/ttl-cache.js";
 export * from "./callback.js";
@@ -18,6 +19,7 @@ export { en, warn } from "./i18n/en.js";
 export { DEFAULT_TERMS_VERSION, LEGAL_UPDATED_AT, resolveTermsVersion } from "./legal.js";
 export * from "./schemas.js";
 export * from "./solana-address.js";
+export * from "./token/index.js";
 export * from "./ui/index.js";
 export { joinUrl, withoutTrailingSlash } from "./url.js";
 export {

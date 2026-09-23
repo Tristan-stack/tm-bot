@@ -10,6 +10,7 @@ import {
   WALLET_NAME_MAX_CHARS,
 } from "./constants.js";
 import { parseSolToLamports } from "./format/sol.js";
+import { codePointLength, collapseSpaces, hasControlChars } from "./format/text.js";
 
 /** Telegram ids fit in 52 bits: a safe integer. */
 export const telegramIdSchema = z.int().positive();
@@ -46,7 +47,7 @@ export const devBuySolSchema = solAmountInputSchema.refine(
 export const httpsUrlSchema = z.url({ protocol: /^https$/ });
 
 /** Trim, one space between words. Line breaks are not spaces here: they are refused below. */
-export const normalizeWalletName = (raw: string): string => raw.trim().replace(/ {2,}/g, " ");
+export const normalizeWalletName = collapseSpaces;
 
 export type WalletNameIssue =
   | { reason: "empty" }
@@ -60,10 +61,10 @@ export type WalletNameIssue =
  * caller wants the reason, and a schema would carry it through the human message channel.
  */
 export function walletNameIssue(raw: string): WalletNameIssue | null {
-  if (/\p{Cc}/u.test(raw)) return { reason: "invalid" };
+  if (hasControlChars(raw)) return { reason: "invalid" };
   const name = normalizeWalletName(raw);
   if (name === "") return { reason: "empty" };
-  const length = Array.from(name).length;
+  const length = codePointLength(name);
   if (length > WALLET_NAME_MAX_CHARS) return { reason: "too_long", length };
   return null;
 }

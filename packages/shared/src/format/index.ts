@@ -18,4 +18,10 @@ export {
   withUsd,
 } from "./sol.js";
 export type { FormatSolOptions, SolRounding } from "./sol.js";
-export { shortAddress, utf8ByteLength } from "./text.js";
+export {
+  codePointLength,
+  collapseSpaces,
+  hasControlChars,
+  shortAddress,
+  utf8ByteLength,
+} from "./text.js";

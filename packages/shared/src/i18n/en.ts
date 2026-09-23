@@ -1,4 +1,11 @@
 import type { Duration, ImportFormat, Plan, TxFailureCode } from "../constants.js";
+import {
+  TOKEN_DESCRIPTION_MAX_CHARS,
+  TOKEN_DESCRIPTION_MAX_SENTENCES,
+  TOKEN_IMAGE_MAX_MB,
+  TOKEN_NAME_MAX_BYTES,
+  TOKEN_TICKER_MAX_BYTES,
+} from "../constants.js";
 import { formatInt } from "../format/number.js";
 import { E } from "./emoji.js";
 import { enWebapp } from "./en-webapp.js";
@@ -13,8 +20,9 @@ import { enWebapp } from "./en-webapp.js";
  *   (token, wallet, username, link) are escaped by the caller with `escapeHtml`, `b`,
  *   `code` or `a` before they reach a function of this file.
  * - Dates and amounts arrive already formatted, so that the formatters can use these texts:
- *   this file imports emojis, types, the texts of the Mini App and `format/number.ts`, which
- *   imports nothing. A count arrives as a number: its plural and its grouping are text.
+ *   this file imports emojis, types, the texts of the Mini App, `format/number.ts` and the
+ *   limits of `constants.ts`, which import nothing. A count arrives as a number: its plural
+ *   and its grouping are text.
  * - A blocked click (§4.5) is a pair `{ alert, flag }`: the alert of `answerCallbackQuery`
  *   (200 characters max, checked by a test on every pair) and the line written on the screen.
  */
@@ -379,6 +387,124 @@ export const en = {
         btnTryAgain: `${E.retry} Try again`,
         btnBackToWallet: `${E.back} Back to wallet`,
       },
+    },
+  },
+
+  // The Token step (§5, V1-16): step 1 of a simulation, step 3 of a launch. The mockup gives
+  // the description, the block, the buttons and the Continue alert; the rest is proposed (D19).
+  // Values arrive escaped, the ticker with its `$`, the links shortened.
+  token: {
+    description: "Generate a token or edit it. Image and links are optional.",
+    block: `${E.token} TOKEN`,
+    name: (value: string) => `Name: ${value}`,
+    ticker: (value: string) => `Ticker: ${value}`,
+    descriptionLine: (value: string) => `Description: ${value}`,
+    image: (value: string) => `${E.image} Image: ${value}`,
+    website: (value: string) => `${E.website} Website: ${value}`,
+    x: (value: string) => `${E.x} X: ${value}`,
+    telegram: (value: string) => `${E.telegram} Telegram: ${value}`,
+    imageAdded: `${E.confirm} Added`,
+    /** The summary lines of a launch (§10.1), before the block: `👛 Wallet: Main · 4.200 SOL`. */
+    summaryWallet: (line: string) => `${E.wallets} Wallet: ${line}`,
+    summaryDevBuy: (amount: string) => `${E.devBuy} Dev buy: ${amount}`,
+    /** `fields` are the labels below, in the order of the block: `⚠️ Missing: name, ticker`. */
+    missing: (fields: string[]) => `${E.warning} Missing: ${fields.join(", ")}`,
+    missingAlert: "Add a name and ticker first.",
+    fieldLabels: { name: "name", ticker: "ticker" },
+    // proposed text (D19)
+    inputExpired: `${E.expired} This input expired. Tap the field again.`,
+    btnGenerate: `${E.generate} Generate`,
+    btnAi: `${E.ai} AI Generate`,
+    btnAiLocked: `${E.locked} AI Generate`,
+    btnEdit: `${E.edit} Edit`,
+    btnImage: `${E.image} Image`,
+    btnWebsite: `${E.website} Website`,
+    btnX: `${E.x} X`,
+    btnTelegram: `${E.telegram} Telegram`,
+    btnRemove: `${E.remove} Remove`,
+    // The choice of the field to edit (§5). proposed texts (D19)
+    edit: {
+      description: "Choose the field to edit.",
+      btnName: "Name",
+      btnTicker: "Ticker",
+      btnDescription: "Description",
+    },
+    // The inputs (§4.5): what to send, then the rule. proposed texts (D19), limits of V1-15.
+    inputs: {
+      name: {
+        prompt: `${E.edit} Send the new name.`,
+        rules: `Rules: 1 to ${TOKEN_NAME_MAX_BYTES} bytes. Emojis count as several bytes.`,
+      },
+      ticker: {
+        prompt: `${E.edit} Send the new ticker.`,
+        rules: `Rules: 1 to ${TOKEN_TICKER_MAX_BYTES} bytes, no spaces. Converted to uppercase. The $ is added for you.`,
+      },
+      description: {
+        prompt: `${E.edit} Send the new description.`,
+        rules: `Rules: 1 to ${TOKEN_DESCRIPTION_MAX_SENTENCES} short sentences, ${TOKEN_DESCRIPTION_MAX_CHARS} characters max.`,
+      },
+      image: {
+        prompt: `${E.image} Send the token image as a photo or an image file.`,
+        rules: `Rules: JPG, PNG or WEBP, ${TOKEN_IMAGE_MAX_MB} MB max. Optional.`,
+      },
+      website: {
+        prompt: `${E.website} Send the website link.`,
+        rules: "Rules: full link starting with https://. Optional.",
+      },
+      x: {
+        prompt: `${E.x} Send the X account.`,
+        rules: "Rules: @handle or x.com link. Optional.",
+      },
+      telegram: {
+        prompt: `${E.telegram} Send the Telegram link.`,
+        rules: "Rules: t.me link or @username. Optional.",
+      },
+    },
+    // What was wrong with an input, written on the input screen (§4.5). proposed texts (D19)
+    errors: {
+      nameEmpty: `${E.warning} Name can't be empty.`,
+      nameTooLong: (bytes: number) =>
+        `${E.warning} Name too long: ${formatInt(bytes)} bytes (max ${TOKEN_NAME_MAX_BYTES}).`,
+      tickerEmpty: `${E.warning} Ticker can't be empty.`,
+      tickerTooLong: (bytes: number) =>
+        `${E.warning} Ticker too long: ${formatInt(bytes)} bytes (max ${TOKEN_TICKER_MAX_BYTES}).`,
+      tickerSpaces: `${E.warning} Ticker can't contain spaces.`,
+      descriptionEmpty: `${E.warning} Description can't be empty.`,
+      tooManySentences: `${E.warning} Use 1 to ${TOKEN_DESCRIPTION_MAX_SENTENCES} short sentences.`,
+      descriptionTooLong: (chars: number) =>
+        `${E.warning} Description too long: ${formatInt(chars)} characters (max ${TOKEN_DESCRIPTION_MAX_CHARS}).`,
+      invalidChars: `${E.warning} This text contains unsupported characters.`,
+      invalidUrl: `${E.warning} Invalid link. It must start with https://`,
+      invalidX: `${E.warning} Invalid X account. Send @handle or an x.com link.`,
+      invalidTelegram: `${E.warning} Invalid Telegram link. Send a t.me link or @username.`,
+      notImage: `${E.warning} Send a photo or an image file (JPG, PNG or WEBP, ${TOKEN_IMAGE_MAX_MB} MB max).`,
+      notText: `${E.warning} Send the value as a text message.`,
+      /** A link the code above has no text for: a website, an X or a Telegram value empty. */
+      linkEmpty: `${E.warning} Send the link, or tap Remove.`,
+    },
+    // AI Generate (§5, §8.1, V1-17). The alert, the "Premium only" flag and the "coming soon"
+    // mention are the texts of the context (§4.5); the rest is proposed (D19).
+    ai: {
+      premiumOnly: {
+        alert: `${E.locked} AI Generate is a Premium feature.`,
+        flag: `${E.locked} AI Generate: Premium only`,
+      },
+      /** On every Token screen, for everyone, until a text provider is plugged in (§15). */
+      comingSoon: `${E.comingSoon} AI model coming soon: AI Generate uses the standard generator for now.`,
+      /** Shown to Premium users (proposal). */
+      quota: (used: number, limit: number) => `${E.ai} AI generations today: ${used}/${limit}`,
+      quotaReached: (limit: number) => ({
+        alert: `You've used your ${limit} AI generations for today.`,
+        flag: `${E.warning} AI Generate: daily limit reached (${limit}/${limit}). Resets at 00:00 UTC.`,
+      }),
+      fallback: `${E.warning} AI model unavailable: used the standard generator.`,
+      generating: `${E.ai} Generating…`,
+    },
+    // Provisional step 2 of a simulation, until V1-22. proposed texts (D19)
+    devBuySoon: {
+      /** `name` arrives escaped, `ticker` with its `$`. */
+      token: (name: string, ticker: string) => `${E.token} ${name} · ${ticker}`,
+      description: "The dev buy step is coming soon.",
     },
   },
 

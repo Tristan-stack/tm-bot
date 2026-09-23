@@ -106,11 +106,31 @@ export const DEV_BUY_MIN_SOL = 1;
 export const DEV_BUY_MAX_SOL = 20;
 export const DEV_BUY_PRESETS_SOL = [3, 5, 10] as const;
 
-// Token generator (§5)
+// Token generator (§5). The byte limits come from Metaplex: kept in the interface, to be checked
+// against `create_v2` in V2-01. The zod schemas of `token/fields.ts` read them here, nowhere else.
 export const TOKEN_NAME_MAX_BYTES = 32;
 export const TOKEN_TICKER_MAX_BYTES = 10;
+/** 1 to 3 short sentences (§5). */
+export const TOKEN_DESCRIPTION_MAX_SENTENCES = 3;
+/** Code points, not bytes (proposal, V1-15). */
+export const TOKEN_DESCRIPTION_MAX_CHARS = 280;
+/** Website, X and Telegram links, in characters (proposal, V1-15). */
+export const TOKEN_URL_MAX_LENGTH = 200;
+/** A link shown on a screen is cut at this many characters with an ellipsis (proposal, V1-15). */
+export const TOKEN_LINK_DISPLAY_MAX_CHARS = 40;
+/** Letters of a generated ticker, A to Z (proposal, V1-15): `OTTR`, `MOTTER`. */
+export const GENERATED_TICKER_LETTERS = { min: 3, max: 6 } as const;
+/** An input of the Token screen (V1-16) still open after this is ignored (proposal). */
+export const TOKEN_INPUT_TIMEOUT_MS = 10 * MINUTE_MS;
+/** The image of a token (§5): what `getFile` can download later (V1-23, V2-02). Proposals. */
+export const TOKEN_IMAGE_MAX_MB = 20;
+export const TOKEN_IMAGE_MAX_BYTES = TOKEN_IMAGE_MAX_MB * 1024 * 1024;
+export const TOKEN_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 /** Per UTC calendar day (D9). */
 export const AI_GENERATIONS_PER_DAY = 50;
+/** A provider slower than this is dropped for the local generator (proposals, V1-17). */
+export const AI_TEXT_TIMEOUT_MS = 15 * SECOND_MS;
+export const AI_LOGO_TIMEOUT_MS = 30 * SECOND_MS;
 
 // Simulation (§7.4)
 export const SIM_DURATION_SEC = 180;
