@@ -816,7 +816,16 @@ branche par feature**, nommée `feat/<feature>` et regroupant les tickets de la 
 | `feat/admin-support` | V1-38 à V1-45 |
 
 Sur une branche : un commit par ticket, `pnpm lint`, `pnpm typecheck` et `pnpm test` verts avant
-chaque commit. La branche est fusionnée dans `main` quand tous ses tickets sont en ✅ Terminé.
+chaque commit.
+
+`develop` est la branche d'intégration. Elle a été créée depuis `feat/wallets` (commit `fe775d7`,
+V1-09 à V1-14) et porte donc déjà tout le travail des wallets sans fusion. Chaque branche de
+feature suivante part de `develop` et y est fusionnée quand tous ses tickets sont en ✅ Terminé ;
+`develop` est fusionnée dans `main` à chaque jalon stable.
+
+```
+main ──► develop ──► feat/token ──► (merge) develop ──► feat/simulation ──► …
+```
 
 ## Décisions techniques
 
