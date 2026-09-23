@@ -1,14 +1,11 @@
 import type { SimulationForViewer, SimulationStore } from "@launchbot/db";
 import { API_IMAGE_CACHE_TTL_MS, SECOND_MS, simIdParamSchema } from "@launchbot/shared";
-import { consumeRateLimit, TelegramFileError } from "@launchbot/shared/server";
-import type { RateLimitedAction } from "@launchbot/shared/server";
-import type {
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-  preHandlerAsyncHookHandler,
-} from "fastify";
+import type { ApiErrorCode } from "@launchbot/shared";
+import { TelegramFileError } from "@launchbot/shared/server";
+import type { TelegramFileFailure } from "@launchbot/shared/server";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { errorBody, httpError } from "../errors.js";
+import { rateLimited } from "../rate-limit.js";
 import { toSimulationResponse } from "../services/simulation-read.js";
 import type { TokenImageService } from "../services/token-image.js";
 
@@ -17,23 +14,12 @@ export type SimulationRoutesDeps = {
   images: TokenImageService;
 };
 
-/**
- * D17 on the API: the quota of the Telegram user, shared with the bot (`consumeRateLimit`),
- * checked once the initData is valid. Over it: 429 with `Retry-After`.
- */
-export const rateLimited =
-  (action: RateLimitedAction): preHandlerAsyncHookHandler =>
-  async (request, reply) => {
-    const verdict = consumeRateLimit(request.telegramUser.id, action);
-    if (verdict.ok) return;
-    return reply
-      .header("retry-after", String(Math.ceil(verdict.retryAfterMs / SECOND_MS)))
-      .code(429)
-      .send(errorBody(429));
-  };
-
-/** The statuses of the failures of the image (V1-23). */
-const IMAGE_FAILURE_STATUS = { too_large: 413, unsupported_type: 415, unavailable: 502 } as const;
+/** What the image route answers for each failure of Telegram (V1-23). */
+const IMAGE_FAILURES: Record<TelegramFileFailure, { status: number; code: ApiErrorCode }> = {
+  too_large: { status: 413, code: "image_too_large" },
+  unsupported_type: { status: 415, code: "unsupported_image" },
+  unavailable: { status: 502, code: "image_unavailable" },
+};
 
 /**
  * `GET /api/simulations/:id` and `/image` (V1-23, D15). Mounted under `/api`, where every
@@ -71,7 +57,7 @@ export function registerSimulationRoutes(api: FastifyInstance, deps: SimulationR
   api.get(
     "/simulations/:id/image",
     { preHandler: rateLimited("apiImage") },
-    async (request, reply: FastifyReply) => {
+    async (request, reply) => {
       const row = await load(request);
       const fileId = row.tokenDraft.imageFileId;
       if (fileId === null) throw httpError(404, `Simulation ${row.id} has no image`);
@@ -86,8 +72,8 @@ export function registerSimulationRoutes(api: FastifyInstance, deps: SimulationR
         if (!(error instanceof TelegramFileError)) throw error;
         // The file_id, the token and the URL of Telegram stay out of the logs: only the reason.
         request.log.warn({ reason: error.reason, simId: row.id }, "Token image not served");
-        const status = IMAGE_FAILURE_STATUS[error.reason];
-        return reply.code(status).send(errorBody(status));
+        const { status, code } = IMAGE_FAILURES[error.reason];
+        return reply.code(status).send(errorBody(status, code));
       }
     },
   );

@@ -7,22 +7,11 @@ import {
   decodePumpGlobal,
   GLOBAL_DISCRIMINATOR,
   GLOBAL_MIN_SIZE,
-  PumpGlobalError,
+  globalFieldOffset,
   pumpGlobalToCurveParams,
 } from "./global.js";
-import type { PumpGlobalFailure } from "./global.js";
 import { pumpSdk } from "./sdk.js";
 import { DEVNET_FIXTURE, devnetGlobalAccount, syntheticGlobalAccount } from "./test-helpers.js";
-
-const failure = (run: () => unknown): PumpGlobalFailure => {
-  try {
-    run();
-  } catch (error) {
-    if (error instanceof PumpGlobalError) return error.reason;
-    throw error;
-  }
-  throw new Error("Expected a PumpGlobalError");
-};
 
 describe("pump.fun addresses", () => {
   it('derives the Global address from the seed "global" of the program', () => {
@@ -39,6 +28,7 @@ describe("pump.fun addresses", () => {
   it("reads the discriminator and the minimum size from the IDL", () => {
     expect([...GLOBAL_DISCRIMINATOR]).toEqual([167, 232, 232, 177, 200, 108, 114, 127]);
     // 8 + bool + 2 pubkeys + 5 u64 + pubkey + bool + 2 u64
+    expect(globalFieldOffset("initial_virtual_token_reserves")).toBe(8 + 1 + 32 + 32);
     expect(GLOBAL_MIN_SIZE).toBe(162);
     expect(GLOBAL_MIN_SIZE).toBeLessThan(DEVNET_FIXTURE.space);
   });
@@ -72,17 +62,21 @@ describe("decodePumpGlobal", () => {
     const badDiscriminator = Buffer.from(account.data);
     badDiscriminator.writeUInt8(badDiscriminator.readUInt8(0) ^ 1, 0);
 
-    expect(failure(() => decodePumpGlobal(null))).toBe("account_not_found");
-    expect(failure(() => decodePumpGlobal({ ...account, owner: PUMP_GLOBAL_ADDRESS }))).toBe(
-      "wrong_owner",
+    expect(() => decodePumpGlobal(null)).toThrow(
+      expect.objectContaining({ reason: "account_not_found" }),
     );
-    expect(failure(() => decodePumpGlobal(withData(badDiscriminator)))).toBe("bad_discriminator");
-    expect(failure(() => decodePumpGlobal(withData(account.data.subarray(0, 4))))).toBe(
-      "bad_discriminator",
+    expect(() => decodePumpGlobal({ ...account, owner: PUMP_GLOBAL_ADDRESS })).toThrow(
+      expect.objectContaining({ reason: "wrong_owner" }),
     );
-    expect(
-      failure(() => decodePumpGlobal(withData(account.data.subarray(0, GLOBAL_MIN_SIZE - 1)))),
-    ).toBe("decode_error");
+    expect(() => decodePumpGlobal(withData(badDiscriminator))).toThrow(
+      expect.objectContaining({ reason: "bad_discriminator" }),
+    );
+    expect(() => decodePumpGlobal(withData(account.data.subarray(0, 4)))).toThrow(
+      expect.objectContaining({ reason: "bad_discriminator" }),
+    );
+    expect(() => decodePumpGlobal(withData(account.data.subarray(0, GLOBAL_MIN_SIZE - 1)))).toThrow(
+      expect.objectContaining({ reason: "decode_error" }),
+    );
     expect(decodePumpGlobal(withData(account.data.subarray(0, GLOBAL_MIN_SIZE)))).toBeDefined();
   });
 });
@@ -131,7 +125,9 @@ describe("pumpGlobalToCurveParams", () => {
   ])("rejects %s as invalid values", (_label, overrides) => {
     const raw = decodePumpGlobal(syntheticGlobalAccount(overrides));
 
-    expect(failure(() => pumpGlobalToCurveParams(raw))).toBe("invalid_values");
+    expect(() => pumpGlobalToCurveParams(raw)).toThrow(
+      expect.objectContaining({ reason: "invalid_values" }),
+    );
   });
 
   it("rejects the devnet Global, whose 1 SOL of virtual reserves the max dev buy completes", () => {
@@ -140,7 +136,9 @@ describe("pumpGlobalToCurveParams", () => {
 
     expect(devBuySupplyShare(asIs, DEV_BUY_MAX_SOL).capped).toBe(true);
     expect(devBuySupplyShare(FALLBACK_CURVE_PARAMS, DEV_BUY_MAX_SOL).capped).toBe(false);
-    expect(failure(() => pumpGlobalToCurveParams(raw))).toBe("invalid_values");
+    expect(() => pumpGlobalToCurveParams(raw)).toThrow(
+      expect.objectContaining({ reason: "invalid_values" }),
+    );
     expect(() => pumpGlobalToCurveParams(raw)).toThrow(/20 SOL dev buy completes the curve/);
   });
 });

@@ -41,14 +41,14 @@ export type DataServices = BalancesService &
 export function createDataServices({ prisma, api, env }: DataServicesDeps): DataServices {
   // The connection the devnet guard verified at startup.
   const rpc = getSolanaRpc(env.SOLANA_RPC_URL);
-  const curveParams = createCurveParamsService({
+  const { getCurveParams } = createCurveParamsService({
     getAccountInfo: (address) => readAccountInfo(rpc, address),
   });
   // Proposal (V1-21): read in the background at startup, so the first recap waits for no RPC.
-  void curveParams.getCurveParams();
+  void getCurveParams();
 
   return {
-    ...curveParams,
+    getCurveParams,
     ...createBalancesService({
       prisma,
       readLamports: (addresses) => getBalancesFresh(rpc, addresses),

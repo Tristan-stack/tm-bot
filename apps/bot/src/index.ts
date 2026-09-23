@@ -125,7 +125,6 @@ export function createBot(
   const tokenStep = createTokenStep({ ui, drafts, data, ai, providers });
   const simulations = createSimulationService({
     store: options.simulations ?? createSimulationStore({ prisma }),
-    drafts,
     data,
   });
 

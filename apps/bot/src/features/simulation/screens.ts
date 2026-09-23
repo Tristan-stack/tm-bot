@@ -35,15 +35,12 @@ export const SIM_CB = {
   backToDevBuy: encodeCallback("sim", "bk", "dev"),
 } as const;
 
-/** What the screens after the Token step need of the draft. */
-export type SimTokenView = Pick<TokenDraftFields, "name" | "symbol"> & {
-  name: string;
-  symbol: string;
-};
+/** What the screens after the Token step need of the draft: Continue accepted it (§5). */
+export type ReadyToken = { name: string; symbol: string };
 
 const { sim } = en;
 
-const tokenLine = (draft: SimTokenView): string =>
+const tokenLine = (draft: ReadyToken): string =>
   sim.token(escapeHtml(draft.name), formatTicker(draft.symbol));
 
 const devBuyLine = (devBuySol: number | undefined): string =>
@@ -54,7 +51,7 @@ const devBuyLine = (devBuySol: number | undefined): string =>
 /** Step 2/3 (§6): presets, Custom, Back to the Token screen. */
 export function buildDevBuyScreen(
   ui: Ui,
-  view: { draft: SimTokenView; devBuySol?: number },
+  view: { draft: ReadyToken; devBuySol?: number },
   options: { flags?: OptionalLine[] } = {},
 ): Screen {
   return renderScreen({
@@ -73,7 +70,7 @@ export function buildDevBuyScreen(
 /** The Custom input of step 2 (§4.5): the current choice and the bounds above Cancel. */
 export function buildCustomAmountScreen(
   ui: Ui,
-  view: { draft: SimTokenView; devBuySol?: number },
+  view: { draft: ReadyToken; devBuySol?: number },
   options: { flags?: OptionalLine[] } = {},
 ): Screen {
   return renderInputScreen({
@@ -103,21 +100,21 @@ const LINK_FIELDS: readonly [keyof TokenDraftFields, keyof typeof sim.recap.link
  * the image, the links present in the order Website · X · Telegram, each a link to the
  * stored URL (proposal). Shared with the recap of a launch (V1-37).
  */
-export function renderTokenRecapBlock(draft: TokenDraftFields & SimTokenView): string {
+export function renderTokenRecapBlock(draft: TokenDraftFields & ReadyToken): string {
   const links = LINK_FIELDS.flatMap(([column, label]) => {
     const url = draft[column];
     return url === null ? [] : [a(sim.recap.linkLabels[label], url)];
   });
-  return tree(sim.recap.block, [
+  return tree(en.token.block, [
     sim.recap.title(escapeHtml(draft.name), formatTicker(draft.symbol)),
     ...(draft.description === null ? [] : [escapeHtml(draft.description)]),
-    sim.recap.image(draft.imageFileId === null ? en.common.none : sim.recap.imageAdded),
+    en.token.image(draft.imageFileId === null ? en.common.none : sim.recap.imageAdded),
     links.length === 0 ? sim.recap.linksNone : sim.recap.links(links),
   ]);
 }
 
 export type RecapView = {
-  draft: TokenDraftFields & SimTokenView;
+  draft: TokenDraftFields & ReadyToken;
   devBuySol: number;
   /** The curve stored in the Simulation: the Mini App computes the position on the same one. */
   curve: CurveParams;

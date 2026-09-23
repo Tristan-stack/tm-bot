@@ -8,7 +8,7 @@ import {
   presetForDevBuy,
 } from "@launchbot/sim-engine";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeDrafts, fakeSimulations, testDraft, TEST_USER } from "../test-harness.js";
+import { fakeSimulations, TEST_USER } from "../test-harness.js";
 import { buildSimConfig, createSimulationService, drawSeed, MAX_SEED } from "./simulation.js";
 
 const T0 = Date.parse("2026-09-23T12:00:00Z");
@@ -51,14 +51,9 @@ describe("drawSeed", () => {
 describe("createSimulationService", () => {
   beforeEach(resetRateLimits);
 
-  function harness(
-    options: { drafts?: ReturnType<typeof fakeDrafts>; price?: number | null } = {},
-  ) {
+  function harness(options: { price?: number | null } = {}) {
     let time = T0;
     let nextSeed = 1000;
-    const drafts =
-      options.drafts ??
-      fakeDrafts({ rows: [testDraft({ id: "d1", name: "Moon Otter", symbol: "OTTR" })] });
     const store = fakeSimulations({ now: () => time });
     const getCurveParams = vi.fn().mockResolvedValue({
       curve: FALLBACK_CURVE_PARAMS,
@@ -67,7 +62,6 @@ describe("createSimulationService", () => {
     });
     const service = createSimulationService({
       store,
-      drafts,
       data: {
         getCurveParams,
         getSolUsdPrice: () => Promise.resolve(options.price === undefined ? 150 : options.price),
@@ -76,8 +70,8 @@ describe("createSimulationService", () => {
       seed: () => nextSeed++,
     });
     const prepare = (devBuySol: number, draftId = "d1") =>
-      service.prepare({ userId: TEST_USER.id, telegramId: 777, draftId, devBuySol });
-    return { prepare, store, drafts, getCurveParams, at: (ms: number) => void (time = T0 + ms) };
+      service.prepare({ userId: TEST_USER.id, telegramId: 777, draft: { id: draftId }, devBuySol });
+    return { prepare, store, getCurveParams, at: (ms: number) => void (time = T0 + ms) };
   }
 
   it("creates a Simulation with the seed, the curve and the price of the moment", async () => {
@@ -85,7 +79,7 @@ describe("createSimulationService", () => {
 
     const result = await prepare(5);
 
-    expect(result).toMatchObject({ kind: "ok", simId: "s1", reused: false });
+    expect(result).toMatchObject({ kind: "ok", simId: "s1" });
     if (result.kind !== "ok") return;
     expect(result.config).toEqual({
       seed: 1000,
@@ -112,7 +106,7 @@ describe("createSimulationService", () => {
     at(HOUR_MS - 1);
     const again = await prepare(5);
 
-    expect(again).toMatchObject({ kind: "ok", simId: "s1", reused: true });
+    expect(again).toMatchObject({ kind: "ok", simId: "s1" });
     expect(again.kind === "ok" && first.kind === "ok" && again.config).toEqual(
       first.kind === "ok" ? first.config : undefined,
     );
@@ -120,19 +114,13 @@ describe("createSimulationService", () => {
   });
 
   it("creates a new one after an hour, for another dev buy, or for a copied draft", async () => {
-    const drafts = fakeDrafts({
-      rows: [
-        testDraft({ id: "d1", name: "Moon Otter", symbol: "OTTR" }),
-        testDraft({ id: "d2", name: "Moon Otter", symbol: "OTTR", description: "Edited" }),
-      ],
-    });
-    const { prepare, store, at } = harness({ drafts });
+    const { prepare, store, at } = harness();
 
     await prepare(5);
-    expect(await prepare(3)).toMatchObject({ simId: "s2", reused: false });
-    expect(await prepare(5, "d2")).toMatchObject({ simId: "s3", reused: false });
+    expect(await prepare(3)).toMatchObject({ simId: "s2" });
+    expect(await prepare(5, "d2")).toMatchObject({ simId: "s3" });
     at(HOUR_MS);
-    expect(await prepare(5)).toMatchObject({ simId: "s4", reused: false });
+    expect(await prepare(5)).toMatchObject({ simId: "s4" });
     expect(store.rows.map((row) => row.seed)).toEqual([1000, 1001, 1002, 1003]);
   });
 
@@ -146,7 +134,7 @@ describe("createSimulationService", () => {
 
     expect(refused.kind).toBe("rate_limited");
     expect(store.rows).toHaveLength(limit);
-    expect(await prepare(1)).toMatchObject({ kind: "ok", simId: "s1", reused: true });
+    expect(await prepare(1)).toMatchObject({ kind: "ok", simId: "s1" });
   });
 
   it("stores null as the price when it is unknown", async () => {
@@ -155,17 +143,5 @@ describe("createSimulationService", () => {
     const result = await prepare(3);
 
     expect(result.kind === "ok" && result.config.solUsdPrice).toBeNull();
-  });
-
-  it("answers missing_fields for a draft without a ticker, or gone", async () => {
-    const drafts = fakeDrafts({ rows: [testDraft({ id: "d1", name: "Moon Otter" })] });
-    const { prepare, store } = harness({ drafts });
-
-    expect(await prepare(5)).toEqual({ kind: "missing_fields", missing: ["ticker"] });
-    expect(await prepare(5, "gone")).toEqual({
-      kind: "missing_fields",
-      missing: ["name", "ticker"],
-    });
-    expect(store.rows).toHaveLength(0);
   });
 });

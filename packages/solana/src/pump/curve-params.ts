@@ -1,17 +1,15 @@
-import { CACHE_TTL_MS, createLastKnownValue, SECOND_MS } from "@launchbot/shared";
+import { CACHE_TTL_MS, createLastKnownValue } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
 import { FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import type { CurveParams } from "@launchbot/sim-engine";
 import type { Connection } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
+import { RpcUnavailableError } from "../rpc.js";
 import { PUMP_GLOBAL_ADDRESS } from "./constants.js";
 import { decodePumpGlobal, PumpGlobalError, pumpGlobalToCurveParams } from "./global.js";
 import type { PumpAccount } from "./global.js";
 
 const log = createLogger("solana:pump");
-
-/** Proposal: the RPC of the process already gives up after 5 s (`getSolanaRpc`). */
-const RPC_TIMEOUT_MS = 5 * SECOND_MS;
 
 /**
  * Where the params come from: the `Global` account read less than an hour ago, the last
@@ -34,19 +32,15 @@ export type CurveParamsService = {
    * touches a stored one.
    */
   getCurveParams: () => Promise<CurveParamsResult>;
-  /** Forgets every read: the next call asks the chain again. */
-  clear: () => void;
 };
 
 export type CurveParamsDeps = {
-  /** `null` when the account does not exist. Rejects on an RPC failure. */
+  /**
+   * `null` when the account does not exist. Rejects on an RPC failure: `readAccountInfo` on
+   * the connection of the process, whose `fetch` gives up after 5 s (`getSolanaRpc`).
+   */
   getAccountInfo: (address: string) => Promise<PumpAccount | null>;
   now?: () => number;
-  /** A successful read stands this long: one hour (§7.1). */
-  ttlMs?: number;
-  /** A failure stands this long before the chain is asked again: 5 min (proposal). */
-  fallbackTtlMs?: number;
-  timeoutMs?: number;
 };
 
 /** The dependency of the service on the connection of the process. */
@@ -58,83 +52,65 @@ export async function readAccountInfo(
   return info && { owner: info.owner.toBase58(), data: info.data };
 }
 
+const isTimeout = (error: RpcUnavailableError): boolean =>
+  (error.cause as { name?: unknown } | undefined)?.name === "TimeoutError";
+
+/** The failure of a read, by reason: the checks of the decoder, or the transport. */
 function classify(error: unknown): PumpGlobalError {
   if (error instanceof PumpGlobalError) return error;
-  return new PumpGlobalError("rpc_error", "The pump.fun Global account could not be read", {
+  const reason = error instanceof RpcUnavailableError && isTimeout(error) ? "timeout" : "rpc_error";
+  return new PumpGlobalError(reason, "The pump.fun Global account could not be read", {
     cause: error,
   });
 }
 
 /**
  * The bonding curve params of every simulation (§7.1): the `Global` account of pump.fun on
- * the cluster of the process, cached one hour and shared by the process (concurrent callers
- * share one read), the §7.1 table when it cannot be read. One `warn` per failed attempt,
- * with a short reason and never the RPC URL.
+ * the cluster of the process, cached one hour (`CACHE_TTL_MS.pumpGlobal`) and shared by the
+ * process (concurrent callers share one read), the §7.1 table when it cannot be read, a
+ * failure kept 5 min (`pumpGlobalFailure`) before the chain is asked again. One `warn` per
+ * failed attempt, with a short reason and never the RPC URL.
  */
 export function createCurveParamsService(deps: CurveParamsDeps): CurveParamsService {
-  const {
-    getAccountInfo,
-    now,
-    ttlMs = CACHE_TTL_MS.pumpGlobal,
-    fallbackTtlMs = CACHE_TTL_MS.pumpGlobalFailure,
-    timeoutMs = RPC_TIMEOUT_MS,
-  } = deps;
+  const { getAccountInfo, now = Date.now } = deps;
 
   async function load(): Promise<CurveParams> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new PumpGlobalError("timeout", `No answer after ${timeoutMs} ms`)),
-        timeoutMs,
-      );
-    });
     let account: PumpAccount | null;
     try {
-      account = await Promise.race([getAccountInfo(PUMP_GLOBAL_ADDRESS), timeout]);
+      account = await getAccountInfo(PUMP_GLOBAL_ADDRESS);
     } catch (error) {
       throw classify(error);
-    } finally {
-      clearTimeout(timer);
     }
     return pumpGlobalToCurveParams(decodePumpGlobal(account));
   }
 
-  const build = () =>
-    createLastKnownValue({
-      load,
-      ttlMs,
-      failureTtlMs: fallbackTtlMs,
-      now,
-      onFailure: (error) => {
-        const failure = classify(error);
-        // `err` goes through the scrubber of the logger: a cause quoting the RPC URL loses
-        // its query string, and a private URL as a whole.
-        log.warn(
-          { reason: failure.reason, err: failure.cause ?? failure },
-          "pump.fun Global account unusable, curve params fall back",
-        );
-      },
-    });
-  let read = build();
+  const read = createLastKnownValue({
+    load,
+    ttlMs: CACHE_TTL_MS.pumpGlobal,
+    failureTtlMs: CACHE_TTL_MS.pumpGlobalFailure,
+    now,
+    onFailure: (error) => {
+      // `load` only ever throws a PumpGlobalError. `err` goes through the scrubber of the
+      // logger: a cause quoting the RPC URL loses its query string, a private URL as a whole.
+      const failure = error as PumpGlobalError;
+      log.warn(
+        { reason: failure.reason, err: failure.cause ?? failure },
+        "pump.fun Global account unusable, curve params fall back",
+      );
+    },
+  });
 
   return {
     async getCurveParams() {
       const last = await read();
       if (last === null) {
-        return {
-          curve: FALLBACK_CURVE_PARAMS,
-          source: "fallback",
-          fetchedAt: new Date(now?.() ?? Date.now()),
-        };
+        return { curve: FALLBACK_CURVE_PARAMS, source: "fallback", fetchedAt: new Date(now()) };
       }
       return {
         curve: last.value,
         source: last.isFallback ? "stale" : "global",
         fetchedAt: new Date(last.loadedAt),
       };
-    },
-    clear() {
-      read = build();
     },
   };
 }

@@ -32,7 +32,6 @@ export type {
   NewSimulation,
   SimulationForViewer,
   SimulationKey,
-  SimulationsDeps,
   SimulationStore,
 } from "./services/simulations.js";
 export { createTokenDraftService } from "./services/token-drafts.js";

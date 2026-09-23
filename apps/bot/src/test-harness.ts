@@ -403,7 +403,6 @@ export function fakeData(overrides: Partial<DataServices> = {}): DataServices {
         source: "global",
         fetchedAt: BALANCES_READ_AT,
       }),
-    clear: () => undefined,
     getSubscriptionSummary: () => Promise.resolve({ active: null, lastExpired: null }),
     hasActivePremium: () => Promise.resolve(false),
     countActiveSubscribers: () => Promise.resolve(767),

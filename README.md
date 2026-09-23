@@ -322,8 +322,8 @@ provisoire de V1-16 est remplacé.
 - **Dev buy** : `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, `✏️ Custom`, `⬅️ Back` (vers Token). Description
   puis infos (`🪙 Moon Otter · $OTTR`, `💰 Dev buy: not selected yet` ou le montant), ordre §4.5.
   Custom : écran de saisie avec la valeur actuelle, `Allowed: 1 to 20 SOL, up to 3 decimals.` et
-  `❌ Cancel` ; `parseDevBuyAmount` (`@launchbot/shared`) accepte « 2.5 », « 2,5 », « 5 sol », 3
-  décimales max, ni signe ni exposant ; refus → flag `⚠️ Invalid amount…`, la saisie reste ouverte
+  `❌ Cancel` ; `parseDevBuyAmount` (`@launchbot/shared`, la grammaire SOL de `parseSolToLamports`)
+  accepte « 2.5 », « 2,5 », « 5 sol », 3 décimales max, ni signe ni exposant ; refus → flag `⚠️ Invalid amount…`, la saisie reste ouverte
   (message de l'utilisateur supprimé, écran édité, V1-04).
 - **Récap** : bloc TOKEN (`renderTokenRecapBlock`, repris par V1-37 : nom · ticker, description si
   présente, `🖼 Image: ✅` ou `—`, `🔗 Links: none` ou `Website · X · Telegram` en liens `<a>`),
@@ -342,7 +342,8 @@ provisoire de V1-16 est remplacé.
   `tokenDraftId` (copie à l'écriture V1-16), donc une nouvelle Simulation.
 - **Blocages écrits à l'écran** : limite → alerte + flag `⚠️ Too many simulations…` sur le Dev
   buy, aucune ligne créée ; nom ou ticker manquant, brouillon disparu → écran Token avec
-  `⚠️ Missing: …` ; erreur inattendue → flag générique de V1-04, détail dans les logs seulement.
+  `⚠️ Missing: …` (`tokenStep.requireReadyDraft`, le brouillon accepté par Continue est passé
+  d'écran en écran sans relecture) ; erreur inattendue → flag générique de V1-04, détail dans les logs seulement.
 - **Schémas partagés** (`@launchbot/shared`, qui ne dépend pas du moteur) : `curveParamsSchema`,
   `presetParamsSchema`, `simConfigSchema` (V1-23 et V1-24 valident avec), `devBuyAmountSchema`,
   `seedSchema` ; `formatSolNumber(sol)` (« 5 SOL », « 2.5 SOL »).
@@ -995,8 +996,8 @@ et l'activité web app.
   `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=3600`. **Jamais de
   redirection** vers l'URL Telegram (elle porte le token) ; les messages d'erreur du client sont
   fixes, sans URL, token, `file_path` ni `file_id` ; les logs de la route ne gardent que la raison
-  et le `simId`. Cache mémoire LRU par `file_id` (`createTokenImageService`, 50 Mo, 1 h,
-  proposition). Côté client (V1-24) : `fetch` avec l'en-tête puis `URL.createObjectURL`, jamais
+  et le `simId`. Cache mémoire par `file_id` (`createTokenImageService` sur `createTtlCache` : 10
+  images de 5 Mo au plus, 1 h, une lecture partagée entre requêtes concurrentes, proposition). Côté client (V1-24) : `fetch` avec l'en-tête puis `URL.createObjectURL`, jamais
   d'initData en query string.
 - **Codes d'erreur** (`API_ERROR_CODES`, `apiErrorSchema`, `@launchbot/shared`) : `bad_request`,
   `unauthorized`, `forbidden`, `not_found`, `image_too_large`, `unsupported_image`,

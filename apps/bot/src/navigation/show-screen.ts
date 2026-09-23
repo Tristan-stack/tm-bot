@@ -1,5 +1,5 @@
 import { en } from "@launchbot/shared";
-import type { Screen } from "@launchbot/shared";
+import type { OptionalLine, Screen } from "@launchbot/shared";
 import type { BotContext, PendingInput, WithdrawState } from "../context.js";
 import { notify } from "./notify.js";
 import { isNotModified, isUneditable } from "./telegram-errors.js";
@@ -105,6 +105,25 @@ export async function blockWithFlag(
 ): Promise<void> {
   await notify(ctx, block.alert, { alert: true });
   await showScreen(ctx, render(block.flag), options);
+}
+
+export type PresentOptions = ShowOptions & { flags?: OptionalLine[]; block?: Block };
+
+/**
+ * A screen of a flow, or a blocked click on it (V1-14, V1-22): `render` draws the screen with
+ * its flags; with `block`, the alert then the screen with the flag of the block.
+ */
+export function presentScreen(
+  ctx: BotContext,
+  render: (flags: OptionalLine[]) => Screen,
+  options: PresentOptions = {},
+): Promise<unknown> {
+  const { flags = [], block, ...show } = options;
+  if (block === undefined) return showScreen(ctx, render(flags), show);
+  return blockWithFlag(ctx, block, (flag) => render([flag]), {
+    mode: show.mode,
+    withdraw: show.withdraw,
+  });
 }
 
 /**

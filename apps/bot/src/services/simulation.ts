@@ -1,11 +1,5 @@
-import type { SimulationStore, TokenDraftService } from "@launchbot/db";
-import {
-  missingRequiredFields,
-  SIM_DURATION_SEC,
-  SIMULATION_REUSE_MS,
-  simConfigSchema,
-} from "@launchbot/shared";
-import type { RequiredTokenField } from "@launchbot/shared";
+import type { SimulationStore } from "@launchbot/db";
+import { SIM_DURATION_SEC, SIMULATION_REUSE_MS, simConfigSchema } from "@launchbot/shared";
 import { consumeRateLimit } from "@launchbot/shared/server";
 import { assertSimConfig, presetForDevBuy } from "@launchbot/sim-engine";
 import type { CurveParams, SimConfig } from "@launchbot/sim-engine";
@@ -16,7 +10,7 @@ import type { DataServices } from "./data.js";
  * The `SimConfig` of a Simulation (§7.4): the preset follows the dev buy (3, 5 and 10 SOL
  * exact, a Custom amount interpolated, V1-19), the duration is the 3 min of §6, the curve and
  * the SOL price are those of the moment. Checked by the engine and by the schema the API and
- * the Mini App will apply to the stored JSON.
+ * the Mini App apply to the stored JSON, so what is written is what they will accept.
  */
 export function buildSimConfig(params: {
   seed: number;
@@ -42,28 +36,25 @@ export const MAX_SEED = 2 ** 31 - 1;
 export const drawSeed = (): number => randomInt(0, MAX_SEED + 1);
 
 export type PrepareSimulationResult =
-  | { kind: "ok"; simId: string; config: SimConfig; reused: boolean }
-  | { kind: "rate_limited"; retryAfterMs: number }
-  | { kind: "missing_fields"; missing: RequiredTokenField[] };
+  { kind: "ok"; simId: string; config: SimConfig } | { kind: "rate_limited" };
 
 export type SimulationService = {
   /**
    * The Simulation a recap shows (D14): the one of this user, draft and dev buy created in the
    * last hour, else a new row, drawn from a fresh seed, under the limit of creations (D17). A
-   * reuse costs nothing of the limit. `missing_fields`: the draft is gone or has no name or
-   * ticker (a stale button, a purge).
+   * reuse costs nothing of the limit. The draft was accepted by the Token step (name and
+   * ticker there, owned by the user): the service reads nothing of it but its id.
    */
   prepare: (params: {
     userId: string;
     telegramId: number;
-    draftId: string;
+    draft: { id: string };
     devBuySol: number;
   }) => Promise<PrepareSimulationResult>;
 };
 
 export type SimulationServiceDeps = {
-  store: SimulationStore;
-  drafts: Pick<TokenDraftService, "getOwnedDraft">;
+  store: Pick<SimulationStore, "findLatest" | "create">;
   data: Pick<DataServices, "getCurveParams" | "getSolUsdPrice">;
   now?: () => number;
   /** Test seam: the seed of the next Simulation. */
@@ -71,24 +62,18 @@ export type SimulationServiceDeps = {
 };
 
 export function createSimulationService(deps: SimulationServiceDeps): SimulationService {
-  const { store, drafts, data, now = Date.now, seed = drawSeed } = deps;
+  const { store, data, now = Date.now, seed = drawSeed } = deps;
 
   return {
-    async prepare({ userId, telegramId, draftId, devBuySol }) {
-      const draft = await drafts.getOwnedDraft(userId, draftId);
-      const missing = draft === null ? (["name", "ticker"] as const) : missingRequiredFields(draft);
-      if (missing.length > 0) return { kind: "missing_fields", missing: [...missing] };
-
-      const key = { userId, tokenDraftId: draftId, devBuySol };
+    async prepare({ userId, telegramId, draft, devBuySol }) {
+      const key = { userId, tokenDraftId: draft.id, devBuySol };
       const existing = await store.findLatest(key, new Date(now() - SIMULATION_REUSE_MS));
       if (existing !== null) {
         // Stored by this service: the JSON is the config it validated.
-        const config = simConfigSchema.parse(existing.params);
-        return { kind: "ok", simId: existing.id, config, reused: true };
+        return { kind: "ok", simId: existing.id, config: simConfigSchema.parse(existing.params) };
       }
 
-      const verdict = consumeRateLimit(telegramId, "simulation", now());
-      if (!verdict.ok) return { kind: "rate_limited", retryAfterMs: verdict.retryAfterMs };
+      if (!consumeRateLimit(telegramId, "simulation", now()).ok) return { kind: "rate_limited" };
 
       // Neither read blocks the recap: the curve falls back to §7.1, the price to null.
       const [{ curve }, solUsdPrice] = await Promise.all([
@@ -97,7 +82,7 @@ export function createSimulationService(deps: SimulationServiceDeps): Simulation
       ]);
       const config = buildSimConfig({ seed: seed(), devBuySol, curve, solUsdPrice });
       const row = await store.create({ ...key, seed: config.seed, params: config });
-      return { kind: "ok", simId: row.id, config, reused: false };
+      return { kind: "ok", simId: row.id, config };
     },
   };
 }

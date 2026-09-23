@@ -22,9 +22,7 @@ export function createApiService(): Service {
     name: "api",
     async start() {
       const env = loadEnv();
-      const images = createTokenImageService({
-        client: createTelegramFileClient({ botToken: env.BOT_TOKEN }),
-      });
+      const images = createTokenImageService(createTelegramFileClient({ botToken: env.BOT_TOKEN }));
       app = await buildApiServer({
         env,
         logger: createLogger("api"),

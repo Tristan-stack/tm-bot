@@ -56,6 +56,7 @@ const globalFields = idl.types.find((type) => type.name === "Global")?.type.fiel
 if (globalAccount === undefined || globalFields === undefined) {
   throw new Error("The pump IDL of the SDK has no Global account");
 }
+const GLOBAL_FIELDS: readonly IdlField[] = globalFields;
 
 /** Anchor writes the account name's hash in the first 8 bytes. */
 export const GLOBAL_DISCRIMINATOR: Readonly<Uint8Array> = Uint8Array.from(
@@ -74,9 +75,17 @@ function borshSize(type: unknown): number {
   throw new Error(`Unsupported IDL type in Global: ${JSON.stringify(type)}`);
 }
 
+/** Where a field of `Global` starts in the account data, walked from the IDL. */
+export function globalFieldOffset(name: string): number {
+  let offset = DISCRIMINATOR_SIZE;
+  for (const field of GLOBAL_FIELDS) {
+    if (field.name === name) return offset;
+    offset += borshSize(field.type);
+  }
+  throw new Error(`The pump IDL Global has no ${name}`);
+}
+
 const LAST_FIELD_USED = "creator_fee_basis_points";
-const lastFieldIndex = globalFields.findIndex((field) => field.name === LAST_FIELD_USED);
-if (lastFieldIndex < 0) throw new Error(`The pump IDL Global has no ${LAST_FIELD_USED}`);
 
 /**
  * The bytes the fields used here occupy, discriminator included: 162. The SDK zero-pads a
@@ -84,11 +93,7 @@ if (lastFieldIndex < 0) throw new Error(`The pump IDL Global has no ${LAST_FIELD
  * longer accounts are fine, the IDL only ever appends fields (`GLOBAL_SIZE` is 1087 while
  * the live account has 1054 bytes).
  */
-export const GLOBAL_MIN_SIZE =
-  DISCRIMINATOR_SIZE +
-  globalFields
-    .slice(0, lastFieldIndex + 1)
-    .reduce((size, field) => size + borshSize(field.type), 0);
+export const GLOBAL_MIN_SIZE = globalFieldOffset(LAST_FIELD_USED) + BORSH_SIZES["u64"]!;
 
 const toBigInt = (value: { toString(): string }): bigint => BigInt(value.toString());
 

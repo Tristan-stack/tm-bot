@@ -1,9 +1,9 @@
-import { HOUR_MS, MINUTE_MS, SECOND_MS } from "@launchbot/shared";
+import { HOUR_MS, MINUTE_MS } from "@launchbot/shared";
 import { captureLogs, setLogDestination } from "@launchbot/shared/server";
 import { assertCurveParams, FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import { PublicKey } from "@solana/web3.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getSolanaRpc } from "../rpc.js";
+import { getSolanaRpc, RpcUnavailableError } from "../rpc.js";
 import { PUMP_GLOBAL_ADDRESS, PUMP_PROGRAM_ID } from "./constants.js";
 import { createCurveParamsService, readAccountInfo } from "./curve-params.js";
 import { decodePumpGlobal } from "./global.js";
@@ -31,7 +31,6 @@ function harness(account: PumpAccount | null = syntheticGlobalAccount()) {
 
 afterEach(() => {
   setLogDestination(undefined);
-  vi.useRealTimers();
 });
 
 describe("createCurveParamsService", () => {
@@ -117,16 +116,13 @@ describe("createCurveParamsService", () => {
     expect(warnings()[0]).not.toContain("api-key=secret");
   });
 
-  it("falls back after 5 s when the RPC does not answer", async () => {
-    vi.useFakeTimers();
+  it("reports the 5 s timeout of the connection as such", async () => {
     const { getCurveParams, getAccountInfo, warnings } = harness();
-    getAccountInfo.mockReturnValue(new Promise(() => undefined));
+    const cause = Object.assign(new Error("The operation was aborted"), { name: "TimeoutError" });
+    getAccountInfo.mockRejectedValue(new RpcUnavailableError("The RPC did not answer", { cause }));
 
-    const pending = getCurveParams();
-    await vi.advanceTimersByTimeAsync(5 * SECOND_MS);
-
-    expect((await pending).source).toBe("fallback");
-    expect(warnings()[0]).toContain("timeout");
+    expect((await getCurveParams()).source).toBe("fallback");
+    expect(warnings()[0]).toContain('"reason":"timeout"');
   });
 
   it("asks the chain again 5 min after a failure, not before", async () => {
@@ -141,16 +137,6 @@ describe("createCurveParamsService", () => {
     at(5 * MINUTE_MS);
     getAccountInfo.mockResolvedValue(syntheticGlobalAccount());
     expect((await getCurveParams()).source).toBe("global");
-    expect(getAccountInfo).toHaveBeenCalledTimes(2);
-  });
-
-  it("forgets its reads on clear", async () => {
-    const { getCurveParams, getAccountInfo, clear } = harness();
-
-    await getCurveParams();
-    clear();
-    await getCurveParams();
-
     expect(getAccountInfo).toHaveBeenCalledTimes(2);
   });
 });

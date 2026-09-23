@@ -3,22 +3,21 @@ import type { ApiErrorCode } from "@launchbot/shared";
 /**
  * Every error body of the API: a fixed word per status, never the message of an error. The
  * words are those of `API_ERROR_CODES` (packages/shared), which the Mini App reads (V1-24).
- * A status that is not listed answers the word of its class.
+ * A status that is not listed answers the word of its class, unless the route names one.
  */
 const ERROR_WORDS: Readonly<Record<number, ApiErrorCode>> = {
   400: "bad_request",
   401: "unauthorized",
   403: "forbidden",
   404: "not_found",
-  413: "image_too_large",
-  415: "unsupported_image",
   429: "rate_limited",
-  502: "image_unavailable",
 };
 
-export const errorBody = (status: number): { error: ApiErrorCode } => ({
-  error: ERROR_WORDS[status] ?? (status >= 500 ? "internal" : "bad_request"),
-});
+/** `code` names a failure of one route (the image, V1-23) that the status alone does not. */
+export const errorBody = (
+  status: number,
+  code: ApiErrorCode = ERROR_WORDS[status] ?? (status >= 500 ? "internal" : "bad_request"),
+): { error: ApiErrorCode } => ({ error: code });
 
 /**
  * The status the client gets for an error. A 4xx set on purpose (by Fastify, or by a route

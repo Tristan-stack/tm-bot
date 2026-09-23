@@ -1,4 +1,4 @@
-import { DEV_BUY_MAX_DECIMALS, LAMPORTS_PER_SOL, SOL_DECIMALS } from "../constants.js";
+import { LAMPORTS_PER_SOL, SOL_DECIMALS } from "../constants.js";
 import { formatMagnitude, trimTrailingZeros } from "./number.js";
 
 export type SolRounding = "floor" | "ceil" | "halfUp";
@@ -73,7 +73,7 @@ export function parseSolToLamports(input: string): bigint | null {
  * `1.125 SOL`. Never for a balance, which is lamports.
  */
 export const formatSolNumber = (sol: number): string =>
-  `${trimTrailingZeros(sol.toFixed(DEV_BUY_MAX_DECIMALS))} SOL`;
+  formatSol(BigInt(Math.round(sol * Number(LAMPORTS_PER_SOL))), { trim: true });
 
 /** `$1,234.56`, `$59.00` */
 export const formatUsd = (value: number): string => {

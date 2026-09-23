@@ -51,7 +51,7 @@ describe("createUserActivity", () => {
     await expect(touch(user(1))).resolves.toBeUndefined();
     expect(lines.join("")).toContain("User activity not recorded");
 
-    // Not counted as written: the next request tries again.
+    // A failed write is not kept: the next request tries again.
     await touch(user(1));
     expect(updateMany).toHaveBeenCalledTimes(2);
   });

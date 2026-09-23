@@ -26,7 +26,6 @@ export type TelegramFileClientDeps = {
   botToken: string;
   /** Test seam. */
   fetch?: typeof fetch;
-  timeoutMs?: number;
   maxBytes?: number;
 };
 
@@ -62,12 +61,7 @@ const tooLarge = (bytes: number, max: number) =>
  * and never serialized by the logger.
  */
 export function createTelegramFileClient(deps: TelegramFileClientDeps): TelegramFileClient {
-  const {
-    botToken,
-    fetch: fetchImpl = fetch,
-    timeoutMs = TELEGRAM_FILE_TIMEOUT_MS,
-    maxBytes = API_IMAGE_MAX_BYTES,
-  } = deps;
+  const { botToken, fetch: fetchImpl = fetch, maxBytes = API_IMAGE_MAX_BYTES } = deps;
 
   const unavailable = (message: string, cause?: unknown) =>
     new TelegramFileError("unavailable", message, cause === undefined ? undefined : { cause });
@@ -79,7 +73,7 @@ export function createTelegramFileClient(deps: TelegramFileClientDeps): Telegram
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ file_id: fileId }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(TELEGRAM_FILE_TIMEOUT_MS),
       });
     } catch (error) {
       throw unavailable("Telegram getFile did not answer", error);
@@ -105,7 +99,7 @@ export function createTelegramFileClient(deps: TelegramFileClientDeps): Telegram
       let response: Response;
       try {
         response = await fetchImpl(`${TELEGRAM_API}/file/bot${botToken}/${path}`, {
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(TELEGRAM_FILE_TIMEOUT_MS),
         });
       } catch (error) {
         throw unavailable("Telegram file download did not answer", error);

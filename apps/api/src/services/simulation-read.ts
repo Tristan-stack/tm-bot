@@ -1,12 +1,8 @@
 import type { SimulationForViewer } from "@launchbot/db";
-import { httpsUrlSchema, simulationResponseSchema } from "@launchbot/shared";
+import { simulationResponseSchema } from "@launchbot/shared";
 import type { SimulationResponse } from "@launchbot/shared";
 
-/** A stored link, or null: defence in depth, nothing but https reaches the Mini App. */
-const httpsOrNull = (value: string | null): string | null =>
-  value !== null && httpsUrlSchema.safeParse(value).success ? value : null;
-
-export const imagePathOf = (simId: string): string => `/api/simulations/${simId}/image`;
+const imagePathOf = (simId: string): string => `/api/simulations/${simId}/image`;
 
 /**
  * The body of `GET /api/simulations/:id` (V1-23). `config` is `Simulation.params` as stored,
@@ -26,11 +22,7 @@ export function toSimulationResponse(row: SimulationForViewer): SimulationRespon
       description: draft.description,
       hasImage: draft.imageFileId !== null,
       imagePath: draft.imageFileId === null ? null : imagePathOf(row.id),
-      links: {
-        website: httpsOrNull(draft.website),
-        x: httpsOrNull(draft.twitter),
-        telegram: httpsOrNull(draft.telegram),
-      },
+      links: { website: draft.website, x: draft.twitter, telegram: draft.telegram },
     },
   });
 }

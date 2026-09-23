@@ -172,8 +172,8 @@ export const DATA_RETENTION_MS = 90 * DAY_MS;
 export const INIT_DATA_HEADER = "x-telegram-init-data";
 /** The image of a token served by the API (V1-23, proposal): Telegram itself caps a bot at 20 MB. */
 export const API_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
-/** Images kept in memory by the API, in bytes and in age (proposal, V1-23). */
-export const API_IMAGE_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+/** Images kept in memory by the API (proposal, V1-23): 10 × 5 MB at most, an hour each. */
+export const API_IMAGE_CACHE_MAX_ENTRIES = 10;
 export const API_IMAGE_CACHE_TTL_MS = HOUR_MS;
 /** `getFile` and the download of a Telegram file (proposal, V1-23). */
 export const TELEGRAM_FILE_TIMEOUT_MS = 10 * SECOND_MS;

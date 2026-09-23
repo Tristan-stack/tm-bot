@@ -7,6 +7,7 @@ import {
   DURATIONS,
   LAMPORTS_PER_SOL,
   PLANS,
+  SOL_DECIMALS,
   TG,
   WALLET_NAME_MAX_CHARS,
 } from "./constants.js";
@@ -34,39 +35,29 @@ export const solAmountInputSchema = z
     return lamports;
   });
 
-/**
- * Dev buy → lamports. §15: a Custom dev buy outside 1 to 20 SOL is refused, in simulation
- * as in launch.
- */
-export const devBuySolSchema = solAmountInputSchema.refine(
-  (lamports) =>
-    lamports >= BigInt(DEV_BUY_MIN_SOL) * LAMPORTS_PER_SOL &&
-    lamports <= BigInt(DEV_BUY_MAX_SOL) * LAMPORTS_PER_SOL,
-  `Must be from ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL`,
-);
-
 export const httpsUrlSchema = z.url({ protocol: /^https$/ });
 
-// Spaces anywhere, a comma as decimal separator, an optional SOL suffix; no sign, no exponent.
-const DEV_BUY_INPUT = new RegExp(
-  `^(\\d{1,2})(?:[.,](\\d{1,${DEV_BUY_MAX_DECIMALS}}))?(?:sol)?$`,
-  "i",
-);
+const DEV_BUY_LAMPORT_UNIT = 10n ** BigInt(SOL_DECIMALS - DEV_BUY_MAX_DECIMALS);
 
 /**
- * A Custom dev buy typed by the user (§6, §15): `1`, `2.5`, `2,5`, `5 sol`, `1.125`, from
- * 1 to 20 SOL with 3 decimals at most (proposal). The amount is a number, as `SimConfig`
- * holds it (§7.4).
+ * A Custom dev buy typed by the user (§6, §15): the SOL grammar of `parseSolToLamports`
+ * (`.` or `,`, an optional `sol` suffix, no sign, no exponent), from 1 to 20 SOL with 3
+ * decimals at most (proposal). The amount is a number, as `SimConfig` holds it (§7.4).
  */
 export function parseDevBuyAmount(text: string): { ok: true; sol: number } | { ok: false } {
-  const match = DEV_BUY_INPUT.exec(text.replace(/\s+/g, ""));
-  if (match === null) return { ok: false };
-  const [, integer = "0", fraction = ""] = match;
-  const sol = Number(`${integer}.${fraction === "" ? "0" : fraction}`);
-  return sol >= DEV_BUY_MIN_SOL && sol <= DEV_BUY_MAX_SOL ? { ok: true, sol } : { ok: false };
+  const lamports = parseSolToLamports(text);
+  if (
+    lamports === null ||
+    lamports % DEV_BUY_LAMPORT_UNIT !== 0n ||
+    lamports < BigInt(DEV_BUY_MIN_SOL) * LAMPORTS_PER_SOL ||
+    lamports > BigInt(DEV_BUY_MAX_SOL) * LAMPORTS_PER_SOL
+  ) {
+    return { ok: false };
+  }
+  return { ok: true, sol: Number(lamports) / Number(LAMPORTS_PER_SOL) };
 }
 
-/** `parseDevBuyAmount` as a schema: the typed text → SOL number. */
+/** `parseDevBuyAmount` as a schema: the typed text → SOL number (V1-36 reuses it). */
 export const devBuyAmountSchema = z.string().transform((text, ctx) => {
   const parsed = parseDevBuyAmount(text);
   if (!parsed.ok) {
@@ -121,7 +112,6 @@ export const simConfigSchema = z.object({
   preset: presetParamsSchema,
   solUsdPrice: z.number().finite().positive().nullable(),
 });
-export type SimConfigJson = z.infer<typeof simConfigSchema>;
 
 /** The `:id` of `/api/simulations/:id`: a Prisma cuid, anything else is a 404 (V1-23). */
 export const simIdParamSchema = z.object({ id: idSchema });
@@ -141,8 +131,8 @@ export const API_ERROR_CODES = [
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 export const apiErrorSchema = z.object({ error: z.enum(API_ERROR_CODES) });
 
-/** A stored link, or null: never anything but https in the Mini App. */
-const httpsOrNull = httpsUrlSchema.nullable();
+/** A stored link, or null: anything but https falls to null before it reaches the Mini App. */
+const httpsOrNull = httpsUrlSchema.nullable().catch(null);
 
 /** The token of a simulation as the Mini App shows it (V1-23): the ticker without its `$`. */
 export const simulationTokenSchema = z.object({

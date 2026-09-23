@@ -32,16 +32,6 @@ function fakeFetch(options: FakeFetch = {}) {
 const client = (fetchImpl: typeof fetch, options: { maxBytes?: number } = {}) =>
   createTelegramFileClient({ botToken: TOKEN, fetch: fetchImpl, ...options });
 
-const failure = async (run: Promise<unknown>): Promise<TelegramFileError> => {
-  try {
-    await run;
-  } catch (error) {
-    if (error instanceof TelegramFileError) return error;
-    throw error;
-  }
-  throw new Error("Expected a TelegramFileError");
-};
-
 describe("detectImageType", () => {
   it("reads JPEG, PNG and WEBP from their first bytes, nothing else", () => {
     expect(detectImageType(JPEG)).toBe("image/jpeg");
@@ -73,9 +63,9 @@ describe("createTelegramFileClient", () => {
   it("refuses what is not an image", async () => {
     const { fetch } = fakeFetch({ file: () => new Response(SVG) });
 
-    const error = await failure(client(fetch).downloadTelegramFile(FILE_ID));
-
-    expect(error.reason).toBe("unsupported_type");
+    await expect(client(fetch).downloadTelegramFile(FILE_ID)).rejects.toMatchObject({
+      reason: "unsupported_type",
+    });
   });
 
   it("refuses a file over the limit before, during and after the download", async () => {
@@ -84,23 +74,23 @@ describe("createTelegramFileClient", () => {
     const announced = fakeFetch({
       getFile: () => Response.json({ ok: true, result: { file_path: FILE_PATH, file_size: 101 } }),
     });
-    expect(
-      (await failure(client(announced.fetch, { maxBytes: 100 }).downloadTelegramFile(FILE_ID)))
-        .reason,
-    ).toBe("too_large");
+    const tooLarge = { reason: "too_large" };
+    await expect(
+      client(announced.fetch, { maxBytes: 100 }).downloadTelegramFile(FILE_ID),
+    ).rejects.toMatchObject(tooLarge);
     expect(announced.urls).toHaveLength(1);
 
     const headed = fakeFetch({
       file: () => new Response(big, { headers: { "content-length": "101" } }),
     });
-    expect(
-      (await failure(client(headed.fetch, { maxBytes: 100 }).downloadTelegramFile(FILE_ID))).reason,
-    ).toBe("too_large");
+    await expect(
+      client(headed.fetch, { maxBytes: 100 }).downloadTelegramFile(FILE_ID),
+    ).rejects.toMatchObject(tooLarge);
 
     const silent = fakeFetch({ file: () => new Response(big) });
-    expect(
-      (await failure(client(silent.fetch, { maxBytes: 100 }).downloadTelegramFile(FILE_ID))).reason,
-    ).toBe("too_large");
+    await expect(
+      client(silent.fetch, { maxBytes: 100 }).downloadTelegramFile(FILE_ID),
+    ).rejects.toMatchObject(tooLarge);
   });
 
   it.each<[string, FakeFetch]>([
@@ -113,7 +103,12 @@ describe("createTelegramFileClient", () => {
     async (_label, options) => {
       const { fetch } = fakeFetch(options);
 
-      const error = await failure(client(fetch).downloadTelegramFile(FILE_ID));
+      const error = await client(fetch)
+        .downloadTelegramFile(FILE_ID)
+        .then(() => {
+          throw new Error("Expected a rejection");
+        })
+        .catch((thrown: unknown) => thrown as TelegramFileError);
 
       expect(error.reason).toBe("unavailable");
       expect(error.message).not.toContain(TOKEN);
@@ -129,8 +124,14 @@ describe("createTelegramFileClient", () => {
       ),
     ) as unknown as typeof fetch;
 
-    const error = await failure(client(refusing).downloadTelegramFile(FILE_ID));
+    const error = await client(refusing)
+      .downloadTelegramFile(FILE_ID)
+      .then(() => {
+        throw new Error("Expected a rejection");
+      })
+      .catch((thrown: unknown) => thrown as TelegramFileError);
 
+    expect(error).toBeInstanceOf(TelegramFileError);
     expect(error.reason).toBe("unavailable");
     expect(error.message).toBe("Telegram getFile did not answer");
     expect((error.cause as Error).message).toContain("ECONNREFUSED");

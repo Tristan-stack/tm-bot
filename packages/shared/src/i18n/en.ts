@@ -525,10 +525,8 @@ export const en = {
     },
     recap: {
       description: "Check your simulation, then tap Start simulation.",
-      block: `${E.token} TOKEN`,
-      /** `┌ Moon Otter · $OTTR` */
+      /** `┌ Moon Otter · $OTTR`; the block title and the Image line are those of `token`. */
       title: (name: string, ticker: string) => `${name} · ${ticker}`,
-      image: (value: string) => `${E.image} Image: ${value}`,
       imageAdded: E.confirm,
       linksNone: `${E.links} Links: none`,
       /** `🔗 Website · X · Telegram`, each already an <a> of the caller. */
