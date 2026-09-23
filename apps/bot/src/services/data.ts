@@ -8,11 +8,13 @@ import type { BalancesService, PrismaClient, SubscriptionSummary } from "@launch
 import type { Env } from "@launchbot/shared/server";
 import {
   createCoinGeckoProvider,
+  createCurveParamsService,
   createSolUsdPrice,
   getBalancesFresh,
   getSolanaRpc,
+  readAccountInfo,
 } from "@launchbot/solana";
-import type { SolUsdPrice } from "@launchbot/solana";
+import type { CurveParamsService, SolUsdPrice } from "@launchbot/solana";
 import type { Api } from "grammy";
 import { createChannelMemberCounter } from "./channel-stats.js";
 
@@ -27,7 +29,8 @@ export type DataServicesDeps = {
  * process: the caches live in it.
  */
 export type DataServices = BalancesService &
-  SolUsdPrice & {
+  SolUsdPrice &
+  CurveParamsService & {
     getSubscriptionSummary: (userId: string) => Promise<SubscriptionSummary>;
     /** AI Generate is Premium only (§5): the label of its button, and the click (V1-17). */
     hasActivePremium: (userId: string) => Promise<boolean>;
@@ -38,8 +41,14 @@ export type DataServices = BalancesService &
 export function createDataServices({ prisma, api, env }: DataServicesDeps): DataServices {
   // The connection the devnet guard verified at startup.
   const rpc = getSolanaRpc(env.SOLANA_RPC_URL);
+  const curveParams = createCurveParamsService({
+    getAccountInfo: (address) => readAccountInfo(rpc, address),
+  });
+  // Proposal (V1-21): read in the background at startup, so the first recap waits for no RPC.
+  void curveParams.getCurveParams();
 
   return {
+    ...curveParams,
     ...createBalancesService({
       prisma,
       readLamports: (addresses) => getBalancesFresh(rpc, addresses),

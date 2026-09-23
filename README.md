@@ -921,6 +921,52 @@ comparer à `Math.*`.
 `SIM_ENGINE_VERSION` (proposition) est incrémentée à chaque changement d'algorithme ou de constante :
 une simulation enregistrée ne se rejoue à l'identique qu'avec la version qui l'a produite.
 
+### Paramètres de curve lus dans le compte Global pump.fun (V1-21)
+
+`createCurveParamsService` ([packages/solana/src/pump/curve-params.ts](packages/solana/src/pump/curve-params.ts))
+fournit les `CurveParams` de toutes les simulations : lecture du compte `Global` du programme
+pump.fun (`4wTV…xnjf`, PDA de seed `"global"` du programme `6EF8…F6P`, même adresse sur devnet et
+mainnet) sur `SOLANA_RPC_URL`, décodage par `@pump-fun/pump-sdk`, conversion dans les unités du
+moteur, cache 1 h, repli sur le tableau §7.1 (`FALLBACK_CURVE_PARAMS` du moteur, jamais recopié).
+Branché dans `createDataServices` du bot (`getCurveParams()`), avec un préchargement non bloquant
+au démarrage (proposition). Aucun écran : V1-22 copie la curve dans `Simulation.params`, une
+relecture ultérieure ne change jamais une simulation existante.
+
+- **Contrôles avant décodage**, chacun déclenche le repli avec sa raison dans un log `warn` :
+  compte absent (`account_not_found`), owner (`wrong_owner`), discriminator Anchor lu dans l'IDL
+  (`bad_discriminator`), données plus courtes que les champs utilisés, 162 octets calculés depuis
+  l'IDL (`decode_error`), erreur ou timeout RPC de 5 s (`rpc_error`, `timeout`). Un compte plus
+  long que l'IDL est accepté. Aucun offset écrit à la main : `decodePumpGlobal` passe par
+  `PUMP_SDK.decodeGlobal` et l'IDL `pump.json` embarquée dans le SDK.
+- **Conversion** (`pumpGlobalToCurveParams`) : lamports / 1e9, unités de base / 10^6
+  (`TOKEN_DECIMALS` du moteur), `feeRate = (fee_basis_points + creator_fee_basis_points) / 10 000`
+  (proposition : ce que paie le trader, 95 + 5 bps = 1 %), puis `assertCurveParams` du moteur,
+  `feeRate < 10 %` (proposition) et un dev buy de 20 SOL (`DEV_BUY_MAX_SOL`) qui ne complète pas la
+  curve à t = 0 (proposition, ci-dessous). Échec → `invalid_values`.
+- **Le `Global` du devnet n'est pas celui du mainnet** : 1 SOL de réserves virtuelles au lieu de
+  30 (le reste est identique). Avec 1 SOL, un dev buy de 3 SOL complète la curve avant le premier
+  trade : toute simulation serait finie à t = 0. Le contrôle le rejette et le tableau §7.1 sert :
+  sur devnet, `source` vaut `fallback` aujourd'hui, `global` dès que le compte lu est cohérent
+  (mainnet, DEC-05). Détail dans [packages/solana/README.md](packages/solana/README.md).
+- **Cache et repli** : `createLastKnownValue` ; succès gardé 1 h (`CACHE_TTL_MS.pumpGlobal`),
+  échec gardé 5 min (`pumpGlobalFailure`, proposition), N appels concurrents = une lecture. Après
+  une lecture réussie, un échec sert la dernière valeur lue (`source: 'stale'`, `fetchedAt`
+  d'origine) plutôt que le tableau. `getCurveParams()` **ne lève jamais**. Le `warn` passe par le
+  scrubber du logger : jamais l'URL RPC (testé avec `?api-key=secret`).
+- **SDK** : `@pump-fun/pump-sdk` 2.0.0, version figée, chargé en CommonJS via `createRequire`
+  ([packages/solana/src/pump/sdk.ts](packages/solana/src/pump/sdk.ts)) : son build ESM importe
+  `BN` en export nommé depuis `@coral-xyz/anchor`, que Node et `tsx` refusent (Vitest le masque).
+  `@types/bn.js` en devDependency pour typer ses comptes décodés. Au chargement, `bigint-buffer`
+  (dépendance de `@solana/spl-token`) affiche « Failed to load bindings, pure JS will be used »
+  quand Visual Studio manque : sans effet.
+- **Frais dynamiques par market cap** (programme pump-fees, compte `FeeConfig`) : non modélisés
+  en V1, note et renvoi à V2-01 dans [packages/solana/README.md](packages/solana/README.md).
+- **Tests** : fixture
+  [packages/solana/test/fixtures/pump-global-devnet.json](packages/solana/test/fixtures/pump-global-devnet.json)
+  capturée le 23/09/2026 (slot 503107921), compte synthétique aux valeurs §7.1 (offsets déduits de
+  l'IDL, jamais écrits), PDA re-dérivée, `devBuySupplyShare` cohérent (3 SOL → 96.66M, 9.67 %),
+  cache et timeout à horloge injectée, test devnet derrière `RUN_DEVNET_TESTS=1`.
+
 ### API SimRun et bougies (V1-20)
 
 `createSimulation(config)` est le seul point d'entrée de la web app (V1-24 à V1-26) et du bot
@@ -1093,3 +1139,4 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 
 | 21/09/2026 | **Pas de `react-router-dom` dans la Mini App**, alors que la carte V1-05 le cite. Chaque page s'ouvre par une URL complète depuis un bouton `web_app` et aucune ne renvoie vers une autre : un aiguillage de dix lignes sur `location.pathname` suffit. Le routeur pesait 39 kB (13 kB gzip), soit 91 % de la croissance du bundle. À réintroduire si une page a un jour besoin de navigation interne. |
 | 21/09/2026 | **Les textes de la Mini App sont dans `i18n/en-webapp.ts`**, exposés aussi comme `en.webapp`. `en` est un seul objet, qu'un bundler ne sait pas élaguer : l'importer embarquerait tous les textes du bot. ESLint interdit `en` et `E` dans `apps/webapp`. À décider avant V1-24 : importer un schéma zod depuis `@launchbot/shared` dans la Mini App coûterait 74 kB (21 kB gzip) ; `apiFetch` accepte tout objet doté d'un `parse`, donc un parseur écrit à la main suffit. |
+| 23/09/2026 | **`@pump-fun/pump-sdk` 2.0.0 (version figée) chargé en CommonJS** via `createRequire` (V1-21) : son build ESM importe `BN` en export nommé de `@coral-xyz/anchor`, que Node et `tsx` refusent. `@types/bn.js` en devDependency. Le `Global` du devnet (1 SOL de réserves virtuelles, 30 sur mainnet) est rejeté par le service de curve : les simulations suivent le tableau §7.1 tant que le compte lu n'est pas cohérent avec le produit (un dev buy de 20 SOL ne doit pas compléter la curve à t = 0). |

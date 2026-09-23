@@ -17,6 +17,7 @@ import type {
 } from "@launchbot/db";
 import { AI_GENERATIONS_PER_DAY, computeMaxAmount } from "@launchbot/shared";
 import type { AiProviders } from "@launchbot/shared";
+import { FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import type { TransferQuote } from "@launchbot/solana";
 import type { Env } from "@launchbot/shared/server";
 import { BotError, GrammyError } from "grammy";
@@ -395,6 +396,13 @@ export function fakeData(overrides: Partial<DataServices> = {}): DataServices {
     getSolUsdPrice: () => Promise.resolve(103.36),
     getSolUsdQuote: () =>
       Promise.resolve({ price: 103.36, fetchedAt: BALANCES_READ_AT, isFallback: false }),
+    getCurveParams: () =>
+      Promise.resolve({
+        curve: FALLBACK_CURVE_PARAMS,
+        source: "global",
+        fetchedAt: BALANCES_READ_AT,
+      }),
+    clear: () => undefined,
     getSubscriptionSummary: () => Promise.resolve({ active: null, lastExpired: null }),
     hasActivePremium: () => Promise.resolve(false),
     countActiveSubscribers: () => Promise.resolve(767),

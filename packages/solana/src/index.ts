@@ -37,6 +37,16 @@ export { getBalancesFresh } from "./lamports.js";
 export type { BalancesReader } from "./lamports.js";
 export { createCoinGeckoProvider } from "./price/coingecko.js";
 export { createSolUsdPrice } from "./price/sol-usd.js";
+export { PUMP_GLOBAL_ADDRESS, PUMP_PROGRAM_ID } from "./pump/constants.js";
+export { createCurveParamsService, readAccountInfo } from "./pump/curve-params.js";
+export type {
+  CurveParamsDeps,
+  CurveParamsResult,
+  CurveParamsService,
+  CurveParamsSource,
+} from "./pump/curve-params.js";
+export { decodePumpGlobal, PumpGlobalError, pumpGlobalToCurveParams } from "./pump/global.js";
+export type { PumpAccount, PumpGlobalFailure, PumpGlobalRaw } from "./pump/global.js";
 export type { SolPriceProvider, SolUsdPrice, SolUsdQuote } from "./price/sol-usd.js";
 export { getSolanaRpc, RpcUnavailableError } from "./rpc.js";
 export type { TxFailure, TxLanded } from "./tx/errors.js";

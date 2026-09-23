@@ -144,6 +144,8 @@ export const CACHE_TTL_MS = {
   channelMembers: 10 * MINUTE_MS,
   channelMembership: 10 * MINUTE_MS,
   pumpGlobal: HOUR_MS,
+  /** A failed read of the pump.fun Global account is retried after this (proposal, V1-21). */
+  pumpGlobalFailure: 5 * MINUTE_MS,
   /** The rent-exempt minimum of an empty account does not move (proposal, V1-13). */
   rentMin: HOUR_MS,
 } as const;
