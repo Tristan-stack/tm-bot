@@ -1,0 +1,84 @@
+/**
+ * Types of the engine, copied from §7.4 of the context. V1-18 defines the curve types,
+ * V1-19 adds the preset and the trade event, V1-20 completes the block.
+ */
+
+export type CurveParams = {
+  virtualSol: number;
+  virtualTokens: number;
+  realTokens: number;
+  totalSupply: number;
+  feeRate: number;
+};
+
+export type PresetParams = {
+  lambda0: number;
+  pBuy: number;
+  mu: number;
+  sigma: number;
+  minTrade: number;
+  maxTrade: number;
+};
+
+export type TradeEvent = {
+  /** Simulated seconds. */
+  t: number;
+  side: "buy" | "sell";
+  /** Short simulated address, or "dev". */
+  trader: string;
+  /** Buy: SOL paid, fees included. Sell: SOL received, fees deducted. */
+  sol: number;
+  tokens: number;
+  /** Price after the trade. */
+  price: number;
+};
+
+export type CurveState = {
+  x: number;
+  y: number;
+  realTokens: number;
+  price: number;
+};
+
+export type SimConfig = {
+  seed: number;
+  devBuySol: number;
+  durationSec: number;
+  curve: CurveParams;
+  preset: PresetParams;
+  /** Frozen when the simulation is created; USD hidden when null. */
+  solUsdPrice: number | null;
+};
+
+export type Position = {
+  /** Tokens still held. */
+  tokens: number;
+  /** Dev buy, fees included. */
+  solIn: number;
+  /** SOL received from the sells, fees deducted. */
+  solOut: number;
+  /** SOL if the rest were sold now, price impact included. */
+  valueIfSoldNow: number;
+  /** solOut + valueIfSoldNow − solIn. */
+  pnlSol: number;
+  pnlPct: number;
+};
+
+export type Holder = {
+  address: string;
+  tokens: number;
+  pctSupply: number;
+  label?: "bonding_curve" | "dev";
+};
+
+export type EndReason = "timeout" | "position_closed" | "curve_complete";
+
+export interface SimRun {
+  step(dtSec: number): TradeEvent[];
+  /** 0.25, 0.5 or 1. */
+  sellDev(fraction: number): TradeEvent;
+  state(): CurveState;
+  position(): Position;
+  topHolders(limit: number): Holder[];
+  endReason(): EndReason | null;
+}

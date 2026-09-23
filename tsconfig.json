@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/sim-engine" },
+    { "path": "./packages/sim-engine/scripts" },
     { "path": "./packages/db" },
     { "path": "./packages/solana" },
     { "path": "./apps/api" },

@@ -85,17 +85,18 @@ machine. Pour en changer : `POSTGRES_PORT` dans `.env`, et adapter `DATABASE_URL
 
 ## Scripts
 
-| Script                   | Rôle                                                             |
-| ------------------------ | ---------------------------------------------------------------- |
-| `pnpm dev`               | bot, worker et webapp en mode watch (`tsx watch`, `vite`)        |
-| `pnpm build`             | `tsc -b` sur tout le graphe, puis `vite build` pour la webapp    |
-| `pnpm typecheck`         | `tsc -b` sur les 8 projets (références de projets)               |
-| `pnpm lint`              | ESLint (typescript-eslint avec types, `no-console`)              |
-| `pnpm format`            | Prettier (`pnpm format:check` pour vérifier)                     |
-| `pnpm test`              | Vitest, un projet par app/package (`pnpm test:watch` en continu) |
-| `pnpm test:db`           | avec `RUN_DB_TESTS=1` : tests d'intégration sur `launchbot_test` |
-| `pnpm test:devnet`       | avec `RUN_DEVNET_TESTS=1` : tests qui appellent le RPC devnet    |
-| `pnpm db:up` / `db:down` | démarre / arrête PostgreSQL                                      |
+| Script                   | Rôle                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------ |
+| `pnpm dev`               | bot, worker et webapp en mode watch (`tsx watch`, `vite`)                            |
+| `pnpm build`             | `tsc -b` sur tout le graphe, puis `vite build` pour la webapp                        |
+| `pnpm typecheck`         | `tsc -b` sur les 8 projets (références de projets)                                   |
+| `pnpm lint`              | ESLint (typescript-eslint avec types, `no-console`)                                  |
+| `pnpm format`            | Prettier (`pnpm format:check` pour vérifier)                                         |
+| `pnpm test`              | Vitest, un projet par app/package (`pnpm test:watch` en continu)                     |
+| `pnpm test:db`           | avec `RUN_DB_TESTS=1` : tests d'intégration sur `launchbot_test`                     |
+| `pnpm test:devnet`       | avec `RUN_DEVNET_TESTS=1` : tests qui appellent le RPC devnet                        |
+| `sim:report`             | `pnpm --filter @launchbot/sim-engine sim:report [seeds]` : réglage du moteur (V1-19) |
+| `pnpm db:up` / `db:down` | démarre / arrête PostgreSQL                                                          |
 
 Un seul package : `pnpm --filter @launchbot/shared test`.
 
@@ -907,6 +908,135 @@ Rejouer le premier accès avec son propre compte : remettre `termsVersion` et `c
 `NULL` sur sa ligne `User` (`pnpm db:studio`), ou passer `TERMS_VERSION=2` après avoir ajouté la date
 de la version 2 dans [packages/shared/src/legal.ts](packages/shared/src/legal.ts).
 
+## Moteur de simulation
+
+`packages/sim-engine` est le moteur de « Simulate a Launch » (§7 du contexte) : TypeScript pur,
+**zéro dépendance runtime**, ni API Node ni DOM, donc importable par Vite (web app) comme par Node
+(bot, API). Une même seed rejoue exactement la même simulation, sur tous les moteurs JavaScript.
+ESLint y interdit `Math.random`, `Date`, `performance`, `fetch`, l'opérateur `**` et les fonctions
+`Math.log/exp/sin/cos/pow/tan…` (« implementation-approximated » en ECMAScript : V8 et
+JavaScriptCore peuvent différer au dernier bit, puis la simulation diverge). Les tests, eux, peuvent
+comparer à `Math.*`.
+
+`SIM_ENGINE_VERSION` (proposition) est incrémentée à chaque changement d'algorithme ou de constante :
+une simulation enregistrée ne se rejoue à l'identique qu'avec la version qui l'a produite.
+
+### API SimRun et bougies (V1-20)
+
+`createSimulation(config)` est le seul point d'entrée de la web app (V1-24 à V1-26) et du bot
+(V1-22). `assertSimConfig` vérifie chaque champ (seed uint32, dev buy et durée finis > 0, curve et
+preset par leurs validateurs, `solUsdPrice` `null` ou > 0) avec une `RangeError` qui nomme le champ,
+puis le moteur travaille sur une copie gelée : l'objet reçu n'est jamais modifié, et un config passé
+par `JSON.parse(JSON.stringify())` rejoue le même run.
+
+- **Dev buy à t = 0**, avant le premier trade simulé : `devBuy()` renvoie son événement
+  (`trader: "dev"`, `sol` = SOL payés frais inclus), jamais renvoyé par `step`. S'il complète la
+  curve, fin immédiate `curve_complete` à `time() = 0`.
+- **`step(dtSec)`** avance l'horloge simulée jusqu'à `min(time + dt, durationSec)` et renvoie les
+  trades du flux (V1-19) dans l'ordre. Le résultat ne dépend pas du découpage : `step(180)` =
+  180 × `step(1)` = 11 520 × `step(1/64)`. Les pas non dyadiques dérivent (0.016 × 11 250 =
+  179.99999999998727) : à moins de 1e-9 s de la fin, l'horloge est ramenée à `durationSec`
+  (proposition). Après la fin, `step` renvoie `[]` et l'horloge ne bouge plus.
+- **`sellDev(fraction)`** : 0.25, 0.5 ou 1 (`DEV_SELL_FRACTIONS`) des tokens **encore détenus**
+  (proposition, comme « Sell 25% » sur pump.fun), par la formule de la curve, impact et frais
+  inclus. L'événement est renvoyé, l'enveloppe du garde-fou repart du nouveau prix, et tout vendre
+  ferme la position (`position_closed`). Après la fin : `SimulationEndedError`.
+- **`position()`** : `valueIfSoldNow` passe par `curve.quoteSell`, jamais prix × tokens (§6.2) ;
+  `pnlSol = solOut + valueIfSoldNow − solIn`, `pnlPct` en points (proposition : dev buy 3.00, vendu
+  4.28 → +42.7 %).
+- **`topHolders(limit)`** : la bonding curve en holder (`totalSupply − circulation`, proposition
+  conforme à pump.fun), le dev (`label: "dev"`) tant qu'il détient plus que la poussière, puis les
+  traders simulés ; tri par tokens décroissants puis adresse ; parts en % dont la somme fait 100,
+  calculées à la demande (quelques centaines de holders, un appel par image au plus).
+- **`endReason()`** : `null`, puis la première condition atteinte, définitive : `timeout` (180 s),
+  `position_closed` ou `curve_complete`. `time()` reste figé à l'instant de la fin (« Time 2:14 »).
+
+Bougies : `createCandleAggregator({ initialPrice, durationSec })` agrège les trades sur
+`CANDLE_INTERVAL_SEC` = 5 s simulées (seaux 0, 5, 10… ; un trade à t = 180 va dans le seau 175).
+`initialPrice` est le prix **avant** dev buy, donc la première bougie inclut son saut si l'appelant
+pousse `devBuy()` en premier. `open` = `close` précédent, `high`/`low` incluent `open`,
+`volumeSol`, `buys` et `sells` sont des sommes. Un intervalle sans trade jusqu'à `nowSec` donne une
+bougie plate (proposition) : le graphique avance même sans trade. `push` renvoie les bougies créées
+ou modifiées, en copies, pour `series.update()` de Lightweight Charts (V1-25).
+
+Vecteurs testés (curve de repli, 3 SOL) : `sellDev(1)` à t = 0 rend 2.9403 SOL, `pnlSol` −0.0597,
+`pnlPct` −1.99 ; top holders à t = 0 : bonding curve 90.334 %, dev 9.666 %. Test d'acceptation §15
+via l'API publique : 1 000 seeds par preset, prix final au-dessus du prix après dev buy.
+
+### Flux de trades, presets et garde-fou (V1-19)
+
+`presetForDevBuy(devBuySol)` renvoie les `PresetParams` du §7.3 : table exacte pour 3 / 5 / 10 SOL,
+interpolation sur log(dev buy) entre deux presets pour Custom, preset le plus proche hors de
+[3, 10]. `mu = ln(médiane)`, `sigma` 1, bornes de taille `MIN_TRADE_SOL` 0.01 et `MAX_TRADE_SOL` 5
+(propositions, absentes du contexte). `assertPresetParams` valide un preset stocké.
+
+`createTradeFlow({ seed, preset, curve, durationSec })` produit le marché simulé sur la curve
+partagée avec V1-20 :
+
+- **Six sous-flux** dérivés de la seed (`deriveSeed`) : calendrier, arrivées, sens, tailles,
+  traders, adresses. Chaque candidat consomme toujours les mêmes tirages (1 arrivée, 1 sens,
+  2 tailles, 2 traders) quelle que soit sa branche, même une vente ignorée : les flux restent
+  alignés. Seul l'instant du prochain candidat est pré-tiré ; sens, taille et trader sont tirés au
+  moment de l'appliquer, avec le prix courant. Une vente du dev entre deux candidats ne change donc
+  pas `nextTradeTime()` mais est vue par le candidat suivant, et `advanceTo(180)` d'un coup donne
+  exactement les mêmes événements que 10 800 appels par 1/60 s.
+- **Calendrier** (`createSchedule`, tiré une fois, indépendant des trades) : λ(t) = λ0 · m(t) avec
+  une ondulation lente (période 45 s, amplitude 0.35, plancher 0.2), des rafales de Poisson
+  (intervalle moyen 40 s, amplitude U[0.5, 1.5], décroissance 6 s) et des phases de pBuy de
+  10 à 30 s (montée +0.06 à 45 %, consolidation −0.04 à 35 %, repli −0.065 à 20 % : décalage
+  moyen nul), pBuy borné à [0.35, 0.85]. Toutes ces valeurs sont des propositions dans
+  `DEFAULT_FLOW_PARAMS`, « à ajuster à l'œil » (§7.3) ; elles ne sont pas dans `SimConfig`.
+- **Trades** : délai exponentiel à λ évalué à l'instant du candidat précédent (lecture littérale du
+  §7.2), sens Bernoulli, taille log-normale bornée en SOL. Un achat vient d'un nouveau trader à 60 %
+  sinon d'un trader existant tiré uniformément (proposition) ; `TradeEvent.sol` = SOL payés frais
+  inclus. Une vente vient d'un détenteur choisi en proportion de ses avoirs, jamais au-delà de ses
+  avoirs (`tokensForGrossSolOut`), et est ignorée sans détenteur ; `sol` = SOL reçus frais déduits.
+  `price` est le prix après le trade. Le dev n'est jamais tiré. Un achat qui complète la curve
+  arrête le flux.
+- **Registre** (`TraderRegistry`) : adresses factices `ABCD…EFGH` en base58, tirées depuis la seed,
+  jamais de vraies clés, ordre de création déterministe ; il alimente les top holders.
+- **Garde-fou haussier** : enveloppe `E(t) = Pref · (1 + 0.002 · (t − tref)) · 0.95` depuis le
+  prix après dev buy. Prix sous l'enveloppe → pBuy relevé à 0.85 ; `resetEnvelope(t)` après une
+  vente du dev. Invariant : k est constant, le prix ne dépend que des tokens en circulation, et sans
+  vente du dev les traders ne revendent jamais plus qu'ils n'ont acheté, donc le prix ne repasse pas
+  sous le prix après dev buy.
+
+`pnpm --filter @launchbot/sim-engine sim:report [seeds]` (proposition) imprime par preset les trades
+moyens, le ratio prix final / prix après dev buy (p1 / p50 / p99), la part de curves complètes et la
+part de candidats sous l'enveloppe. Sur 1 000 seeds : 3 SOL → 162 trades, ×1.93 (p1 ×1.31) ; 5 SOL
+→ 244, ×3.03 ; 10 SOL → 403, ×5.77, curve complète dans 9.8 % des runs.
+
+### PRNG, math déterministe et bonding curve (V1-18)
+
+- **PRNG** : `createRng(seed)` = sfc32 initialisé par quatre sorties de SplitMix32 puis 15 sorties
+  jetées (proposition, domaine public, passe PractRand), uniquement `Math.imul`, `| 0`, `>>>`, `^`,
+  `<<` : bit à bit identique partout. Seed uint32 obligatoire (`isValidSeed`, `RangeError` sinon,
+  pas de troncature) ; `Simulation.seed` (int4) en est un sous-ensemble. `deriveSeed(seed, id)`
+  donne une sous-seed par flux. Vecteurs de contrôle : seed 42 → 853279530, 1920286840, 3588795744.
+- **`dmath`** : `ln`, `exp`, `sin`, `cos` n'utilisent que + − × ÷, `Math.sqrt`, `Math.floor` et
+  `Math.abs` (exacts en IEEE 754). `ln` réduit x = m · 2^e avec m dans [√½, √2) puis série
+  d'atanh ; `exp` réduit x = n · ln 2 + r puis Taylor ; `sin`/`cos` réduisent par π/2 en deux
+  constantes (fdlibm) puis Taylor. Écart relatif ≤ 5e-15 face à `Math.*` sur les grilles de test ;
+  une fixture des bits Float64 détecterait une dérive entre moteurs.
+- **Lois** (§7.2) : `exponential`, `bernoulli`, `standardNormal` (Box-Muller, exactement deux
+  uniformes, pas de cache), `normal`, `logNormal`, `logNormalBounded` (écrêtage, nombre de tirages
+  fixe : proposition).
+- **Bonding curve** (§7.1, exactement) : `BondingCurve` à produit constant sur réserves virtuelles,
+  frais prélevés sur le SOL payé à l'achat et sur le SOL reçu à la vente (ne pas « corriger » vers
+  le modèle on-chain : V2). Formes numériques stables `y·s'/(x + s')` et `x·t/(y + t)`. Un achat
+  qui dépasse les réserves réelles est plafonné, le reste de SOL n'est pas dépensé (proposition),
+  `capped: true` et curve complète (`realTokens ≤ DUST_TOKENS` = 1e-6, proposition) ; acheter
+  ensuite → `CurveCompleteError`. `quoteBuy` / `quoteSell` ne modifient rien ; `buy` / `sell`
+  appliquent. Une vente à moins de `DUST_TOKENS` de la circulation est ramenée à la circulation,
+  au-delà → `RangeError`. `tokensForGrossSolOut` inverse la vente. `FALLBACK_CURVE_PARAMS` reprend
+  le compte `Global` (30 SOL, 1 073 000 000, 793 100 000, 1 000 000 000, 1 %) ; `assertCurveParams`
+  valide un compte décodé (V1-21). `marketCapSol`, `curveProgress`, `devBuySupplyShare` (part brute,
+  l'écran choisit la précision : « ≈ 9.7% »).
+
+Vecteurs testés : 3 SOL → 96 657 870.79 tokens (9.666 %), x = 32.97, market cap 33.769 SOL ; revente
+immédiate → 2.9403 SOL et état initial retrouvé (tolérance 1e-9, jamais d'égalité stricte) ; 200 SOL
+sur curve neuve → plafonné à 793 100 000 tokens pour 85.864 SOL payés, curve complète.
+
 ## Devnet
 
 SOL de test : https://faucet.solana.com. Le bot refuse de démarrer hors devnet, et rien ne contourne
@@ -937,7 +1067,8 @@ feature suivante part de `develop` et y est fusionnée quand tous ses tickets so
 `develop` est fusionnée dans `main` à chaque jalon stable.
 
 ```
-main ──► develop ──► feat/token ──► (merge) develop ──► feat/simulation ──► …
+main ──► develop ──► feat/token ──► (merge) develop ──► …
+              └──► feat/simulation (partie de develop avant la fusion de feat/token : le moteur n'en dépend pas)
 ```
 
 ## Décisions techniques
