@@ -3,12 +3,21 @@ import { conversations } from "@grammyjs/conversations";
 import type { ConversationData, VersionedState } from "@grammyjs/conversations";
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import {
+  createAiQuotaStore,
+  createTokenDraftService,
   createWalletService,
   createWithdrawalService,
   prisma as defaultPrisma,
 } from "@launchbot/db";
-import type { PrismaClient, WalletService, WithdrawalService } from "@launchbot/db";
+import type {
+  AiQuotaStore,
+  PrismaClient,
+  TokenDraftService,
+  WalletService,
+  WithdrawalService,
+} from "@launchbot/db";
 import { createUi, en, getWithdrawFeeBudgetLamports } from "@launchbot/shared";
+import type { AiProviders } from "@launchbot/shared";
 import { createLogger, loadEnv } from "@launchbot/shared/server";
 import type { Env, Service } from "@launchbot/shared/server";
 import {
@@ -27,6 +36,8 @@ import { createAccess } from "./features/access/access.js";
 import { checkChannelRights } from "./features/access/startup-check.js";
 import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
+import { registerSimulationProvisional } from "./features/simulation/provisional.js";
+import { createTokenStep } from "./features/token-step/token-step.js";
 import { importConsumer } from "./features/wallets/import.js";
 import { createWalletNav } from "./features/wallets/nav.js";
 import { registerWallets } from "./features/wallets/wallets.js";
@@ -38,6 +49,8 @@ import { userActivity } from "./middleware/user-activity.js";
 import { createInputRouter } from "./navigation/inputs.js";
 import { ensureAnswered } from "./navigation/notify.js";
 import { createCallbackRouter } from "./router/callback-router.js";
+import { createAiGenerateService } from "./services/ai/ai-generate.js";
+import { createAiProviders } from "./services/ai/providers.js";
 import { createDataServices } from "./services/data.js";
 import type { DataServices } from "./services/data.js";
 import { createTransferApi } from "./services/transfer.js";
@@ -56,7 +69,14 @@ export function createBot(
   env: Env,
   prisma: PrismaClient,
   /** Test seam: the real services read the RPC, the price provider and the tables. */
-  options: { data?: DataServices; wallets?: WalletService; withdrawals?: WithdrawalService } = {},
+  options: {
+    data?: DataServices;
+    wallets?: WalletService;
+    withdrawals?: WithdrawalService;
+    drafts?: TokenDraftService;
+    aiQuota?: AiQuotaStore;
+    aiProviders?: AiProviders;
+  } = {},
 ): Bot<BotContext> {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
   const ui = createUi(env.SOLANA_CLUSTER);
@@ -90,6 +110,20 @@ export function createBot(
     });
   // Built here, not inside the section: the import input is consumed before the rate limit.
   const walletNav = createWalletNav({ ui, wallets, withdrawals, data });
+  const providers = options.aiProviders ?? createAiProviders(env);
+  const ai = createAiGenerateService({
+    quota: options.aiQuota ?? createAiQuotaStore({ prisma }),
+    providers,
+    hasActivePremium: data.hasActivePremium,
+  });
+  // One step for both flows (§5): V1-22 and V1-37 register theirs, AI Generate serves both.
+  const tokenStep = createTokenStep({
+    ui,
+    drafts: options.drafts ?? createTokenDraftService({ prisma }),
+    data,
+    ai,
+    providers,
+  });
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
   // unlimited retry would stall every user, and would hang the startup instead of failing it.
@@ -127,6 +161,8 @@ export function createBot(
   access.register(router);
   registerHome(bot, router, access, { ui, env, data });
   registerWallets(router, inputs, walletNav);
+  registerSimulationProvisional(router, ui, tokenStep);
+  tokenStep.mount(router, inputs);
   // Until the ticket of a section registers its domain.
   registerComingSoon(router, ui);
   // The message that answers an input a screen waits for: a name, an address, an amount.

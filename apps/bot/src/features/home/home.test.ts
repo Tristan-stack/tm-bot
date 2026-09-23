@@ -386,7 +386,7 @@ describe("home handlers", () => {
 describe("provisional screens", () => {
   const SECTIONS: [ComingSoonSection, string, string][] = [
     ["launch", "<b>🚀 LAUNCH COIN</b> · 🧪 Devnet", MENU.launchCoin],
-    ["simulate", "<b>📊 SIMULATE A LAUNCH</b> · 🧪 Devnet", MENU.simulate],
+    // simulate: the Token step since V1-16, tested in features/token-step.
     ["subscribe", "<b>⭐ SUBSCRIBE</b> · 🧪 Devnet", MENU.subscribe],
     // wallets: delivered by V1-10, tested in features/wallets.
     ["support", "<b>🆘 SUPPORT</b> · 🧪 Devnet", MENU.support],

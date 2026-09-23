@@ -1,5 +1,6 @@
 import type { User } from "@launchbot/db";
-import type { ImportFormat } from "@launchbot/shared";
+import { TOKEN_FIELDS } from "@launchbot/shared";
+import type { ImportFormat, TokenField } from "@launchbot/shared";
 import type { ConversationFlavor } from "@grammyjs/conversations";
 import type { Context, SessionFlavor } from "grammy";
 
@@ -22,7 +23,23 @@ export type PendingInput =
   | { kind: "wallet_import"; format: ImportFormat; expiresAt: number }
   /** The address, then the custom amount, of a withdrawal (V1-14): its wallet is in `withdraw`. */
   | { kind: "withdraw_address" }
-  | { kind: "withdraw_amount" };
+  | { kind: "withdraw_amount" }
+  /** A field of the Token screen (V1-16); `since` lets a forgotten input expire (proposal). */
+  | { kind: "token_field"; flow: TokenFlow; field: TokenInputField; since: number };
+
+/** The two flows the Token step serves (§5): step 1 of a simulation, step 3 of a launch. */
+export const TOKEN_FLOWS = ["SIMULATION", "LAUNCH"] as const;
+export type TokenFlow = (typeof TOKEN_FLOWS)[number];
+/** The six text fields of V1-15 and the image, which is a photo, not a text. */
+export type TokenInputField = TokenField | "image";
+const TOKEN_INPUT_FIELDS: readonly string[] = [...TOKEN_FIELDS, "image"];
+
+/**
+ * What the Token step keeps per flow (V1-16): the draft being edited, and whether Continue
+ * was refused, so the "Missing" flag stays until the fields are there. Kept across screens:
+ * the draft of a simulation is found again from the menu.
+ */
+export type TokenStepState = { draftId?: string; showMissing?: boolean };
 
 /** `all`: opened from the Delete blocking (§9.3), Max chosen, the amount step skipped. */
 export type WithdrawMode = "normal" | "all";
@@ -48,6 +65,7 @@ export type SessionData = {
   screenMessageId?: number;
   pendingInput?: PendingInput;
   withdraw?: WithdrawState;
+  tokenStep?: Partial<Record<TokenFlow, TokenStepState>>;
 };
 
 export const initialSession = (): SessionData => ({ v: SESSION_VERSION });
@@ -68,9 +86,27 @@ const isPendingInput = (value: unknown): value is PendingInput => {
       return (
         (input.format === "KEY" || input.format === "SEED") && typeof input.expiresAt === "number"
       );
+    case "token_field":
+      return (
+        isTokenFlow(input.flow) &&
+        TOKEN_INPUT_FIELDS.includes(input.field) &&
+        typeof input.since === "number"
+      );
     default:
       return false;
   }
+};
+
+export const isTokenFlow = (value: unknown): value is TokenFlow =>
+  (TOKEN_FLOWS as readonly unknown[]).includes(value);
+
+const isTokenStep = (value: unknown): value is Partial<Record<TokenFlow, TokenStepState>> => {
+  if (typeof value !== "object" || value === null) return false;
+  return Object.entries(value as Record<string, unknown>).every(([flow, state]) => {
+    if (!isTokenFlow(flow) || typeof state !== "object" || state === null) return false;
+    const { draftId, showMissing } = state as TokenStepState;
+    return isOptionalString(draftId) && (showMissing === undefined || showMissing === true);
+  });
 };
 
 const isWithdrawState = (value: unknown): value is WithdrawState => {
@@ -92,6 +128,7 @@ export function isSessionData(value: unknown): value is SessionData {
   if (data.v !== SESSION_VERSION) return false;
   if (data.screenMessageId !== undefined && typeof data.screenMessageId !== "number") return false;
   if (data.withdraw !== undefined && !isWithdrawState(data.withdraw)) return false;
+  if (data.tokenStep !== undefined && !isTokenStep(data.tokenStep)) return false;
   return data.pendingInput === undefined || isPendingInput(data.pendingInput);
 }
 

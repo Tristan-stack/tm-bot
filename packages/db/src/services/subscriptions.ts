@@ -29,6 +29,18 @@ export function getActiveSubscription(
   });
 }
 
+/**
+ * AI Generate is Premium only (§5, §8.1): plan PREMIUM, status ACTIVE, not expired. V1-16 reads
+ * it for the label of the button, V1-17 again on the click. To be centralised by V1-27.
+ */
+export async function hasActivePremium(
+  prisma: Db,
+  userId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  return (await getActiveSubscription(prisma, userId, now))?.plan === "PREMIUM";
+}
+
 export type SubscriptionSummary = {
   active: SubscriptionInfo | null;
   /** The subscription that ended last: the home screen says "Classic expired" (V1-08). */

@@ -1,6 +1,9 @@
 import { resolveWithdrawAmount } from "@launchbot/db";
 import type {
+  AiQuotaStore,
   PrismaClient,
+  TokenDraft,
+  TokenDraftService,
   User,
   UserBalances,
   WalletBalance,
@@ -12,7 +15,8 @@ import type {
   WithdrawalService,
   WithdrawCheck,
 } from "@launchbot/db";
-import { computeMaxAmount } from "@launchbot/shared";
+import { AI_GENERATIONS_PER_DAY, computeMaxAmount } from "@launchbot/shared";
+import type { AiProviders } from "@launchbot/shared";
 import type { TransferQuote } from "@launchbot/solana";
 import type { Env } from "@launchbot/shared/server";
 import { BotError, GrammyError } from "grammy";
@@ -71,6 +75,10 @@ export function interceptApi(bot: Bot<BotContext>, replies: ApiReplies = {}) {
     text: (method: string, index = 0) => String(of(method).at(index)?.payload["text"]),
     keyboard: (method: string, index = 0) =>
       (of(method).at(index)?.payload["reply_markup"] as InlineKeyboardMarkup).inline_keyboard,
+    /** The last screen edited in place: what a click, or an input answered in place, shows. */
+    screen: () => String(of("editMessageText").at(-1)?.payload["text"]),
+    /** The last answer to a click: its `text` and `show_alert`, or nothing for a bare answer. */
+    lastAlert: () => of("answerCallbackQuery").at(-1)?.payload,
   };
 }
 
@@ -388,6 +396,7 @@ export function fakeData(overrides: Partial<DataServices> = {}): DataServices {
     getSolUsdQuote: () =>
       Promise.resolve({ price: 103.36, fetchedAt: BALANCES_READ_AT, isFallback: false }),
     getSubscriptionSummary: () => Promise.resolve({ active: null, lastExpired: null }),
+    hasActivePremium: () => Promise.resolve(false),
     countActiveSubscribers: () => Promise.resolve(767),
     getBotChannelMemberCount: () => Promise.resolve(1248),
     ...overrides,
@@ -492,6 +501,75 @@ export function fakeWithdrawals(overrides: Partial<WithdrawalService> = {}): Wit
   };
 }
 
+/** A row of `TokenDraft` (§13), empty unless told otherwise. */
+export const testDraft = (overrides: Partial<TokenDraft> = {}): TokenDraft => ({
+  id: "d1",
+  userId: TEST_USER.id,
+  name: null,
+  symbol: null,
+  description: null,
+  imageFileId: null,
+  website: null,
+  twitter: null,
+  telegram: null,
+  createdAt: new Date("2026-09-23T14:00:00Z"),
+  updatedAt: new Date("2026-09-23T14:00:00Z"),
+  ...overrides,
+});
+
+/**
+ * The draft service in memory: the rows, and the ids a Simulation references, so the copy on
+ * write of V1-16 is exercised. The service itself is tested in @launchbot/db.
+ */
+export function fakeDrafts(options: { rows?: TokenDraft[]; referenced?: string[] } = {}) {
+  const rows = new Map((options.rows ?? []).map((row) => [row.id, row]));
+  const referenced = new Set(options.referenced ?? []);
+  let nextId = rows.size + 1;
+  const owned = (userId: string, id: string) => {
+    const row = rows.get(id);
+    return row?.userId === userId ? row : null;
+  };
+  const service: TokenDraftService = {
+    getOwnedDraft: (userId, id) => Promise.resolve(owned(userId, id)),
+    write: (userId, id, patch) => {
+      const current = id === null ? null : owned(userId, id);
+      const base = current === null || referenced.has(current.id) ? null : current;
+      const row =
+        base === null
+          ? testDraft({ ...(current ?? {}), ...patch, id: `d${nextId++}`, userId })
+          : { ...base, ...patch };
+      rows.set(row.id, row);
+      return Promise.resolve(row);
+    },
+  };
+  return { ...service, rows, referenced };
+}
+
+/**
+ * The AI quota in memory (V1-17): TEXT generations of today per user, and the LOGO rows. The
+ * UTC window and the lock are tested on the real store in @launchbot/db.
+ */
+export function fakeAiQuota(options: { used?: number } = {}) {
+  const used = new Map<string, number>();
+  if (options.used !== undefined) used.set(TEST_USER.id, options.used);
+  const logos: string[] = [];
+  const store: AiQuotaStore = {
+    limit: AI_GENERATIONS_PER_DAY,
+    countText: (userId) => Promise.resolve(used.get(userId) ?? 0),
+    reserveText: (userId) => {
+      const count = used.get(userId) ?? 0;
+      if (count >= AI_GENERATIONS_PER_DAY) return Promise.resolve({ ok: false, used: count });
+      used.set(userId, count + 1);
+      return Promise.resolve({ ok: true, used: count + 1 });
+    },
+    recordLogo: (userId) => {
+      logos.push(userId);
+      return Promise.resolve();
+    },
+  };
+  return { ...store, used, logos };
+}
+
 /** The whole bot on fakes: no Telegram, no database, no RPC, no price provider. */
 export function botHarness(
   options: {
@@ -501,12 +579,34 @@ export function botHarness(
     data?: Partial<DataServices>;
     wallets?: Partial<WalletService>;
     withdrawals?: Partial<WithdrawalService>;
+    drafts?: ReturnType<typeof fakeDrafts>;
+    aiQuota?: ReturnType<typeof fakeAiQuota>;
+    /** No provider by default, as in V1: the local generator answers AI Generate. */
+    aiProviders?: AiProviders;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });
   const data = fakeData(options.data);
   const wallets = fakeWallets(options.wallets);
   const withdrawals = fakeWithdrawals(options.withdrawals);
-  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, { data, wallets, withdrawals });
-  return { bot, api: interceptApi(bot, options.replies), prisma, data, wallets, withdrawals };
+  const drafts = options.drafts ?? fakeDrafts();
+  const aiQuota = options.aiQuota ?? fakeAiQuota();
+  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, {
+    data,
+    wallets,
+    withdrawals,
+    drafts,
+    aiQuota,
+    aiProviders: options.aiProviders ?? { text: null, logo: null },
+  });
+  return {
+    bot,
+    api: interceptApi(bot, options.replies),
+    prisma,
+    data,
+    wallets,
+    withdrawals,
+    drafts,
+    aiQuota,
+  };
 }
