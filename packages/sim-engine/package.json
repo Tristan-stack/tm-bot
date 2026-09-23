@@ -12,6 +12,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "test": "vitest run --root ../.. --project sim-engine"
+    "test": "vitest run --root ../.. --project sim-engine",
+    "sim:report": "tsx scripts/report.ts"
   }
 }
