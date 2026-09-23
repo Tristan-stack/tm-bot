@@ -51,12 +51,43 @@ export const FEE_MARGIN_LAMPORTS = 50_000_000n;
 /** 1.050 SOL: a wallet is "ready" from 1 SOL + the fee margin (D13). */
 export const WALLET_READY_MIN_LAMPORTS = LAMPORTS_PER_SOL + FEE_MARGIN_LAMPORTS;
 
-// Fee budget of a SOL transfer (V1-11, proposal until V1-13 estimates fees for real)
-/** Base fee of one signature. */
+// Fee budget of a SOL transfer (V1-11): the upper bound a screen can show before V1-13 has
+// simulated the real transaction. A test of @launchbot/solana keeps it above the real estimate.
+/** Base fee of one signature, the only per-signature price of Solana. */
 export const BASE_FEE_LAMPORTS = 5_000n;
 /** A transfer with compute budget instructions uses a few hundred units: a deliberate ceiling. */
 export const TRANSFER_COMPUTE_UNIT_LIMIT = 1_000;
 export const MICROLAMPORTS_PER_LAMPORT = 1_000_000;
+
+// Sending transactions (§12, V1-13). Every amount is in lamports.
+/** Ceiling of one transaction, imposed by the Compute Budget program. */
+export const MAX_COMPUTE_UNITS = 1_400_000;
+/** Margin over what the simulation consumed (proposal): 450 units asked as 540. */
+export const CU_MARGIN = 1.2;
+/** A transaction is re-signed on a fresh blockhash at most once (proposal). */
+export const TX_MAX_ATTEMPTS = 2;
+/** The very same bytes are broadcast again at this pace while the blockhash is valid. */
+export const REBROADCAST_INTERVAL_MS = 2 * SECOND_MS;
+/**
+ * Safety net (proposal): a blockhash lives about a minute, so a confirmation that is still
+ * pending after twice that is reported as unknown, whatever block height the RPC claims.
+ */
+export const TX_CONFIRM_TIMEOUT_MS = 2 * MINUTE_MS;
+/**
+ * Why a transaction did not go through (§10.2, V1-13). `TxFailure` of @launchbot/solana carries
+ * one of them and `en.tx.errors` holds its text: one list, so neither side can drift.
+ */
+export const TX_FAILURE_CODES = [
+  "INVALID_AMOUNT",
+  "INSUFFICIENT_FUNDS",
+  "REMAINING_BELOW_RENT",
+  "DESTINATION_BELOW_RENT",
+  "TRANSACTION_REJECTED",
+  "BLOCKHASH_EXPIRED",
+  "CONFIRMATION_UNKNOWN",
+  "RPC_UNAVAILABLE",
+] as const;
+export type TxFailureCode = (typeof TX_FAILURE_CODES)[number];
 
 // Dev buy (§6, §10.1)
 export const DEV_BUY_MIN_SOL = 1;
@@ -81,6 +112,8 @@ export const CACHE_TTL_MS = {
   channelMembers: 10 * MINUTE_MS,
   channelMembership: 10 * MINUTE_MS,
   pumpGlobal: HOUR_MS,
+  /** The rent-exempt minimum of an empty account does not move (proposal, V1-13). */
+  rentMin: HOUR_MS,
 } as const;
 export const REFRESH_THROTTLE_MS = 10 * SECOND_MS;
 

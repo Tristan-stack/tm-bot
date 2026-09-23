@@ -366,6 +366,102 @@ chat, la session, les logs ni en clair en base.
   adresse Phantom du vecteur 12 mots, phrase stockée normalisée même saisie en majuscules, aucun
   octet lisible dans la ligne `Wallet`).
 
+### Transactions Solana : frais, envoi et confirmation (V1-13)
+
+La brique d'envoi vit dans [packages/solana/src/tx/](packages/solana/src/tx/) : aucun écran, aucune
+table, aucune lecture de `process.env`. Comme le vault, tout est injecté —
+`TxContext = { rpc, priorityFee: { minMicroLamports, maxMicroLamports } }`, plus un `wait` que les
+tests remplacent. Le retrait (V1-14), Pay from my wallet (V1-31), le transfert vers la trésorerie
+(V1-33) et la V2 passent tous par là. **Déviation assumée** : la connexion et les bornes voyagent
+ensemble dans un contexte plutôt qu'en paramètres séparés à chaque appel, parce que chaque fonction a
+besoin des deux. Le `rpc` du contexte doit être la connexion du process (`getSolanaRpc`) : le cache
+du minimum rent-exempt est indexé dessus.
+
+- **Priority fee** (§12, [priority-fee.ts](packages/solana/src/tx/priority-fee.ts)) : médiane de
+  `getRecentPrioritizationFees` sur les comptes **écrits** (payeur inclus), dédupliqués, 128 au plus
+  (limite RPC). Les zéros comptent ; nombre pair → moyenne des deux valeurs centrales arrondie au
+  supérieur (proposition) ; liste vide ou RPC muet → `PRIORITY_FEE_MIN_MICROLAMPORTS` et un
+  avertissement, jamais d'échec. Bornée par la config, lue **juste avant chaque envoi** et à chaque
+  tentative, sans cache. Sur devnet les fees sont souvent à 0 : la médiane vaut 0, donc le MIN.
+- **Compute units** ([compute-units.ts](packages/solana/src/tx/compute-units.ts)) : brouillon à
+  `SetComputeUnitLimit(1 400 000)` + `SetComputeUnitPrice(MIN des bornes)` + les instructions métier,
+  `simulateTransaction` (`sigVerify: false`, `replaceRecentBlockhash: true`, `confirmed`) → limite =
+  `min(1 400 000, ceil(unitsConsumed × 1,2))` (`CU_MARGIN`, proposition). La simulation part **en
+  parallèle** de la lecture de la priority fee (les unités consommées ne dépendent pas du prix) et se
+  fait au plancher des bornes : au prix du moment, le plafond de 1,4 M d'unités deviendrait des frais
+  que la vraie transaction ne paie jamais, et refuserait un wallet qui a de quoi. Aucune signature
+  n'est nécessaire : **aucune clé n'est déchiffrée pour estimer**. Une simulation en erreur n'envoie
+  rien et rend un `TxFailure` (logs tronqués : 5 lignes, 200 caractères) ; une simulation sans
+  `unitsConsumed` lève, plutôt que demander le plafond et le payer.
+- **Frais estimés** ([fees.ts](packages/solana/src/tx/fees.ts)) : `BASE_FEE_LAMPORTS` (5 000) ×
+  nombre de signatures + `priorityFeeLamports(limite demandée, µL)` = `ceil(limite × µL / 1 000 000)`,
+  disponible avant la confirmation pour le « ≈ » de l'écran. La formule vit dans `shared`
+  (`wallets.ts`) : `transferFeeLamports(µL)` est le prix d'un transfert standard, et le budget de
+  V1-11 `getWithdrawFeeBudgetLamports(max)` n'est plus que `transferFeeLamports(max)`.
+  `getFeeForMessage` n'est pas utilisé (il faudrait vérifier à chaque version du RPC qu'il ne compte
+  pas la priority fee deux fois) et la carte proposait un `LAMPORTS_PER_SIGNATURE` :
+  `BASE_FEE_LAMPORTS` dit déjà la même chose, une seule constante.
+- **Rent-exempt** ([rent.ts](packages/solana/src/tx/rent.ts)) :
+  `getMinimumBalanceForRentExemption(0)` (890 880 lamports sur devnet), **aucune valeur en dur** hors
+  tests, `createTtlCache` d'une heure par connexion (`CACHE_TTL_MS.rentMin`, `WeakMap`, proposition).
+  web3.js répond **0** à une erreur JSON-RPC sur cet appel : refusé, un compte vide n'est jamais
+  gratuit.
+- **Transfert** ([transfer.ts](packages/solana/src/tx/transfer.ts)) : `prepareTransfer` lit soldes et
+  minimum rent-exempt en parallèle, **sans le cache de 30 s de V1-07**, refuse d'abord ce qui ne coûte
+  rien (montant ≤ 0, au-dessus du solde, poussière vers une adresse vide), puis simule le vrai
+  transfert — en mode `max`, sur un montant provisoire (`rentMin`, ou 0 si le solde est en dessous),
+  jamais le solde entier qui échouerait faute de frais — et applique `validateTransfer` :
+  `INVALID_AMOUNT`, `INSUFFICIENT_FUNDS` (avec le manque exact), `REMAINING_BELOW_RENT` (un reste
+  entre 0 et 890 880 est refusé, 0 est valide, `maxLamports` dit quoi envoyer), `DESTINATION_BELOW_RENT`.
+  `sendTransfer` **refait le devis** (`prepareTransfer`, soldes et destination relus, frais
+  ré-estimés) puis envoie avec un `build(fee)` qui recalcule le montant Max et rejoue les règles
+  pour les frais de chaque tentative : un devis confirmé trop tard est refusé plutôt qu'envoyé de
+  travers. `computeMaxAmount = solde − frais` laisse exactement 0.
+- **Envoi et confirmation** ([send.ts](packages/solana/src/tx/send.ts)) : message **v0** systématique
+  (uniforme avec V2-03), blockhash `confirmed`, preflight au premier envoi puis renvoi des **mêmes
+  octets** toutes les 2 s tant que la hauteur de bloc ≤ `lastValidBlockHeight` — sauf quand la
+  transaction est déjà dans un bloc (`processed`) ; `onSubmitted(signature)` avant la confirmation
+  (V1-14 écrit la ligne PENDING). Jamais de re-signature tant que l'ancien blockhash est valide.
+  Hauteur dépassée → `getSignatureStatuses` avec `searchTransactionHistory` : trouvée = succès,
+  absente = nouvelle tentative (`TX_MAX_ATTEMPTS` = 2, priority fee relue, unités de la première
+  simulation conservées, transaction re-signée, montant Max recalculé), puis `BLOCKHASH_EXPIRED`
+  avec `landed: 'no'`. La confirmation est un sondage HTTP, pas `confirmTransaction` qui ouvre un
+  websocket, borné par `TX_CONFIRM_TIMEOUT_MS` (2 min). **Après le premier envoi, plus rien ne
+  lève** : la signature revient toujours, au besoin en `CONFIRMATION_UNKNOWN` / `landed: 'unknown'`.
+- **Signature** : `vault.withSigner(enc, address, fn)` (V1-09) est la seule voie, appelée **après** la
+  simulation et l'estimation, imbriquée quand plusieurs clés chiffrées signent ; un signataire
+  éphémère (le mint de V2-03) est accepté tel quel. Un signataire manquant lève — c'est un bug
+  d'appelant, pas un échec utilisateur — et le message ne nomme que des clés publiques.
+- **Échecs** ([errors.ts](packages/solana/src/tx/errors.ts)) : huit codes (`TX_FAILURE_CODES` dans
+  `shared`, pour que la liste et les textes `en.tx.errors` ne dérivent pas), `landed`
+  (`no` / `yes` / `unknown` — `en.tx.nothingSent` ne s'ajoute que sur `no`), les montants que l'écran
+  formate, et un `detail` court (120 caractères) pour les logs : un code programme, **jamais un
+  secret** (§9.6). Un code `Custom` est lu **par programme** : `programsOf(draft)` donne le programme
+  de chaque instruction du message compilé (la paire Compute Budget d'abord) et `PROGRAM_ERRORS` dit
+  ce qu'un code y signifie — `Custom(1)` du System program est « fonds insuffisants », le même code
+  d'un autre programme reste un rejet ; pump.fun ajoutera sa ligne (V2-03). Les deux formes sont
+  lues : l'objet d'une simulation ou d'une transaction posée, et le message d'un envoi que le
+  preflight a refusé (`SendTransactionError.transactionError`, web3.js ne garde que le texte).
+  L'indisponibilité du RPC est classée **une seule fois, au transport** : le `fetch` de
+  `getSolanaRpc` ([rpc.ts](packages/solana/src/rpc.ts)) lève `RpcUnavailableError` sur timeout,
+  panne réseau, 429 et 5xx, et web3.js la laisse passer intacte pour toutes les méthodes utilisées
+  — aucun libellé de bibliothèque à reconnaître.
+- **V1-11** : `getWithdrawFeeBudgetLamports()` reste la borne haute affichée avant toute simulation,
+  et un test la garde ≥ aux frais réels au plafond des bornes. `estimateTransferFee(ctx, from)` =
+  `transferFeeLamports(priority fee du moment)`, **un seul appel RPC**, sans simuler : c'est le seuil
+  « solde au-dessus des frais d'un retrait ».
+- **Tests** : faux RPC scripté [tx/test-rpc.ts](packages/solana/src/tx/test-rpc.ts), à côté du code
+  comme `keys/test-vectors.ts` — il enregistre chaque appel **et chaque déchiffrement**
+  (`vaultSigner(calls)`), ce qui permet d'affirmer l'ordre (priority fee → simulation → blockhash →
+  `withSigner` → envoi) et qu'une simulation en échec ne déchiffre rien ; il répond toujours de façon
+  asynchrone, comme une `Connection`, et lève les vraies classes (`RpcUnavailableError`,
+  `SendTransactionError`). Médiane, bornes, marge, plafond, mapping de chaque erreur, règles de
+  §9.5, renvoi à l'octet près, deux tentatives avec le montant Max qui suit les frais, statut
+  retrouvé dans l'historique, RPC en panne, et un test « aucune clé dans les logs ». Le test devnet
+  (0,001 SOL entre deux keypairs, `meta.fee` = frais estimés, Compute Budget présent dans les
+  bornes) est derrière `RUN_DEVNET_TESTS=1` (`pnpm test:devnet`), la variable déjà en place — la
+  carte proposait `SOLANA_INTEGRATION_TESTS`, une deuxième aurait dit la même chose.
+
 ### Wallets : renommer et supprimer (V1-11)
 
 [rename.ts](apps/bot/src/features/wallets/rename.ts) et

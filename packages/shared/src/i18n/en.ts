@@ -1,4 +1,4 @@
-import type { Duration, ImportFormat, Plan } from "../constants.js";
+import type { Duration, ImportFormat, Plan, TxFailureCode } from "../constants.js";
 import { formatInt } from "../format/number.js";
 import { E } from "./emoji.js";
 import { enWebapp } from "./en-webapp.js";
@@ -293,6 +293,30 @@ export const en = {
     comingSoon: {
       withdraw: { title: `${E.withdraw} WITHDRAW`, description: "Withdrawals are coming soon." },
     },
+  },
+
+  // Sending a transaction (§10.2, V1-13): one text per `TxFailure` code, for the withdrawal
+  // (V1-14), Pay from my wallet (V1-31) and the V2. Amounts arrive formatted, and the screen
+  // adds its own emoji: the same failure is a flag on one screen and a result line on another.
+  tx: {
+    errors: {
+      INVALID_AMOUNT: "Enter an amount greater than 0.",
+      /** `missing` is how much SOL the amount plus its fees goes over the balance by. */
+      INSUFFICIENT_FUNDS: (missing: string) =>
+        `Not enough SOL for this amount plus fees (${missing} SOL missing).`,
+      /** `rentMin` is the rent-exempt minimum of an empty account, about 0.00089 SOL. */
+      REMAINING_BELOW_RENT: (rentMin: string) =>
+        `The balance left would be below the rent-exempt minimum (${rentMin} SOL). Send Max or leave at least ${rentMin} SOL.`,
+      DESTINATION_BELOW_RENT: (rentMin: string) =>
+        `This address is empty: send at least ${rentMin} SOL.`,
+      TRANSACTION_REJECTED: "The network rejected the transaction.",
+      BLOCKHASH_EXPIRED: "The network didn't confirm the transaction in time.",
+      CONFIRMATION_UNKNOWN:
+        "The transaction was sent but is not confirmed yet. Check the explorer before trying again.",
+      RPC_UNAVAILABLE: "Solana devnet is not responding. Try again in a moment.",
+    } satisfies Record<TxFailureCode, string | ((amount: string) => string)>,
+    /** Added to a failure whose `landed` is `no`, and only then: nothing left the wallet. */
+    nothingSent: "Nothing was sent.",
   },
 
   plans: {

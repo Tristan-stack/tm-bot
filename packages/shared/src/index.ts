@@ -25,4 +25,6 @@ export {
   getWithdrawFeeBudgetLamports,
   isBalanceWithdrawable,
   isWalletReady,
+  priorityFeeLamports,
+  transferFeeLamports,
 } from "./wallets.js";

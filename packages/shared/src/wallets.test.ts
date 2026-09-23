@@ -4,6 +4,8 @@ import {
   getWithdrawFeeBudgetLamports,
   isBalanceWithdrawable,
   isWalletReady,
+  priorityFeeLamports,
+  transferFeeLamports,
 } from "./wallets.js";
 
 describe("wallet rules", () => {
@@ -16,6 +18,18 @@ describe("wallet rules", () => {
   it("calls a wallet ready from 1.050 SOL", () => {
     expect(isWalletReady(1_050_000_000n)).toBe(true);
     expect(isWalletReady(1_049_999_999n)).toBe(false);
+  });
+
+  it("rounds a priority fee up to the lamport", () => {
+    expect(priorityFeeLamports(540, 0n)).toBe(0n);
+    // 540 units at 1 000 µL are 0.54 lamport: one is paid.
+    expect(priorityFeeLamports(540, 1_000n)).toBe(1n);
+    expect(priorityFeeLamports(540, 1_000_000n)).toBe(540n);
+  });
+
+  it("prices a standard transfer at the unit ceiling plus one signature", () => {
+    expect(transferFeeLamports(0n)).toBe(5_000n);
+    expect(transferFeeLamports(1_000_000n)).toBe(6_000n);
   });
 
   it("budgets the base fee plus the priority fee at its ceiling for a withdrawal", () => {

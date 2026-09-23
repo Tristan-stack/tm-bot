@@ -38,4 +38,28 @@ export type { BalancesReader } from "./lamports.js";
 export { createCoinGeckoProvider } from "./price/coingecko.js";
 export { createSolUsdPrice } from "./price/sol-usd.js";
 export type { SolPriceProvider, SolUsdPrice, SolUsdQuote } from "./price/sol-usd.js";
-export { getSolanaRpc } from "./rpc.js";
+export { getSolanaRpc, RpcUnavailableError } from "./rpc.js";
+export type { TxFailure, TxLanded } from "./tx/errors.js";
+export { isTxFailure } from "./tx/fees.js";
+export { getRentExemptMinimum } from "./tx/rent.js";
+export { sendAndConfirm } from "./tx/send.js";
+export type { SendTxOptions } from "./tx/send.js";
+export {
+  computeMaxAmount,
+  estimateTransferFee,
+  prepareTransfer,
+  sendTransfer,
+  validateTransfer,
+} from "./tx/transfer.js";
+export type { TransferChecks } from "./tx/transfer.js";
+export type {
+  FeeEstimate,
+  Lamports,
+  PriorityFeeBounds,
+  SignerSource,
+  TransferQuote,
+  TxContext,
+  TxDraft,
+  TxRpc,
+  TxSuccess,
+} from "./tx/types.js";
