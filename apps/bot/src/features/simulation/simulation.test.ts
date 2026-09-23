@@ -156,6 +156,7 @@ describe("Simulate a Launch (V1-22)", () => {
         rows: [],
         findLatest: () => Promise.reject(new Error("db down")),
         create: () => Promise.reject(new Error("db down")),
+        findForViewer: () => Promise.reject(new Error("db down")),
       },
     });
 

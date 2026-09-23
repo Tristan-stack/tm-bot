@@ -123,6 +123,47 @@ export const simConfigSchema = z.object({
 });
 export type SimConfigJson = z.infer<typeof simConfigSchema>;
 
+/** The `:id` of `/api/simulations/:id`: a Prisma cuid, anything else is a 404 (V1-23). */
+export const simIdParamSchema = z.object({ id: idSchema });
+
+/** The words of the error bodies of the API (V1-05, V1-23): `{ "error": "<code>" }`. */
+export const API_ERROR_CODES = [
+  "bad_request",
+  "unauthorized",
+  "forbidden",
+  "not_found",
+  "image_too_large",
+  "unsupported_image",
+  "rate_limited",
+  "image_unavailable",
+  "internal",
+] as const;
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+export const apiErrorSchema = z.object({ error: z.enum(API_ERROR_CODES) });
+
+/** A stored link, or null: never anything but https in the Mini App. */
+const httpsOrNull = httpsUrlSchema.nullable();
+
+/** The token of a simulation as the Mini App shows it (V1-23): the ticker without its `$`. */
+export const simulationTokenSchema = z.object({
+  name: z.string(),
+  ticker: z.string(),
+  description: z.string().nullable(),
+  hasImage: z.boolean(),
+  /** Relative to API_URL: `/api/simulations/<id>/image`, null without an image. */
+  imagePath: z.string().nullable(),
+  links: z.object({ website: httpsOrNull, x: httpsOrNull, telegram: httpsOrNull }),
+});
+
+/** `GET /api/simulations/:id` (V1-23): the config frozen at creation, and the token. */
+export const simulationResponseSchema = z.object({
+  id: idSchema,
+  createdAt: z.iso.datetime(),
+  config: simConfigSchema,
+  token: simulationTokenSchema,
+});
+export type SimulationResponse = z.infer<typeof simulationResponseSchema>;
+
 /** Trim, one space between words. Line breaks are not spaces here: they are refused below. */
 export const normalizeWalletName = collapseSpaces;
 

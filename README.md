@@ -262,7 +262,8 @@ sans filtre de propriétaire.
 
 Erreurs : un seul chemin de sortie, avec un mot fixe par statut et jamais le message de l'erreur. Un
 4xx voulu passe tel quel — une route lève une erreur portant `statusCode` 403, 404 ou 429 — et tout
-le reste répond `500 {"error":"internal_error"}`. Une URL mal formée suit le même chemin.
+le reste répond `500 {"error":"internal"}` (mots de `API_ERROR_CODES`, V1-23). Une URL mal formée
+suit le même chemin.
 
 L'API seule : `pnpm --filter @launchbot/api start`. Elle ne parle jamais à Solana, et ESLint lui
 interdit `@launchbot/solana` : c'est ce qui permet qu'elle démarre sans garde-fou devnet.
@@ -967,6 +968,58 @@ comparer à `Math.*`.
 
 `SIM_ENGINE_VERSION` (proposition) est incrémentée à chaque changement d'algorithme ou de constante :
 une simulation enregistrée ne se rejoue à l'identique qu'avec la version qui l'a produite.
+
+### API de la simulation : GET /api/simulations/:id et image du token (V1-23)
+
+`registerSimulationRoutes` ([apps/api/src/routes/simulations.ts](apps/api/src/routes/simulations.ts))
+monte les deux routes sous `/api`, où `requireTelegramUser` (V1-05) s'applique déjà. C'est la
+seule frontière serveur de la simulation (§6.4) : la web app charge une fois, puis tout tourne
+côté client. Branché dans `createApiService` avec le client Prisma, le client de fichiers Telegram
+et l'activité web app.
+
+- **`GET /api/simulations/:id`**, contrôles dans l'ordre : initData absent ou invalide → 401 avant
+  toute requête en base ; `:id` qui n'est pas un cuid → 404 (pas de 400, contrat 200 / 401 / 403 / 404) ; simulation inconnue ou purgée → 404 ; `Simulation.user.telegramId` ≠ id de l'initData
+  (comparé en BigInt, ligne `User` ou non) → 403 ; sinon 200 `{ id, createdAt, config, token }`,
+  `Cache-Control: no-store`. `config` = `Simulation.params` **tel quel** (jamais recalculé, ni
+  Global ni prix : c'est la garantie du rejeu). `token` : `name`, `ticker` sans `$`,
+  `description`, `hasImage`, `imagePath` relatif (`/api/simulations/<id>/image`, null sans image),
+  `links` (`website`, `x`, `telegram` : URL https ou null, toute autre valeur devient null).
+  Jamais `userId`, `telegramId`, `tokenDraftId` ni `file_id`. Des params ou un brouillon que
+  `simulationResponseSchema` refuse → 500 `internal`, log `error` avec le seul `simId`.
+- **`GET /api/simulations/:id/image`** (ajout D15) : mêmes 401 / 403 / 404, brouillon sans image → 404. Côté serveur `getFile` puis téléchargement avec BOT_TOKEN
+  (`createTelegramFileClient`, [packages/shared/src/server/telegram-file.ts](packages/shared/src/server/telegram-file.ts),
+  réutilisable en V2-02) ; type détecté par les premiers octets, JPEG / PNG / WEBP seulement, un
+  SVG → 415 `unsupported_image` ; plus de 5 Mo (`API_IMAGE_MAX_BYTES`, proposition, contrôlé
+  avant, pendant et après le téléchargement) → 413 `image_too_large` ; échec ou timeout 10 s
+  Telegram → 502 `image_unavailable`. En-têtes `Content-Type` détecté,
+  `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=3600`. **Jamais de
+  redirection** vers l'URL Telegram (elle porte le token) ; les messages d'erreur du client sont
+  fixes, sans URL, token, `file_path` ni `file_id` ; les logs de la route ne gardent que la raison
+  et le `simId`. Cache mémoire LRU par `file_id` (`createTokenImageService`, 50 Mo, 1 h,
+  proposition). Côté client (V1-24) : `fetch` avec l'en-tête puis `URL.createObjectURL`, jamais
+  d'initData en query string.
+- **Codes d'erreur** (`API_ERROR_CODES`, `apiErrorSchema`, `@launchbot/shared`) : `bad_request`,
+  `unauthorized`, `forbidden`, `not_found`, `image_too_large`, `unsupported_image`,
+  `rate_limited`, `image_unavailable`, `internal`. Les mots de V1-05 `internal_error` et
+  `too_many_requests` deviennent `internal` et `rate_limited` (vocabulaire des cartes V1-23 à
+  V1-26).
+- **Limitation de fréquence (D17)** : `consumeRateLimit` de `@launchbot/shared/server`, le module
+  que le bot utilise déjà, en `preHandler` après l'auth, clé = id Telegram : `RATE_LIMITS.api`
+  (60/min) sur la route JSON, `RATE_LIMITS.apiImage` (30/min, proposition) sur l'image. Au-delà :
+  429 `rate_limited` avec `Retry-After`. Pas de `@fastify/rate-limit` ni de limite par IP (les 401
+  ne coûtent qu'un HMAC) : écart avec la carte, choisi pour partager le quota avec le bot.
+- **Activité (§11.3)** : `onAuthenticated` → `createUserActivity` → `touchUserActivity`
+  (`@launchbot/db`, `updateMany` sur le `telegramId` : jamais de `User` créé), au plus une écriture
+  par minute par utilisateur (proposition), échec loggé sans faire échouer la requête, rien sur
+  un 401.
+- **Contrat partagé** : `simIdParamSchema`, `simulationTokenSchema`, `simulationResponseSchema`,
+  type `SimulationResponse` (`@launchbot/shared`) ; `SimulationStore.findForViewer(simId)`
+  (`@launchbot/db`).
+- **Tests** : routes avec `app.inject` sur un store et un client Telegram simulés (200, 401 sans
+  accès base, 403, 404 × 3, 500, 429 + `Retry-After` par utilisateur, préflight CORS, image 200 /
+  401 / 403 / 404 / 413 / 415 / 502 sans fuite du token, de l'URL ni du `file_id`), client de
+  fichiers, activité, store ; test PostgreSQL derrière `RUN_DB_TESTS=1`
+  ([packages/db/src/services/simulations.int.test.ts](packages/db/src/services/simulations.int.test.ts)).
 
 ### Paramètres de curve lus dans le compte Global pump.fun (V1-21)
 

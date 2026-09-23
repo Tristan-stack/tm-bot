@@ -170,6 +170,15 @@ export const DATA_RETENTION_MS = 90 * DAY_MS;
  * the logger redacts it: one name, so a rename cannot leave the redaction behind.
  */
 export const INIT_DATA_HEADER = "x-telegram-init-data";
+/** The image of a token served by the API (V1-23, proposal): Telegram itself caps a bot at 20 MB. */
+export const API_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+/** Images kept in memory by the API, in bytes and in age (proposal, V1-23). */
+export const API_IMAGE_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+export const API_IMAGE_CACHE_TTL_MS = HOUR_MS;
+/** `getFile` and the download of a Telegram file (proposal, V1-23). */
+export const TELEGRAM_FILE_TIMEOUT_MS = 10 * SECOND_MS;
+/** A request of the Mini App writes `User.lastActiveAt` at most this often (proposal, V1-23). */
+export const USER_ACTIVITY_WRITE_INTERVAL_MS = MINUTE_MS;
 export const INIT_DATA_MAX_AGE_SEC = 3600;
 export const INIT_DATA_CLOCK_SKEW_SEC = 60;
 
@@ -210,4 +219,6 @@ export const RATE_LIMITS = {
   paymentCheck: { limit: 1, windowMs: 5 * SECOND_MS },
   /** Mini App API (V1-23). */
   api: { limit: 60, windowMs: 60 * SECOND_MS },
+  /** The image of a token, per user (proposal, V1-23). */
+  apiImage: { limit: 30, windowMs: 60 * SECOND_MS },
 } as const satisfies Record<string, RateLimit>;

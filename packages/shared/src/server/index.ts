@@ -16,5 +16,12 @@ export type { RateLimitedAction, RateLimitVerdict } from "./rate-limit.js";
 export type { Logger, LoggerOptions } from "./logger.js";
 export { addSecretScrubber, CENSOR, scrubError, scrubSecrets } from "./scrub.js";
 export type { SecretScrubber } from "./scrub.js";
+export { createTelegramFileClient, detectImageType, TelegramFileError } from "./telegram-file.js";
+export type {
+  TelegramFile,
+  TelegramFileClient,
+  TelegramFileFailure,
+  TelegramImageType,
+} from "./telegram-file.js";
 export { buildWebAppUrl } from "./webapp-url.js";
 export type { WebAppPath } from "./webapp-url.js";

@@ -584,6 +584,8 @@ export function fakeSimulations(options: { now?: () => number } = {}) {
       rows.push(row);
       return Promise.resolve(row);
     },
+    // The read of the API (V1-23): not exercised by the bot.
+    findForViewer: () => Promise.resolve(null),
   };
   return { ...store, rows };
 }

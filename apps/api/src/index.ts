@@ -1,7 +1,11 @@
-import { createLogger, loadEnv } from "@launchbot/shared/server";
+import { createSimulationStore, prisma } from "@launchbot/db";
+import { createLogger, createTelegramFileClient, loadEnv } from "@launchbot/shared/server";
 import type { Service } from "@launchbot/shared/server";
 import type { FastifyInstance } from "fastify";
+import { registerSimulationRoutes } from "./routes/simulations.js";
 import { buildApiServer } from "./server.js";
+import { createTokenImageService } from "./services/token-image.js";
+import { createUserActivity } from "./services/user-activity.js";
 
 export { buildApiServer } from "./server.js";
 export type { ApiDeps } from "./server.js";
@@ -18,7 +22,16 @@ export function createApiService(): Service {
     name: "api",
     async start() {
       const env = loadEnv();
-      app = await buildApiServer({ env, logger: createLogger("api") });
+      const images = createTokenImageService({
+        client: createTelegramFileClient({ botToken: env.BOT_TOKEN }),
+      });
+      app = await buildApiServer({
+        env,
+        logger: createLogger("api"),
+        routes: (api) =>
+          registerSimulationRoutes(api, { simulations: createSimulationStore({ prisma }), images }),
+        onAuthenticated: createUserActivity({ prisma }),
+      });
       await app.listen({ port: env.API_PORT, host: env.API_HOST });
     },
     // Finishes the requests in flight before it resolves.

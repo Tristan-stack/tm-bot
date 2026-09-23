@@ -136,7 +136,7 @@ describe("request.telegramUser", () => {
     const response = await app.inject({ method: "GET", url: "/public-by-mistake" });
 
     expect(response.statusCode).toBe(500);
-    expect(response.json()).toEqual({ error: "internal_error" });
+    expect(response.json()).toEqual({ error: "internal" });
   });
 });
 
@@ -178,7 +178,7 @@ describe("errors", () => {
     const response = await app.inject({ method: "GET", url: "/api/boom", headers: validHeader() });
 
     expect(response.statusCode).toBe(500);
-    expect(response.json()).toEqual({ error: "internal_error" });
+    expect(response.json()).toEqual({ error: "internal" });
     // The failure is logged for the operator, with the token scrubbed and no stack.
     expect(logs()).toContain('"level":50');
     expect(logs()).not.toContain(BOT_TOKEN);
@@ -187,7 +187,7 @@ describe("errors", () => {
 
   it.each([
     ["/api/forbidden", 403, "forbidden"],
-    ["/api/limited", 429, "too_many_requests"],
+    ["/api/limited", 429, "rate_limited"],
   ])(
     "lets the 4xx of %s through with a fixed body, never its message",
     async (url, status, error) => {
