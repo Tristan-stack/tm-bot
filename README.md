@@ -308,6 +308,53 @@ Sessions et conversations partagent la table `Session` (préfixe `conversation-`
 Une session que la version en place ne sait pas lire est jetée et reconstruite, donc un déploiement
 ne casse aucune conversation. **Aucun secret en session** : les lignes sont en clair.
 
+### Simulate a Launch : dev buy, récap et création de la simulation (V1-22)
+
+`registerSimulation` ([apps/bot/src/features/simulation/simulation.ts](apps/bot/src/features/simulation/simulation.ts))
+branche « 📊 Simulate a Launch » sur le parcours complet : étape 1/3 Token (V1-16, Back = menu),
+étape 2/3 Dev buy, étape 3/3 Récap. Écrans dans
+[screens.ts](apps/bot/src/features/simulation/screens.ts), logique dans
+[apps/bot/src/services/simulation.ts](apps/bot/src/services/simulation.ts) (`buildSimConfig`,
+`prepare`), lignes `Simulation` via `createSimulationStore` (`@launchbot/db`). Le parcours
+provisoire de V1-16 est remplacé.
+
+- **Dev buy** : `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, `✏️ Custom`, `⬅️ Back` (vers Token). Description
+  puis infos (`🪙 Moon Otter · $OTTR`, `💰 Dev buy: not selected yet` ou le montant), ordre §4.5.
+  Custom : écran de saisie avec la valeur actuelle, `Allowed: 1 to 20 SOL, up to 3 decimals.` et
+  `❌ Cancel` ; `parseDevBuyAmount` (`@launchbot/shared`) accepte « 2.5 », « 2,5 », « 5 sol », 3
+  décimales max, ni signe ni exposant ; refus → flag `⚠️ Invalid amount…`, la saisie reste ouverte
+  (message de l'utilisateur supprimé, écran édité, V1-04).
+- **Récap** : bloc TOKEN (`renderTokenRecapBlock`, repris par V1-37 : nom · ticker, description si
+  présente, `🖼 Image: ✅` ou `—`, `🔗 Links: none` ou `Website · X · Telegram` en liens `<a>`),
+  `💰 Dev buy: 5 SOL (≈ 15.2% of supply)` (`formatDevBuyWithShare` sur `devBuySupplyShare` du
+  moteur, calculé sur la courbe **stockée** dans la Simulation, jamais sur une relecture),
+  `⏱ Duration: 3 min max`, mention `⚠️ DEMO — Bullish scenario…` (`en.sim.demoBanner`, reprise
+  par la web app V1-24). Clavier : `▶️ Start simulation` en bouton `web_app` vers
+  `WEBAPP_URL/sim/<simId>`, puis `⬅️ Back` / `🏠 Menu`.
+- **Création de la Simulation (D14)** : à l'affichage du récap, pas au clic (un bouton `web_app`
+  ne passe pas par le bot). La plus récente du même utilisateur, brouillon et dev buy est reprise
+  si elle a moins d'1 h (`SIMULATION_REUSE_MS`, proposition) ; sinon contrôle de la limite
+  (`RATE_LIMITS.simulation`, 10 par 10 min, D17 ; une reprise ne compte pas) puis création : seed
+  `crypto.randomInt(0, 2^31)`, `params` = SimConfig complet (`buildSimConfig` : `presetForDevBuy`,
+  `durationSec` 180, courbe de `getCurveParams()` V1-21, `solUsdPrice` V1-07 ou `null`), validé
+  par `assertSimConfig` et `simConfigSchema`. Un brouillon édité devient un nouveau
+  `tokenDraftId` (copie à l'écriture V1-16), donc une nouvelle Simulation.
+- **Blocages écrits à l'écran** : limite → alerte + flag `⚠️ Too many simulations…` sur le Dev
+  buy, aucune ligne créée ; nom ou ticker manquant, brouillon disparu → écran Token avec
+  `⚠️ Missing: …` ; erreur inattendue → flag générique de V1-04, détail dans les logs seulement.
+- **Schémas partagés** (`@launchbot/shared`, qui ne dépend pas du moteur) : `curveParamsSchema`,
+  `presetParamsSchema`, `simConfigSchema` (V1-23 et V1-24 valident avec), `devBuyAmountSchema`,
+  `seedSchema` ; `formatSolNumber(sol)` (« 5 SOL », « 2.5 SOL »).
+- **Session** : `sim.devBuySol` (Back depuis le récap réaffiche le montant) ; le brouillon reste
+  dans `tokenStep.SIMULATION`, la Simulation est retrouvée par la règle de reprise (pas d'id en
+  session). Saisie en attente : `pendingInput.kind = "sim_amount"`.
+- Callback data : `sim:open`, `sim:dev:3|5|10`, `sim:dev:c`, `sim:cc`, `sim:bk:tok`,
+  `sim:bk:dev` (test ≤ 64 octets).
+- Pas de verrou anti double clic (proposition de la carte non retenue) : grammY traite les updates
+  d'un chat en séquence, et la reprise absorbe le second clic. `formatDevBuyWithShare` et
+  `renderTokenRecapBlock` vivent dans `apps/bot`, pas dans `packages/shared` qui ne peut pas
+  importer le moteur.
+
 ### Générateur : AI Generate (V1-17)
 
 Le clic sur « AI Generate » est réservé aux abonnés Premium, limité à 50 générations par jour UTC
