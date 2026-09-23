@@ -134,6 +134,10 @@ export const AI_LOGO_TIMEOUT_MS = 30 * SECOND_MS;
 
 // Simulation (§7.4)
 export const SIM_DURATION_SEC = 180;
+/** The recap shows the same Simulation again while it is younger than this (proposal, V1-22). */
+export const SIMULATION_REUSE_MS = HOUR_MS;
+/** A Custom dev buy is typed with 3 decimals at most (proposal, V1-22). */
+export const DEV_BUY_MAX_DECIMALS = 3;
 
 // Caches (§4.3). `balances` is per user, the others are shared.
 export const CACHE_TTL_MS = {

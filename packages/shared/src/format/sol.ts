@@ -1,4 +1,4 @@
-import { LAMPORTS_PER_SOL, SOL_DECIMALS } from "../constants.js";
+import { DEV_BUY_MAX_DECIMALS, LAMPORTS_PER_SOL, SOL_DECIMALS } from "../constants.js";
 import { formatMagnitude, trimTrailingZeros } from "./number.js";
 
 export type SolRounding = "floor" | "ceil" | "halfUp";
@@ -67,6 +67,13 @@ export function parseSolToLamports(input: string): bigint | null {
   const [, integer = "0", fraction = ""] = match;
   return BigInt(integer) * LAMPORTS_PER_SOL + BigInt(fraction.padEnd(SOL_DECIMALS, "0"));
 }
+
+/**
+ * A SOL amount held as a number, 3 decimals at most (a dev buy, V1-22): `5 SOL`, `2.5 SOL`,
+ * `1.125 SOL`. Never for a balance, which is lamports.
+ */
+export const formatSolNumber = (sol: number): string =>
+  `${trimTrailingZeros(sol.toFixed(DEV_BUY_MAX_DECIMALS))} SOL`;
 
 /** `$1,234.56`, `$59.00` */
 export const formatUsd = (value: number): string => {

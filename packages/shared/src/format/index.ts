@@ -10,6 +10,7 @@ export {
   formatSol,
   formatSolAmount,
   formatSolExact,
+  formatSolNumber,
   formatSolPrice,
   formatSolWithUsd,
   formatUsd,

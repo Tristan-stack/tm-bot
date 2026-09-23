@@ -18,6 +18,7 @@ import type {
 import { AI_GENERATIONS_PER_DAY, computeMaxAmount } from "@launchbot/shared";
 import type { AiProviders } from "@launchbot/shared";
 import { FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
+import type { Simulation, SimulationStore } from "@launchbot/db";
 import type { TransferQuote } from "@launchbot/solana";
 import type { Env } from "@launchbot/shared/server";
 import { BotError, GrammyError } from "grammy";
@@ -553,6 +554,40 @@ export function fakeDrafts(options: { rows?: TokenDraft[]; referenced?: string[]
   return { ...service, rows, referenced };
 }
 
+/** The Simulation table in memory (V1-22): rows in creation order, ids `s1`, `s2`… */
+export function fakeSimulations(options: { now?: () => number } = {}) {
+  const rows: Simulation[] = [];
+  const now = options.now ?? Date.now;
+  const store: SimulationStore = {
+    findLatest: ({ userId, tokenDraftId, devBuySol }, since) =>
+      Promise.resolve(
+        rows
+          .filter(
+            (row) =>
+              row.userId === userId &&
+              row.tokenDraftId === tokenDraftId &&
+              Number(row.devBuySol) === devBuySol &&
+              row.createdAt > since,
+          )
+          .at(-1) ?? null,
+      ),
+    create: ({ userId, tokenDraftId, devBuySol, seed, params }) => {
+      const row = {
+        id: `s${rows.length + 1}`,
+        userId,
+        tokenDraftId,
+        devBuySol: devBuySol.toString(),
+        seed,
+        params,
+        createdAt: new Date(now()),
+      } as unknown as Simulation;
+      rows.push(row);
+      return Promise.resolve(row);
+    },
+  };
+  return { ...store, rows };
+}
+
 /**
  * The AI quota in memory (V1-17): TEXT generations of today per user, and the LOGO rows. The
  * UTC window and the lock are tested on the real store in @launchbot/db.
@@ -588,6 +623,7 @@ export function botHarness(
     wallets?: Partial<WalletService>;
     withdrawals?: Partial<WithdrawalService>;
     drafts?: ReturnType<typeof fakeDrafts>;
+    simulations?: ReturnType<typeof fakeSimulations>;
     aiQuota?: ReturnType<typeof fakeAiQuota>;
     /** No provider by default, as in V1: the local generator answers AI Generate. */
     aiProviders?: AiProviders;
@@ -598,12 +634,14 @@ export function botHarness(
   const wallets = fakeWallets(options.wallets);
   const withdrawals = fakeWithdrawals(options.withdrawals);
   const drafts = options.drafts ?? fakeDrafts();
+  const simulations = options.simulations ?? fakeSimulations();
   const aiQuota = options.aiQuota ?? fakeAiQuota();
   const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, {
     data,
     wallets,
     withdrawals,
     drafts,
+    simulations,
     aiQuota,
     aiProviders: options.aiProviders ?? { text: null, logo: null },
   });
@@ -615,6 +653,7 @@ export function botHarness(
     wallets,
     withdrawals,
     drafts,
+    simulations,
     aiQuota,
   };
 }

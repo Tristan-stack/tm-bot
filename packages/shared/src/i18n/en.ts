@@ -1,5 +1,8 @@
 import type { Duration, ImportFormat, Plan, TxFailureCode } from "../constants.js";
 import {
+  DEV_BUY_MAX_DECIMALS,
+  DEV_BUY_MAX_SOL,
+  DEV_BUY_MIN_SOL,
   TOKEN_DESCRIPTION_MAX_CHARS,
   TOKEN_DESCRIPTION_MAX_SENTENCES,
   TOKEN_IMAGE_MAX_MB,
@@ -500,12 +503,47 @@ export const en = {
       fallback: `${E.warning} AI model unavailable: used the standard generator.`,
       generating: `${E.ai} Generating…`,
     },
-    // Provisional step 2 of a simulation, until V1-22. proposed texts (D19)
-    devBuySoon: {
-      /** `name` arrives escaped, `ticker` with its `$`. */
-      token: (name: string, ticker: string) => `${E.token} ${name} · ${ticker}`,
-      description: "The dev buy step is coming soon.",
+  },
+
+  // Simulate a Launch (§6, V1-22): the Dev buy and Recap steps. The mockups give the
+  // description of the Dev buy, the lines of the recap and the DEMO mention; the rest is
+  // proposed (D19). Values arrive escaped, the ticker with its `$`, amounts formatted.
+  sim: {
+    /** `🪙 Moon Otter · $OTTR`: the token chosen, on the Dev buy and Custom screens. */
+    token: (name: string, ticker: string) => `${E.token} ${name} · ${ticker}`,
+    devBuy: {
+      description: "How much SOL should the dev buy at launch?",
+      notSelected: `${E.devBuy} Dev buy: not selected yet`,
+      selected: (amount: string) => `${E.devBuy} Dev buy: ${amount}`,
+      btnPreset: (sol: number) => `${sol} SOL`,
+      btnCustom: `${E.edit} Custom`,
     },
+    custom: {
+      prompt: "Send the dev buy amount in SOL.",
+      rules: `Allowed: ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL, up to ${DEV_BUY_MAX_DECIMALS} decimals.`,
+      invalid: `${E.warning} Invalid amount. Send a number from ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL.`,
+    },
+    recap: {
+      description: "Check your simulation, then tap Start simulation.",
+      block: `${E.token} TOKEN`,
+      /** `┌ Moon Otter · $OTTR` */
+      title: (name: string, ticker: string) => `${name} · ${ticker}`,
+      image: (value: string) => `${E.image} Image: ${value}`,
+      imageAdded: E.confirm,
+      linksNone: `${E.links} Links: none`,
+      /** `🔗 Website · X · Telegram`, each already an <a> of the caller. */
+      links: (links: string[]) => `${E.links} ${links.join(" · ")}`,
+      linkLabels: { website: "Website", x: "X", telegram: "Telegram" },
+      /** `5 SOL (≈ 15.2% of supply)`: `share` comes from `formatPct(share, 1)`. */
+      withShare: (amount: string, share: string) => `${amount} (≈ ${share} of supply)`,
+      /** `💰 Dev buy: 5 SOL (≈ 15.2% of supply)` */
+      devBuy: (amountWithShare: string) => `${E.devBuy} Dev buy: ${amountWithShare}`,
+      duration: (minutes: number) => `${E.duration} Duration: ${minutes} min max`,
+      btnStart: `${E.startSim} Start simulation`,
+    },
+    rateLimited: warn("Too many simulations. Wait a minute, then try again."),
+    /** The mention of §6, on the recap and at the top of the Mini App (V1-24). */
+    demoBanner: `${E.warning} DEMO — Bullish scenario. Not a prediction or a real result.`,
   },
 
   // Sending a transaction (§10.2, V1-13): one text per `TxFailure` code, for the withdrawal

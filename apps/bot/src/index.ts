@@ -4,6 +4,7 @@ import type { ConversationData, VersionedState } from "@grammyjs/conversations";
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import {
   createAiQuotaStore,
+  createSimulationStore,
   createTokenDraftService,
   createWalletService,
   createWithdrawalService,
@@ -12,6 +13,7 @@ import {
 import type {
   AiQuotaStore,
   PrismaClient,
+  SimulationStore,
   TokenDraftService,
   WalletService,
   WithdrawalService,
@@ -36,7 +38,7 @@ import { createAccess } from "./features/access/access.js";
 import { checkChannelRights } from "./features/access/startup-check.js";
 import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
-import { registerSimulationProvisional } from "./features/simulation/provisional.js";
+import { registerSimulation } from "./features/simulation/simulation.js";
 import { createTokenStep } from "./features/token-step/token-step.js";
 import { importConsumer } from "./features/wallets/import.js";
 import { createWalletNav } from "./features/wallets/nav.js";
@@ -53,6 +55,7 @@ import { createAiGenerateService } from "./services/ai/ai-generate.js";
 import { createAiProviders } from "./services/ai/providers.js";
 import { createDataServices } from "./services/data.js";
 import type { DataServices } from "./services/data.js";
+import { createSimulationService } from "./services/simulation.js";
 import { createTransferApi } from "./services/transfer.js";
 
 const log = createLogger("bot");
@@ -74,6 +77,7 @@ export function createBot(
     wallets?: WalletService;
     withdrawals?: WithdrawalService;
     drafts?: TokenDraftService;
+    simulations?: SimulationStore;
     aiQuota?: AiQuotaStore;
     aiProviders?: AiProviders;
   } = {},
@@ -117,12 +121,12 @@ export function createBot(
     hasActivePremium: data.hasActivePremium,
   });
   // One step for both flows (§5): V1-22 and V1-37 register theirs, AI Generate serves both.
-  const tokenStep = createTokenStep({
-    ui,
-    drafts: options.drafts ?? createTokenDraftService({ prisma }),
+  const drafts = options.drafts ?? createTokenDraftService({ prisma });
+  const tokenStep = createTokenStep({ ui, drafts, data, ai, providers });
+  const simulations = createSimulationService({
+    store: options.simulations ?? createSimulationStore({ prisma }),
+    drafts,
     data,
-    ai,
-    providers,
   });
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
@@ -161,7 +165,7 @@ export function createBot(
   access.register(router);
   registerHome(bot, router, access, { ui, env, data });
   registerWallets(router, inputs, walletNav);
-  registerSimulationProvisional(router, ui, tokenStep);
+  registerSimulation(router, inputs, { ui, env, tokenStep, simulations });
   tokenStep.mount(router, inputs);
   // Until the ticket of a section registers its domain.
   registerComingSoon(router, ui);

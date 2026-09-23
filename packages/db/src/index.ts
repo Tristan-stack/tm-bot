@@ -27,6 +27,13 @@ export {
 } from "./services/subscriptions.js";
 export { createAiQuotaStore, nextUtcMidnight, startOfUtcDay } from "./services/ai-generations.js";
 export type { AiQuotaDeps, AiQuotaReservation, AiQuotaStore } from "./services/ai-generations.js";
+export { createSimulationStore } from "./services/simulations.js";
+export type {
+  NewSimulation,
+  SimulationKey,
+  SimulationsDeps,
+  SimulationStore,
+} from "./services/simulations.js";
 export { createTokenDraftService } from "./services/token-drafts.js";
 export type {
   TokenDraftFields,
