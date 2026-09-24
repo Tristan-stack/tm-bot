@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   callbackDataSchema,
-  devBuySolSchema,
   durationSchema,
   httpsUrlSchema,
   idSchema,
@@ -37,16 +36,6 @@ describe("schemas", () => {
     expect(solAmountInputSchema.parse(2.5)).toBe(2_500_000_000n);
     for (const value of ["0", "-1", "abc", "1.0000000001", 1e-7, null]) {
       expect(accepts(solAmountInputSchema, value)).toBe(false);
-    }
-  });
-
-  it("accepts a dev buy from 1 to 20 SOL inclusive (§15)", () => {
-    expect(devBuySolSchema.parse("1")).toBe(1_000_000_000n);
-    expect(devBuySolSchema.parse("20")).toBe(20_000_000_000n);
-    expect(devBuySolSchema.parse("5.000000001")).toBe(5_000_000_001n);
-    expect(devBuySolSchema.parse(10)).toBe(10_000_000_000n);
-    for (const value of ["0.999999999", "20.000000001", "21", "0", "five"]) {
-      expect(accepts(devBuySolSchema, value)).toBe(false);
     }
   });
 

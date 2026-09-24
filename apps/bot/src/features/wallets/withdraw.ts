@@ -21,7 +21,7 @@ import type { TxFailure } from "@launchbot/solana";
 import type { BotContext, WithdrawState } from "../../context.js";
 import type { InputHandler } from "../../navigation/inputs.js";
 import { acknowledge, notify } from "../../navigation/notify.js";
-import { blockWithFlag, showScreen } from "../../navigation/show-screen.js";
+import { presentScreen, showScreen } from "../../navigation/show-screen.js";
 import type { Block, ShowOptions } from "../../navigation/show-screen.js";
 import type { CallbackHandler } from "../../router/callback-router.js";
 import type { WalletNav } from "./nav.js";
@@ -97,17 +97,7 @@ export function createWithdraw(nav: WalletNav) {
     state: WithdrawState,
     render: (flags?: OptionalLine[]) => Screen,
     options: Options = {},
-  ): Promise<unknown> =>
-    options.block === undefined
-      ? showScreen(ctx, render(options.flags), {
-          mode: options.mode,
-          input: options.input,
-          withdraw: state,
-        })
-      : blockWithFlag(ctx, options.block, (flag) => render([flag]), {
-          mode: options.mode,
-          withdraw: state,
-        });
+  ): Promise<unknown> => presentScreen(ctx, render, { ...options, withdraw: state });
 
   async function showAddress(
     ctx: BotContext,

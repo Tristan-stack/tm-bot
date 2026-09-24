@@ -2,6 +2,7 @@ import type { TokenDraft, TokenDraftPatch, TokenDraftService } from "@launchbot/
 import {
   en,
   generateLocalToken,
+  hasNameAndTicker,
   missingRequiredFields,
   parseTokenField,
   TOKEN_IMAGE_MAX_BYTES,
@@ -81,9 +82,6 @@ export type ShowTokenStepOptions = {
   /** The draft just written: spares the read the screen would do again. */
   draft?: TokenDraft | null;
 };
-
-const hasNameAndTicker = (draft: TokenDraft | null): draft is ReadyTokenDraft =>
-  draft !== null && missingRequiredFields(draft).length === 0;
 
 /** The text of a refused input (§4.5), from the typed error of V1-15. */
 export function errorTextOf(error: TokenFieldError): string {
@@ -264,13 +262,34 @@ export function createTokenStep({
     await showTokenStep(ctx, flow, { draft });
   }
 
+  /** The Token screen with the "Missing" flag, which stays until the fields are there. */
+  function refuse(ctx: BotContext, flow: TokenFlow, draft: TokenDraft | null, mode?: ShowMode) {
+    stateOf(ctx, flow).showMissing = true;
+    return showTokenStep(ctx, flow, { draft, mode });
+  }
+
+  /**
+   * The draft of the flow once Continue accepted it, for the steps after the Token screen
+   * (V1-22): a draft gone or without name or ticker (a stale button, a purge) shows the Token
+   * screen with the "Missing" flag and gives `null`.
+   */
+  async function requireReadyDraft(
+    ctx: BotContext,
+    flow: TokenFlow,
+    options: { mode?: ShowMode } = {},
+  ): Promise<ReadyTokenDraft | null> {
+    const draft = await loadDraft(ctx, flow);
+    if (hasNameAndTicker(draft)) return draft;
+    await refuse(ctx, flow, draft, options.mode);
+    return null;
+  }
+
   /** Continue (§5): the alert and the flag while a name or a ticker is missing. */
   async function next(ctx: BotContext, flow: TokenFlow): Promise<void> {
     const draft = await loadDraft(ctx, flow);
     if (!hasNameAndTicker(draft)) {
-      stateOf(ctx, flow).showMissing = true;
       await notify(ctx, en.token.missingAlert, { alert: true });
-      return showTokenStep(ctx, flow, { draft });
+      return refuse(ctx, flow, draft);
     }
     await configOf(flow).onContinue(ctx, draft);
   }
@@ -352,6 +371,7 @@ export function createTokenStep({
     showTokenStep,
     applyTokenValues,
     loadDraft,
+    requireReadyDraft,
   };
 }
 

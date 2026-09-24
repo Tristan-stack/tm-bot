@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { isCallbackDataSize } from "./callback.js";
 import {
+  DEV_BUY_MAX_DECIMALS,
   DEV_BUY_MAX_SOL,
   DEV_BUY_MIN_SOL,
   DURATIONS,
   LAMPORTS_PER_SOL,
   PLANS,
+  SOL_DECIMALS,
   TG,
   WALLET_NAME_MAX_CHARS,
 } from "./constants.js";
@@ -33,18 +35,95 @@ export const solAmountInputSchema = z
     return lamports;
   });
 
-/**
- * Dev buy → lamports. §15: a Custom dev buy outside 1 to 20 SOL is refused, in simulation
- * as in launch.
- */
-export const devBuySolSchema = solAmountInputSchema.refine(
-  (lamports) =>
-    lamports >= BigInt(DEV_BUY_MIN_SOL) * LAMPORTS_PER_SOL &&
-    lamports <= BigInt(DEV_BUY_MAX_SOL) * LAMPORTS_PER_SOL,
-  `Must be from ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL`,
-);
-
 export const httpsUrlSchema = z.url({ protocol: /^https$/ });
+
+const DEV_BUY_LAMPORT_UNIT = 10n ** BigInt(SOL_DECIMALS - DEV_BUY_MAX_DECIMALS);
+
+/**
+ * A Custom dev buy typed by the user (§6, §15): the SOL grammar of `parseSolToLamports`
+ * (`.` or `,`, an optional `sol` suffix, no sign, no exponent), from 1 to 20 SOL with 3
+ * decimals at most (proposal). The amount is a number, as `SimConfig` holds it (§7.4).
+ */
+export function parseDevBuyAmount(text: string): { ok: true; sol: number } | { ok: false } {
+  const lamports = parseSolToLamports(text);
+  if (
+    lamports === null ||
+    lamports % DEV_BUY_LAMPORT_UNIT !== 0n ||
+    lamports < BigInt(DEV_BUY_MIN_SOL) * LAMPORTS_PER_SOL ||
+    lamports > BigInt(DEV_BUY_MAX_SOL) * LAMPORTS_PER_SOL
+  ) {
+    return { ok: false };
+  }
+  return { ok: true, sol: Number(lamports) / Number(LAMPORTS_PER_SOL) };
+}
+
+/** `parseDevBuyAmount` as a schema: the typed text → SOL number (V1-36 reuses it). */
+export const devBuyAmountSchema = z.string().transform((text, ctx) => {
+  const parsed = parseDevBuyAmount(text);
+  if (!parsed.ok) {
+    ctx.addIssue({
+      code: "custom",
+      message: `Must be from ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL, ${DEV_BUY_MAX_DECIMALS} decimals max`,
+    });
+    return z.NEVER;
+  }
+  return parsed.sol;
+});
+
+const positive = z.number().finite().positive();
+
+/** `CurveParams` of the engine (§7.1, §7.4): the same rules as `assertCurveParams`. */
+export const curveParamsSchema = z
+  .object({
+    virtualSol: positive,
+    virtualTokens: positive,
+    realTokens: positive,
+    totalSupply: positive,
+    feeRate: z.number().min(0).lt(1),
+  })
+  .refine((c) => c.virtualTokens > c.realTokens, "virtualTokens must exceed realTokens")
+  .refine((c) => c.totalSupply >= c.realTokens, "totalSupply must cover realTokens");
+
+/** `PresetParams` of the engine (§7.3, §7.4). */
+export const presetParamsSchema = z
+  .object({
+    lambda0: positive,
+    pBuy: z.number().min(0).max(1),
+    mu: z.number().finite(),
+    sigma: positive,
+    minTrade: positive,
+    maxTrade: positive,
+  })
+  .refine((p) => p.maxTrade >= p.minTrade, "maxTrade must be at least minTrade");
+
+/** A seed of the engine: a uint32 (V1-18); V1-22 draws it below 2^31 for the Int of Prisma. */
+export const seedSchema = z.int().min(0).max(0xffffffff);
+
+/**
+ * `SimConfig` of the engine (§7.4), as stored in `Simulation.params` (V1-22) and read back by
+ * the bot to run the simulation (V1-26). `assertSimConfig` of the engine is the other half:
+ * this schema is what crosses the JSON boundary of the database.
+ */
+export const simConfigSchema = z.object({
+  seed: seedSchema,
+  devBuySol: z.number().min(DEV_BUY_MIN_SOL).max(DEV_BUY_MAX_SOL),
+  durationSec: z.int().positive(),
+  curve: curveParamsSchema,
+  preset: presetParamsSchema,
+  solUsdPrice: z.number().finite().positive().nullable(),
+});
+
+/** The words of the error bodies of the API (V1-05): `{ "error": "<code>" }`. */
+export const API_ERROR_CODES = [
+  "bad_request",
+  "unauthorized",
+  "forbidden",
+  "not_found",
+  "rate_limited",
+  "internal",
+] as const;
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+export const apiErrorSchema = z.object({ error: z.enum(API_ERROR_CODES) });
 
 /** Trim, one space between words. Line breaks are not spaces here: they are refused below. */
 export const normalizeWalletName = collapseSpaces;

@@ -51,8 +51,8 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
     rules: restrictImports(
       [
-        ["@launchbot/shared/server", "@launchbot/db", "@launchbot/solana"],
-        "The Mini App runs in a browser: only @launchbot/shared (universal entry) and @launchbot/sim-engine are allowed.",
+        ["@launchbot/shared/server", "@launchbot/db", "@launchbot/solana", "@launchbot/sim-engine"],
+        "The Mini App runs in a browser and serves the legal pages only: @launchbot/shared (universal entry) is the one internal package allowed (D21).",
       ],
       [
         ["@launchbot/shared"],

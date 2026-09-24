@@ -5,6 +5,7 @@
 export {
   formatLinkForDisplay,
   formatTicker,
+  hasNameAndTicker,
   missingRequiredFields,
   type RequiredTokenField,
 } from "./display.js";

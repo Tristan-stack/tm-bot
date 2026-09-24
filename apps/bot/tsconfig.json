@@ -14,6 +14,9 @@
       "path": "../../packages/sim-engine"
     },
     {
+      "path": "../../packages/sim-render"
+    },
+    {
       "path": "../../apps/api"
     }
   ]

@@ -68,6 +68,13 @@ export const E = {
   fees: "⛽",
   duration: "⏱",
   startSim: "▶️",
+  pause: "⏸",
+  runAgain: "🔁",
+  marketCap: "📈",
+  position: "💼",
+  invested: "📈",
+  sell: "📉",
+  profit: "💰",
   createToken: "🚀",
   construction: "🚧",
 

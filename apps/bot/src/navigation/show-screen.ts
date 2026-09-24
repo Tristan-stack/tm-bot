@@ -1,5 +1,5 @@
 import { en } from "@launchbot/shared";
-import type { Screen } from "@launchbot/shared";
+import type { OptionalLine, Screen } from "@launchbot/shared";
 import type { BotContext, PendingInput, WithdrawState } from "../context.js";
 import { notify } from "./notify.js";
 import { isNotModified, isUneditable } from "./telegram-errors.js";
@@ -49,13 +49,18 @@ export async function showScreen(
   // /start always sends a new message (§4.3).
   if (mode === "new") return send(ctx, screen);
 
+  // A click on a text message edits it; under a picture (the PNL card, V1-26) there is no
+  // text to edit, so the screen is sent, as after a user input.
+  const source = ctx.callbackQuery?.message;
   const messageId =
-    ctx.callbackQuery?.message?.message_id ??
-    (mode === "edit" ? ctx.session.screenMessageId : undefined);
-  // A user input gets a new screen, so it stays at the bottom of the chat, and the previous
-  // keyboard is unarmed.
+    source !== undefined && "text" in source
+      ? source.message_id
+      : mode === "edit"
+        ? ctx.session.screenMessageId
+        : undefined;
+  // A new screen stays at the bottom of the chat, and the previous keyboard is unarmed.
   if (messageId === undefined || ctx.chatId === undefined) {
-    await dropOldKeyboard(ctx);
+    await dropKeyboard(ctx, ctx.session.screenMessageId);
     return send(ctx, screen);
   }
 
@@ -79,14 +84,16 @@ async function send(ctx: BotContext, screen: Screen): Promise<ShowResult> {
   return { status: "sent", messageId: message.message_id };
 }
 
-/** The previous screen keeps its text but loses its buttons, so only the new screen is live. */
-async function dropOldKeyboard(ctx: BotContext): Promise<void> {
-  const previous = ctx.session.screenMessageId;
-  if (previous === undefined || ctx.chatId === undefined) return;
+/**
+ * A message keeps its text but loses its buttons: the previous screen, so only the new one is
+ * live, or a recap once its simulation runs (V1-26).
+ */
+export async function dropKeyboard(ctx: BotContext, messageId: number | undefined): Promise<void> {
+  if (messageId === undefined || ctx.chatId === undefined) return;
   try {
-    await ctx.api.editMessageReplyMarkup(ctx.chatId, previous);
+    await ctx.api.editMessageReplyMarkup(ctx.chatId, messageId);
   } catch {
-    // The old screen may be gone or already without a keyboard: nothing to do about it.
+    // The message may be gone or already without a keyboard: nothing to do about it.
   }
 }
 
@@ -105,6 +112,25 @@ export async function blockWithFlag(
 ): Promise<void> {
   await notify(ctx, block.alert, { alert: true });
   await showScreen(ctx, render(block.flag), options);
+}
+
+export type PresentOptions = ShowOptions & { flags?: OptionalLine[]; block?: Block };
+
+/**
+ * A screen of a flow, or a blocked click on it (V1-14, V1-22): `render` draws the screen with
+ * its flags; with `block`, the alert then the screen with the flag of the block.
+ */
+export function presentScreen(
+  ctx: BotContext,
+  render: (flags: OptionalLine[]) => Screen,
+  options: PresentOptions = {},
+): Promise<unknown> {
+  const { flags = [], block, ...show } = options;
+  if (block === undefined) return showScreen(ctx, render(flags), show);
+  return blockWithFlag(ctx, block, (flag) => render([flag]), {
+    mode: show.mode,
+    withdraw: show.withdraw,
+  });
 }
 
 /**

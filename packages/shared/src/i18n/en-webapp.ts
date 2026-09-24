@@ -44,11 +44,6 @@ export const enWebapp = {
       ],
     },
   },
-  sim: {
-    // proposed texts (D19)
-    title: "Simulation",
-    comingSoon: "The live simulation screen is coming soon.",
-  },
   // proposed text (D19)
   notFound: "Page not found.",
 } as const;

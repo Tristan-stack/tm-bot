@@ -6,6 +6,7 @@ import { defineConfig } from "vitest/config";
 const nodeProjects = [
   "packages/shared",
   "packages/sim-engine",
+  "packages/sim-render",
   "packages/db",
   "packages/solana",
   "apps/api",

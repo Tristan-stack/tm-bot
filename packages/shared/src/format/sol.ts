@@ -11,11 +11,19 @@ export type FormatSolOptions = {
   trim?: boolean;
   /** With `trim`, the decimals kept whatever the zeros: `{ trim: true, minDecimals: 3 }` → `1.250`. */
   minDecimals?: number;
+  /** A `+` before a positive amount: `+1.28`; zero and negatives as usual (a PnL, V1-26). */
+  signed?: boolean;
 };
 
 /** `2.500`: SOL amount without its unit. Computed on lamports, never on floats. */
 export function formatSolAmount(lamports: bigint, options: FormatSolOptions = {}): string {
-  const { decimals = 3, rounding = "floor", trim = false, minDecimals = 0 } = options;
+  const {
+    decimals = 3,
+    rounding = "floor",
+    trim = false,
+    minDecimals = 0,
+    signed = false,
+  } = options;
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > SOL_DECIMALS) {
     throw new RangeError(`decimals must be an integer from 0 to ${SOL_DECIMALS}`);
   }
@@ -40,7 +48,10 @@ export function formatSolAmount(lamports: bigint, options: FormatSolOptions = {}
     const kept = fraction.padEnd(minDecimals, "0");
     text = kept === "" ? whole : `${whole}.${kept}`;
   }
-  return negative && scaled > 0n ? `-${text}` : text;
+  // The sign follows the rounded magnitude: -0.0004 SOL at 3 decimals is `0.000`, not `-0.000`.
+  if (scaled === 0n) return text;
+  if (negative) return `-${text}`;
+  return signed ? `+${text}` : text;
 }
 
 /** `2.500 SOL`; `{ decimals: 4 }` → `0.5708 SOL`; `{ trim: true }` → `3 SOL`. */
@@ -68,10 +79,22 @@ export function parseSolToLamports(input: string): bigint | null {
   return BigInt(integer) * LAMPORTS_PER_SOL + BigInt(fraction.padEnd(SOL_DECIMALS, "0"));
 }
 
+/** A SOL amount held as a number (the engine, a dev buy) to lamports, rounded to the lamport. */
+export const solToLamports = (sol: number): bigint =>
+  BigInt(Math.round(sol * Number(LAMPORTS_PER_SOL)));
+
+/**
+ * A SOL amount held as a number, 3 decimals at most (a dev buy, V1-22): `5 SOL`, `2.5 SOL`,
+ * `1.125 SOL`. Never for a balance, which is lamports.
+ */
+export const formatSolNumber = (sol: number): string =>
+  formatSol(solToLamports(sol), { trim: true });
+
 /** `$1,234.56`, `$59.00` */
-export const formatUsd = (value: number): string => {
-  const text = formatMagnitude(value, 2);
-  return value < 0 && text !== "0.00" ? `-$${text}` : `$${text}`;
+/** `$1,234.56`; `{ decimals: 0 }` → `$1,235`. A loss reads `-$55.81`, a rounded zero never has a sign. */
+export const formatUsd = (value: number, options: { decimals?: number } = {}): string => {
+  const text = formatMagnitude(value, options.decimals ?? 2);
+  return value < 0 && /[1-9]/.test(text) ? `-$${text}` : `$${text}`;
 };
 
 /** USD value of a SOL amount, for display only. `null` when the SOL price is unknown (§4.3). */

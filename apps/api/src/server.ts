@@ -11,8 +11,9 @@ export type ApiDeps = {
   env: Pick<Env, "BOT_TOKEN" | "WEBAPP_URL">;
   logger: Logger;
   /**
-   * The routes of the Mini App (V1-23). They are mounted under `/api`, where every route
-   * requires a Telegram user: a route cannot be public because its author forgot a preHandler.
+   * The routes of the Mini App, if it needs one again (none since D21: the simulation runs in
+   * the chat). They are mounted under `/api`, where every route requires a Telegram user: a
+   * route cannot be public because its author forgot a preHandler.
    */
   routes?: (api: FastifyInstance) => Promise<void> | void;
   onAuthenticated?: TelegramAuthOptions["onAuthenticated"];

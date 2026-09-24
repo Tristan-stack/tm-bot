@@ -134,6 +134,29 @@ export const AI_LOGO_TIMEOUT_MS = 30 * SECOND_MS;
 
 // Simulation (§7.4)
 export const SIM_DURATION_SEC = 180;
+/** The recap shows the same Simulation again while it is younger than this (proposal, V1-22). */
+export const SIMULATION_REUSE_MS = HOUR_MS;
+/** A Custom dev buy is typed with 3 decimals at most (proposal, V1-22). */
+export const DEV_BUY_MAX_DECIMALS = 3;
+
+// The simulated clock of the simulation in the chat (§6.1, §7.4, V1-26).
+/** `x1`, `x2`, `x5` (§6.1): simulated seconds per real second. */
+export const SIM_SPEEDS = [1, 2, 5] as const;
+export type SimSpeed = (typeof SIM_SPEEDS)[number];
+/** A seed fits the uint32 of the engine and the signed Int of Prisma (V1-22): 0 to 2^31 − 1. */
+export const SIM_SEED_MAX = 2 ** 31 - 1;
+/** The speed a simulation starts at (proposal): 3 simulated minutes in 90 real seconds. */
+export const SIM_DEFAULT_SPEED: SimSpeed = 2;
+/** One picture every 3 s (proposal): Telegram tolerates about one edit per second per chat. */
+export const SIM_FRAME_MS = 3 * SECOND_MS;
+/** Two edits of the same message never closer than this (a sale right after a tick). */
+export const SIM_MIN_EDIT_GAP_MS = SECOND_MS;
+/** Simulations running at once in the process (proposal): a render and an upload each per frame. */
+export const SIM_MAX_ACTIVE = 20;
+/** A paused simulation nobody touches ends after this (proposal). */
+export const SIM_PAUSE_TIMEOUT_MS = 10 * MINUTE_MS;
+/** At the end, the last picture (the closing sale drawn) stays this long before the card (proposal). */
+export const SIM_END_HOLD_MS = 2 * SECOND_MS;
 
 // Caches (§4.3). `balances` is per user, the others are shared.
 export const CACHE_TTL_MS = {
@@ -144,6 +167,8 @@ export const CACHE_TTL_MS = {
   channelMembers: 10 * MINUTE_MS,
   channelMembership: 10 * MINUTE_MS,
   pumpGlobal: HOUR_MS,
+  /** A failed read of the pump.fun Global account is retried after this (proposal, V1-21). */
+  pumpGlobalFailure: 5 * MINUTE_MS,
   /** The rent-exempt minimum of an empty account does not move (proposal, V1-13). */
   rentMin: HOUR_MS,
 } as const;
@@ -157,13 +182,20 @@ export const INACTIVITY_CHECK_INTERVAL_MS = 15 * MINUTE_MS;
 /** Token drafts and simulations. */
 export const DATA_RETENTION_MS = 90 * DAY_MS;
 
-// Mini App requests (§12). Proposals: the Mini App calls the API when it opens (V1-24), so one
-// hour is plenty, and a minute absorbs the clock drift between Telegram and the server.
+// Mini App requests (§12, V1-05). Proposals: a page calls the API when it opens, so one hour
+// is plenty, and a minute absorbs the clock drift between Telegram and the server.
 /**
  * Lower case, as Node reports incoming headers. The API reads it, the Mini App sends it and
  * the logger redacts it: one name, so a rename cannot leave the redaction behind.
  */
 export const INIT_DATA_HEADER = "x-telegram-init-data";
+/** The image of a token read from Telegram (proposal): Telegram itself caps a bot at 20 MB. */
+export const API_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+/** Token images kept in memory for the simulation picture (proposal): 10 × 5 MB, an hour each. */
+export const API_IMAGE_CACHE_MAX_ENTRIES = 10;
+export const API_IMAGE_CACHE_TTL_MS = HOUR_MS;
+/** `getFile` and the download of a Telegram file (proposal). */
+export const TELEGRAM_FILE_TIMEOUT_MS = 10 * SECOND_MS;
 export const INIT_DATA_MAX_AGE_SEC = 3600;
 export const INIT_DATA_CLOCK_SKEW_SEC = 60;
 
@@ -202,6 +234,4 @@ export const RATE_LIMITS = {
   invoice: { limit: 5, windowMs: 10 * MINUTE_MS },
   /** "I've paid" (V1-30). */
   paymentCheck: { limit: 1, windowMs: 5 * SECOND_MS },
-  /** Mini App API (V1-23). */
-  api: { limit: 60, windowMs: 60 * SECOND_MS },
 } as const satisfies Record<string, RateLimit>;

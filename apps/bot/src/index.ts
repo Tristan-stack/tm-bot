@@ -4,6 +4,7 @@ import type { ConversationData, VersionedState } from "@grammyjs/conversations";
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import {
   createAiQuotaStore,
+  createSimulationStore,
   createTokenDraftService,
   createWalletService,
   createWithdrawalService,
@@ -12,14 +13,20 @@ import {
 import type {
   AiQuotaStore,
   PrismaClient,
+  SimulationStore,
   TokenDraftService,
   WalletService,
   WithdrawalService,
 } from "@launchbot/db";
 import { createUi, en, getWithdrawFeeBudgetLamports } from "@launchbot/shared";
 import type { AiProviders } from "@launchbot/shared";
-import { createLogger, loadEnv } from "@launchbot/shared/server";
-import type { Env, Service } from "@launchbot/shared/server";
+import {
+  createLogger,
+  createTelegramFileClient,
+  createTokenImageService,
+  loadEnv,
+} from "@launchbot/shared/server";
+import type { Env, Service, TokenImageService } from "@launchbot/shared/server";
 import {
   assertDevnet,
   createKeyVault,
@@ -36,7 +43,8 @@ import { createAccess } from "./features/access/access.js";
 import { checkChannelRights } from "./features/access/startup-check.js";
 import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
-import { registerSimulationProvisional } from "./features/simulation/provisional.js";
+import { registerSimulation } from "./features/simulation/simulation.js";
+import { simTelegram } from "./features/simulation/telegram.js";
 import { createTokenStep } from "./features/token-step/token-step.js";
 import { importConsumer } from "./features/wallets/import.js";
 import { createWalletNav } from "./features/wallets/nav.js";
@@ -53,6 +61,9 @@ import { createAiGenerateService } from "./services/ai/ai-generate.js";
 import { createAiProviders } from "./services/ai/providers.js";
 import { createDataServices } from "./services/data.js";
 import type { DataServices } from "./services/data.js";
+import { createSimRunner } from "./services/sim-runner.js";
+import type { SimRunner, SimRunnerDeps } from "./services/sim-runner.js";
+import { createSimulationService } from "./services/simulation.js";
 import { createTransferApi } from "./services/transfer.js";
 
 const log = createLogger("bot");
@@ -74,10 +85,14 @@ export function createBot(
     wallets?: WalletService;
     withdrawals?: WithdrawalService;
     drafts?: TokenDraftService;
+    simulations?: SimulationStore;
     aiQuota?: AiQuotaStore;
     aiProviders?: AiProviders;
+    /** The clock, the renderer and the cap of the simulation runner (tests). */
+    simRunner?: Omit<SimRunnerDeps, "ui" | "telegram">;
+    images?: TokenImageService;
   } = {},
-): Bot<BotContext> {
+): { bot: Bot<BotContext>; simRunner: SimRunner } {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
   const ui = createUi(env.SOLANA_CLUSTER);
   const router = createCallbackRouter();
@@ -117,13 +132,15 @@ export function createBot(
     hasActivePremium: data.hasActivePremium,
   });
   // One step for both flows (§5): V1-22 and V1-37 register theirs, AI Generate serves both.
-  const tokenStep = createTokenStep({
-    ui,
-    drafts: options.drafts ?? createTokenDraftService({ prisma }),
-    data,
-    ai,
-    providers,
-  });
+  const drafts = options.drafts ?? createTokenDraftService({ prisma });
+  const tokenStep = createTokenStep({ ui, drafts, data, ai, providers });
+  const simulationStore = options.simulations ?? createSimulationStore({ prisma });
+  const simulations = createSimulationService({ store: simulationStore, data });
+  // The simulations running in the chat (V1-26): one runner per process, stopped with the bot.
+  const simRunner = createSimRunner({ ui, telegram: simTelegram(bot.api), ...options.simRunner });
+  const images =
+    options.images ??
+    createTokenImageService(createTelegramFileClient({ botToken: env.BOT_TOKEN }));
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
   // unlimited retry would stall every user, and would hang the startup instead of failing it.
@@ -161,7 +178,14 @@ export function createBot(
   access.register(router);
   registerHome(bot, router, access, { ui, env, data });
   registerWallets(router, inputs, walletNav);
-  registerSimulationProvisional(router, ui, tokenStep);
+  registerSimulation(router, inputs, {
+    ui,
+    tokenStep,
+    simulations,
+    store: simulationStore,
+    runner: simRunner,
+    images,
+  });
   tokenStep.mount(router, inputs);
   // Until the ticket of a section registers its domain.
   registerComingSoon(router, ui);
@@ -171,7 +195,7 @@ export function createBot(
   bot.use(router.middleware());
 
   bot.catch(handleBotError);
-  return bot;
+  return { bot, simRunner };
 }
 
 /**
@@ -181,6 +205,7 @@ export function createBot(
  */
 export function createBotService(options: BotServiceOptions = {}): Service {
   let bot: Bot<BotContext> | undefined;
+  let simRunner: SimRunner | undefined;
 
   return {
     name: "bot",
@@ -207,7 +232,7 @@ export function createBotService(options: BotServiceOptions = {}): Service {
         );
       }
 
-      bot = createBot(env, prisma);
+      ({ bot, simRunner } = createBot(env, prisma));
       try {
         await bot.init();
       } catch (error) {
@@ -225,7 +250,10 @@ export function createBotService(options: BotServiceOptions = {}): Service {
         onStart: (info) => log.info({ username: info.username }, "Long polling started"),
       });
     },
-    // Finishes the update being handled before it resolves.
-    stop: () => bot?.stop(),
+    // The simulations stop first (their messages stay), then the update being handled finishes.
+    stop: () => {
+      simRunner?.stop();
+      return bot?.stop();
+    },
   };
 }

@@ -14,6 +14,12 @@ export function missingRequiredFields(draft: {
   return missing;
 }
 
+/** The draft Continue accepts (§5): a name and a ticker. `null` is a draft never written. */
+export const hasNameAndTicker = <T extends { name: string | null; symbol: string | null }>(
+  draft: T | null,
+): draft is T & { name: string; symbol: string } =>
+  draft !== null && missingRequiredFields(draft).length === 0;
+
 /** `OTTR` → `$OTTR`. The symbol is stored without `$`. */
 export const formatTicker = (symbol: string): string => `$${symbol}`;
 

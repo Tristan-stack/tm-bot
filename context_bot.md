@@ -1,11 +1,11 @@
 # Launch Bot — Contexte projet
 
 Document de contexte pour développer le bot. Projet perso, sur devnet uniquement.
-Dernière mise à jour : 16/09/2026.
+Dernière mise à jour : 24/09/2026.
 
 ## 1. Vue d'ensemble
 
-Launch Bot est un bot Telegram pour créer un memecoin sur Solana via pump.fun. Il propose aussi une simulation de launch en direct, dans une web app Telegram (Mini App).
+Launch Bot est un bot Telegram pour créer un memecoin sur Solana via pump.fun. Il propose aussi une simulation de launch en direct, jouée dans le chat : le bot édite l'image du graphique en direct, avec les boutons de vente en dessous (décision du 24/09/2026, voir 6.5).
 
 Le projet avance en deux versions. La V1 couvre tout le parcours jusqu'à la création du token : menus, wallets, abonnement, générateur de token et simulation. La V2 ajoute la création réelle du token sur pump.fun.
 
@@ -21,7 +21,7 @@ Le bot est ouvert à tous, en conversation privée uniquement. Il tourne sur dev
 | Wallets : créer, importer (clé ou seed phrase), renommer, supprimer, retirer des SOL | ✅ | |
 | Subscribe : Classic et Premium, pass 2 jours ou 1 mois, paiement en SOL | ✅ | |
 | Générateur de token | ✅ | |
-| Simulate a Launch : rendu live en web app, ventes du dev, PNL card | ✅ | |
+| Simulate a Launch : simulation live dans le chat, ventes du dev, PNL card | ✅ | |
 | Launch Coin : conditions, écran Token, récap | ✅ | |
 | Launch Coin : création réelle via pump.fun | | ✅ |
 | Launch Coin : My launches et vente des tokens du dev | | ✅ |
@@ -244,14 +244,15 @@ Les limites de 32 et 10 octets viennent de Metaplex, utilisé par l'ancienne ins
 
 ## 6. Simulate a Launch (V1, gratuit)
 
-La simulation est accessible sans abonnement.
+La simulation est accessible sans abonnement. Elle se joue **entièrement dans le chat** : un message du bot porte l'image du graphique, rééditée à intervalle régulier, avec les boutons de vente en dessous. À la fin, la PNL card remplace l'image de ce même message. Décision du 24/09/2026 : la Mini App de simulation est abandonnée (voir 6.5).
 
 | Étape | Écran | Clavier |
 |---|---|---|
 | 1/3 | Token | Voir section 5 |
 | 2/3 | Dev buy | `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, puis `[ ✏️ Custom ]`, puis `[ ⬅️ Back ]`. Custom demande un montant de 1 à 20 SOL, avec « ❌ Cancel ». |
-| 3/3 | Récap | `[ ▶️ Start simulation ]` (bouton web app), puis `[ ⬅️ Back ][ 🏠 Menu ]` |
-| — | Web app | Graphique live, position et ventes, puis PNL card (6.1 à 6.3) |
+| 3/3 | Récap | `[ ▶️ Start simulation ]` (bouton callback), puis `[ ⬅️ Back ][ 🏠 Menu ]` |
+| — | Message de simulation | Image du graphique éditée toutes les 3 secondes, légende avec chrono, market cap et position, boutons Sell et contrôles (6.1, 6.2) |
+| — | Fin | La PNL card remplace l'image du message de simulation (6.3) |
 
 Écran Dev buy :
 
@@ -292,26 +293,58 @@ Token › Dev buy › Recap
 [ ⬅️ Back             ][ 🏠 Menu            ]
 ```
 
-Le rendu passe par une web app, car Telegram limite la fréquence d'édition des messages. Un graphique fluide n'est pas possible dans un simple message.
+Le rendu est une image PNG produite côté serveur (bougies et histogramme de volume), envoyée en photo puis remplacée par `editMessageMedia` à chaque image. Telegram limite la fréquence des éditions : une image toutes les 3 secondes (`SIM_FRAME_MS`, proposition), et jamais deux éditions du même message à moins d'une seconde d'écart. Le rendu n'est pas fluide comme un graphique web : c'est le compromis assumé pour rester dans le chat, comme le font les bots de trading.
 
-**Exigence : bandeau de démonstration.** La web app affiche en haut de l'écran le texte `⚠️ DEMO — Bullish scenario. Not a prediction or a real result.` Il reste visible pendant toute la simulation et ne peut pas être fermé. Le message du bot qui ouvre la simulation reprend la même mention.
+**Exigence : mention de démonstration.** La légende du message de simulation commence par `⚠️ DEMO — Bullish scenario. Not a prediction or a real result.` à chaque édition ; les images (graphique et PNL card) n'en portent pas, la légende suffit (décision du 24/09/2026 ; la PNL card garde « SIMULATION · Not a real result » en bas). Le récap qui précède affiche la même mention.
 
-### 6.1 Écran de la web app
+### 6.1 Message de simulation
 
-De haut en bas, sur mobile :
+```
+┌──────────────────────────────────────────┐
+│ DEMO — Bullish scenario. Not a prediction │
+│ Moon Otter · $OTTR            ⏱ 1:32 / 3:00 │
+│                                            │
+│      ▮▮  ▮        bougies 5 s              │
+│    ▮    ▮ ▮▮▮     axe : market cap (USD)   │
+│  ▂▃ ▅▂▃▂▅▃        volume                   │
+│  0:00   0:30   1:00   1:30                 │
+└──────────────────────────────────────────┘
+📊 SIMULATION · 🧪 Devnet
+⚠️ DEMO — Bullish scenario. Not a prediction or a real result.
+
+🪙 Moon Otter · $OTTR
+⏱ 1:32 / 3:00 · Speed x2
+
+📈 Market cap: $5,175.82 (50.08 SOL)
+Bonding curve: 34.2% ▰▰▰▱▱▱▱▱▱▱
+Volume: 18.402 SOL · Buys / Sells: 214 / 97
+
+💼 You hold: 96.66M OTTR (9.67%)
+Value if sold now: ≈ 3.412 SOL ($352.66)
+PnL: +0.412 SOL (+13.7%)
+
+[ Sell 25%    ][ Sell 50%    ][ Sell 100%   ]
+[ ⏸ Pause     ][ x1 ][ ✓ x2 ][ x5 ]
+```
 
 | Bloc | Contenu |
 |---|---|
-| Bandeau démo | Toujours visible, y compris sur la PNL card |
-| Token | Logo, nom, ticker, description courte, icônes des liens (site, X, Telegram) |
-| Chrono | `⏱ 1:32 / 3:00`, en temps simulé |
-| Graphique | Bougies et histogramme de volume (TradingView Lightweight Charts) |
-| Stats | Prix, market cap en SOL et en USD, progression de la bonding curve, volume cumulé, nombre d'achats et de ventes |
-| Position | Tokens détenus (et % de la supply), valeur si vendu maintenant, PnL en SOL et en %. Boutons « Sell 25% », « Sell 50% » et « Sell 100% ». |
-| Top holders | Les 10 premiers holders, avec leur % de la supply |
-| Contrôles | Pause, vitesse x1, x2 ou x5 |
+| Image | 1280 × 720 px, PNG. Nom · ticker et chrono en en-tête, bougies et histogramme de volume, axe des valeurs en **market cap en USD** (en SOL si le prix SOL est inconnu), axe du temps en `m:ss` simulé. Logo du token en en-tête s'il existe, sinon pastille avec la première lettre du ticker (proposition). |
+| Légende | 1 024 caractères au plus : en-tête, mention DEMO, token, chrono et vitesse, stats (market cap en USD et en SOL, progression de la bonding curve, volume cumulé, achats et ventes), position (6.2). Sans prix SOL, aucun montant USD. |
+| Boutons | « Sell 25% », « Sell 50% », « Sell 100% » ; « ⏸ Pause » ↔ « ▶️ Resume » ; vitesse x1, x2 ou x5, la vitesse courante cochée. Vitesse par défaut x2 (proposition) : 3 minutes simulées en 90 secondes réelles. |
 
-Dans les top holders, la bonding curve apparaît comme un holder, comme sur pump.fun. La ligne du dev est marquée « dev · you ». Les autres holders sont des traders simulés, avec des adresses courtes générées à partir de la seed.
+Par rapport à la Mini App, le bloc Top holders disparaît de la V1 (le moteur garde `topHolders` pour la V2), ainsi que le prix par token et le bloc Token détaillé (description et liens restent sur le récap).
+
+Règles :
+
+| Règle | Détail |
+|---|---|
+| Une simulation à la fois | Une seule simulation active par utilisateur (proposition). Start pendant une simulation en cours : alerte « A simulation is already running. » (texte proposé). |
+| Charge | `SIM_MAX_ACTIVE` simulations actives dans le process (proposition : 20). Au-delà, le récap affiche le flag « ⚠️ The simulator is busy. Try again in a minute. » (texte proposé) et rien ne démarre. |
+| Cadence | Une édition toutes les `SIM_FRAME_MS` (3 s) ; une vente ou un changement de vitesse provoque une édition immédiate, au plus une par seconde par message. |
+| Pause | Aucun pas du moteur, le chrono est figé. Après 10 minutes de pause sans clic (proposition), la simulation se termine et la PNL card s'affiche. |
+| Redémarrage du bot | L'état vit en mémoire : les simulations en cours sont perdues, leur message reste figé. Un clic sur ses boutons répond « This simulation is over. Start a new one from the menu. » (texte proposé). |
+| Partage | Le message est envoyé avec `protect_content` : ni transfert ni enregistrement depuis Telegram. |
 
 ### 6.2 Position et ventes
 
@@ -319,36 +352,43 @@ La position de départ correspond aux tokens achetés au dev buy. Chaque vente p
 
 La valeur « si vendu maintenant » se calcule de la même façon, et non en multipliant le prix affiché par le nombre de tokens. Le PnL vaut : SOL reçus des ventes + valeur si vendu maintenant − SOL dépensés au dev buy (frais inclus).
 
+Un tap sur Sell passe par le bot : la vente s'applique à l'instant simulé courant, en cours comme en pause, puis l'image et la légende sont rééditées dans la seconde. Un second tap dans la même seconde est ignoré avec une alerte (un tap = une vente). « Sell 100% » ferme la position et termine la simulation ; il déclenche aussi la panique des autres détenteurs, qui revendent 90 % de leurs tokens au même instant, les plus gros d'abord (`DEV_DUMP_PANIC_SHARE`, proposition du 24/09/2026) : la dernière bougie retombe près du market cap de lancement, comme après un rug. La courbe ne descend jamais sous ce niveau (≈ 28 SOL de market cap, soit 3 200 $ à 116 $ le SOL).
+
 ### 6.3 Fin de simulation et PNL card
 
-La simulation s'arrête dans trois cas : 3 minutes simulées écoulées, 100 % de la position vendue, ou bonding curve complète. La PNL card s'affiche alors par-dessus le graphique.
+La simulation s'arrête dans trois cas : 3 minutes simulées écoulées, 100 % de la position vendue, ou bonding curve complète. Le dernier état est d'abord dessiné (la bougie de la vente de clôture, quand il y en a une) et reste 2 secondes ; puis la PNL card remplace l'image du message de simulation (`editMessageMedia`) sous forme d'**animation** (un MP4 muet que Telegram joue en boucle : la carte est dessinée par-dessus un clip d'animation, décision du 24/09/2026), la légende devient le résumé et les boutons deviennent « Run again » et « Menu ».
 
 ```
-╭──────────────────────────────╮
-│ 🖼 MOON OTTER · $OTTR        │
-│                              │
-│ +42.7%                       │
-│ +1.28 SOL · $132.30          │
-│                              │
-│ Dev buy      3.00 SOL        │
-│ Sold for     4.28 SOL        │
-│ Position     Closed          │
-│ Time         2:14            │
-│ Not a real result            │
-╰──────────────────────────────╯
+╭──────────────────────────────────────╮
+│ $OTTR                           (🖼) │  ← ticker, logo du token
+│ [ ≡ +1.283 ]                          │  ← pastille verte (rouge en perte), montant en SOL
+│                                      │     (le clip d'animation en fond)
+│ PNL          +42.7%                  │
+│ Invested     ≡ 3.000                 │
+│ Position     ≡ 4.283                 │
+│ SIMULATION · Not a real result       │
+╰──────────────────────────────────────╯
+📊 SIMULATION ENDED · 🧪 Devnet
+⚠️ DEMO — Bullish scenario. Not a prediction or a real result.
 
-[ 🔁 Run again        ][ ✖️ Close ]
+🪙 $OTTR | +42.7%
+📈 Invested: 3.000 SOL ($310)
+📉 Sell: 4.283 SOL ($443)
+💰 Profit: +1.283 SOL ($133)
+
+[ 🔁 Run again        ][ 🏠 Menu ]
 ```
 
 | Élément | Règle |
 |---|---|
-| PnL | En % et en SOL, avec la valeur en USD si le prix SOL est connu. Vert si positif, rouge si négatif. |
-| Position | « Closed » si tout est vendu. Sinon, par exemple « 62% held », valorisé comme si le reste était vendu à la fin. |
-| Time | Temps simulé au moment de la fin |
-| Filigrane | « SIMULATION » en diagonale sur toute la carte, par-dessus les chiffres, en plus de la mention en bas. On ne peut pas recadrer les chiffres sans couper le filigrane. |
-| Partage | Pas de bouton de partage, pas d'export ni de téléchargement d'image |
-| Run again | Même token et même dev buy, avec une nouvelle seed |
-| Close | Ferme la web app et revient au bot |
+| PnL | Sur la carte : le montant en SOL (3 décimales, signé) sur la pastille, le pourcentage sur la ligne PNL ; le glyphe Solana remplace le mot SOL. Dans la légende : en % et en SOL, avec la valeur en USD si le prix SOL est connu. Vert si positif, rouge si négatif. |
+| Invested / Position | Le dev buy, et ce que la position a rapporté (vendu + le reste valorisé comme vendu à la fin), arrondis à 3 décimales d'abord : Invested + PnL = Position à l'écran. |
+| Légende | Le texte d'une PNL card Axiom (demande du 24/09/2026) : le ticker en gras et le PnL en %, puis Invested / Sell / Profit en SOL, avec les dollars entiers entre parenthèses quand le prix SOL est connu. Pas d'adresse de contrat (rien n'est déployé), ni de temps, ni de part détenue. |
+| Bougie de vente | Sur un Sell 100 %, le graphique avec la bougie de la vente reste affiché 2 secondes avant la carte (même règle pour les deux autres fins). |
+| Mentions | « SIMULATION · Not a real result » en bas de la carte ; la mention DEMO est dans la légende sous l'animation, pas sur l'image (demande du 24/09/2026), et le filigrane en diagonale de l'ancienne carte fixe est abandonné avec elle. `protect_content` couvre le transfert et l'enregistrement. |
+| Partage | Pas de bouton de partage. Le message reste protégé. |
+| Run again | Même token et même dev buy, nouvelle seed tirée par le bot et nouvelle ligne Simulation (elle compte dans la limite de fréquence). Le même message repart à 0:00 (proposition). |
+| Menu | Envoie l'écran d'accueil dans un nouveau message ; la carte reste dans le chat. |
 
 ### 6.4 Flux technique
 
@@ -357,25 +397,33 @@ sequenceDiagram
     participant U as Utilisateur
     participant B as Bot
     participant D as PostgreSQL
-    participant A as API
-    participant W as Web app
     U->>B: Simulate a Launch
     B->>U: Écran Token puis choix du dev buy
+    B->>D: Crée Simulation (token, dev buy, seed) à l'affichage du récap
     U->>B: Start simulation
-    B->>D: Crée Simulation (token, dev buy, seed)
-    B->>U: Bouton web app avec simId
-    U->>W: Ouvre la web app
-    W->>A: GET /api/simulations/:id + initData
-    A->>D: Lit la simulation
-    A->>W: SimConfig
-    W->>W: Moteur local, graphique live, ventes, PNL card
+    B->>B: SimRun en mémoire (moteur, section 7)
+    B->>U: sendPhoto : image à 0:00, légende, boutons (protect_content)
+    loop toutes les 3 s tant que la simulation tourne
+        B->>B: step jusqu'à l'instant simulé, rendu PNG
+        B->>U: editMessageMedia (image, légende, boutons)
+    end
+    U->>B: Sell 50%
+    B->>B: sellDev, rendu
+    B->>U: editMessageMedia dans la seconde
+    B->>U: Fin : PNL card (editMessageMedia), Run again / Menu
 ```
 
-La simulation tourne côté client. C'est plus fluide, ça ne charge pas le serveur, et la seed permet de rejouer à l'identique. En contrepartie, la logique est visible dans le navigateur, ce qui ne pose pas de problème pour une démo.
+La simulation tourne côté serveur, dans le process du bot. La seed permet de rejouer à l'identique. Chaque simulation active coûte un rendu PNG (quelques dizaines de millisecondes) et une édition Telegram toutes les 3 secondes, d'où la limite `SIM_MAX_ACTIVE`. Les images sont rendues depuis un SVG construit en TypeScript, rasterisé par `@resvg/resvg-js` avec une police embarquée dans le dépôt (proposition, voir 12).
+
+### 6.5 Décision du 24/09/2026 : la simulation dans le chat, plus de Mini App
+
+La première version (tickets V1-24 à V1-26 d'origine) rendait la simulation dans une Mini App : Vite + React + Lightweight Charts, moteur côté client, API `GET /api/simulations/:id` avec `initData`. Elle a été construite, testée une fois sur téléphone, puis abandonnée le jour même, sans être commitée. La version dans le chat est retenue : expérience 100 % Telegram comme les bots de trading, aucun tunnel HTTPS ni hébergement statique pour la simulation, et `protect_content` répond mieux au non-partage qu'une page web. Ce qui est perdu : le graphique fluide, les contrôles instantanés et le bloc Top holders.
+
+Conséquences : la Mini App ne sert plus qu'aux pages Terms et Privacy (11.2) ; l'API n'a plus de route métier ; le code de la Mini App de simulation et l'API de simulation sont retirés (V1-24 réécrit) ; le tableau de bord live envisagé pour la V2 (8.5, DEC-01) suit le même principe, dans le chat.
 
 ## 7. Moteur de simulation
 
-Le moteur est un package TypeScript pur (`packages/sim-engine`), sans accès réseau. Il tourne dans la web app. L'aléatoire utilise un générateur à graine (seed) : une même seed rejoue exactement la même simulation.
+Le moteur est un package TypeScript pur (`packages/sim-engine`), sans accès réseau. Il tourne dans le process du bot (6.4). L'aléatoire utilise un générateur à graine (seed) : une même seed rejoue exactement la même simulation.
 
 ### 7.1 Bonding curve
 
@@ -439,7 +487,7 @@ Le Custom accepte de 1 à 20 SOL, en simulation comme au launch. Ses paramètres
 
 ### 7.4 Temps, bougies et interface du moteur
 
-Durée maximum : 3 minutes simulées, soit 3 minutes réelles à vitesse x1. L'horloge simulée est séparée du rendu : le moteur produit des événements, la web app les lit à la vitesse choisie. Les bougies sont agrégées sur un intervalle fixe, par exemple 5 secondes simulées.
+Durée maximum : 3 minutes simulées, soit 3 minutes réelles à vitesse x1. L'horloge simulée est séparée du rendu : le moteur produit des événements, le bot les lit à la vitesse choisie, par pas de 3 secondes réelles. Les bougies sont agrégées sur un intervalle fixe, par exemple 5 secondes simulées.
 
 ```ts
 type CurveParams = {
@@ -496,7 +544,7 @@ type Holder = {
 type EndReason = "timeout" | "position_closed" | "curve_complete";
 interface SimRun {
   step(dtSec: number): TradeEvent[];
-  sellDev(fraction: number): TradeEvent; // 0.25, 0.5 ou 1
+  sellDev(fraction: number): DevSale; // 0.25, 0.5 ou 1 ; { event, panic: TradeEvent[] }
   state(): CurveState;
   position(): Position;
   topHolders(limit: number): Holder[];
@@ -612,7 +660,7 @@ Le bot envoie un rappel 24 h avant la fin, ou 6 h avant pour un pass 2 jours. Ce
 
 Ces idées ne sont pas affichées sur l'écran des offres. Elles seront tranchées au démarrage de la V2.
 
-Tableau de bord live : une page de la web app par token lancé, avec market cap, progression de la bonding curve, holders, derniers trades et position du dev. Alertes dans le chat à 25, 50, 75 et 100 % de la curve, puis à la graduation.
+Tableau de bord live : un message du bot par token lancé, image du graphique éditée en direct comme la simulation (6.1), avec market cap, progression de la bonding curve, holders, derniers trades et position du dev. Alertes dans le chat à 25, 50, 75 et 100 % de la curve, puis à la graduation.
 
 Préfixe d'adresse : l'adresse du mint commence par 3 ou 4 caractères choisis, souvent le ticker. Un worker génère des keypairs jusqu'à trouver le préfixe, avant la création. À vérifier avec l'IDL pump.fun.
 
@@ -984,7 +1032,7 @@ Durées de conservation (propositions de départ, à faire valider par un jurist
 | Logs techniques | 6 mois |
 | Avis publiés | Jusqu'à ce que l'auteur demande leur retrait |
 
-Comptes inactifs : une activité, c'est toute interaction avec le bot (message, clic, web app). Après 48 h sans activité, le worker supprime le compte, même s'il a un abonnement actif, une facture en attente ou des fonds. Seuls les comptes admin (`ADMIN_TELEGRAM_IDS`) sont exemptés. Aucun avertissement n'est envoyé. Avant la suppression, le worker transfère le SOL de chaque wallet vers `TREASURY_WALLET` (en V2, les tokens d'abord, puis le SOL). Chaque transfert est enregistré avec l'ID Telegram, pour qu'un admin puisse rembourser l'utilisateur à la main s'il réclame. Si un transfert échoue, le compte est gardé et retraité au passage suivant.
+Comptes inactifs : une activité, c'est toute interaction avec le bot (message ou clic). Après 48 h sans activité, le worker supprime le compte, même s'il a un abonnement actif, une facture en attente ou des fonds. Seuls les comptes admin (`ADMIN_TELEGRAM_IDS`) sont exemptés. Aucun avertissement n'est envoyé. Avant la suppression, le worker transfère le SOL de chaque wallet vers `TREASURY_WALLET` (en V2, les tokens d'abord, puis le SOL). Chaque transfert est enregistré avec l'ID Telegram, pour qu'un admin puisse rembourser l'utilisateur à la main s'il réclame. Si un transfert échoue, le compte est gardé et retraité au passage suivant.
 
 Suppression à la demande : pas de bouton dans le bot (décision). L'utilisateur écrit au support depuis son compte Telegram et retire d'abord ses SOL. Un admin lance ensuite `/purge` (voir 11.4), et l'utilisateur reçoit une confirmation dans le délai d'un mois prévu par le RGPD. Le bot est public : la Privacy Policy doit indiquer ce contact et ce délai. Effacer les clés rend les fonds irrécupérables, c'est pourquoi la suppression est bloquée tant qu'il reste des fonds.
 
@@ -1024,9 +1072,9 @@ Réservées aux ID listés dans `ADMIN_TELEGRAM_IDS`.
 launch-bot/
 ├── apps/
 │   ├── bot/            # grammY : menus, parcours, commandes admin
-│   ├── api/            # Fastify : API de la web app, validation initData
+│   ├── api/            # Fastify : validation initData ; plus aucune route métier depuis le 24/09/2026 (6.5)
 │   ├── worker/         # jobs : paiements, transferts, rappels, nettoyage
-│   └── webapp/         # Vite + React + Lightweight Charts (Mini App)
+│   └── webapp/         # Vite + React : pages Terms et Privacy (Mini App)
 ├── packages/
 │   ├── sim-engine/     # moteur de simulation, TS pur
 │   ├── solana/         # wallets, soldes, retraits, chiffrement, pump.fun et PumpSwap en V2
@@ -1038,11 +1086,12 @@ launch-bot/
 
 Le projet est un monorepo TypeScript en pnpm workspaces. Le bot utilise grammY avec les plugins sessions, conversations et ratelimiter. La base est PostgreSQL avec Prisma. Côté Solana, la lib suit celle du SDK officiel `@pump-fun/pump-sdk` (`@solana/web3.js` ou `@solana/kit`, à vérifier au démarrage), pour ne pas avoir deux libs en parallèle. Au début, le bot et l'API peuvent tourner dans le même process. Les jobs (détection des paiements, transferts vers la trésorerie, rappels, nettoyage des comptes inactifs et des données expirées) tournent dans `apps/worker`, avec pg-boss : une file de jobs sur PostgreSQL, sans Redis.
 
-Telegram exige une web app servie en HTTPS : en local, il faut un tunnel (cloudflared ou ngrok). Les tests utilisent Vitest, en priorité sur le moteur de simulation et le chiffrement des clés.
+Telegram exige une web app servie en HTTPS : en local, il faut un tunnel (cloudflared ou ngrok), pour les pages Terms et Privacy seulement. Les tests utilisent Vitest, en priorité sur le moteur de simulation, le rendu des images et le chiffrement des clés.
+
+Rendu des images de simulation (6.1, 6.3) : un SVG construit en TypeScript (testable sans navigateur), rasterisé en PNG par `@resvg/resvg-js` (binaire précompilé, sans dépendance système), avec une police embarquée dans le dépôt pour un rendu identique sur toutes les machines. Le runner de simulation vit dans `apps/bot` : un `SimRun` par simulation active, en mémoire, avancé par un minuteur ; pas de table supplémentaire.
 
 | Méthode | Route | Rôle |
 |---|---|---|
-| GET | `/api/simulations/:id` | Renvoie le `SimConfig` d'une simulation de l'utilisateur. En-tête `X-Telegram-Init-Data` obligatoire, validé côté serveur (HMAC, doc Telegram). |
 | GET | `/health` | Healthcheck |
 
 Garde-fou devnet : au démarrage, le bot vérifie que `SOLANA_CLUSTER` vaut `devnet` et que `getGenesisHash()` du RPC renvoie le hash du devnet (`EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`). Sinon, il s'arrête avec une erreur.
@@ -1113,6 +1162,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 | Simulation | Sans vente du dev, pour 1 000 seeds par preset, le prix final est au-dessus du prix après dev buy. |
 | Simulation | La simulation s'arrête à 3 minutes simulées, dès que 100 % de la position est vendue, ou à la fin de la curve. |
 | Simulation | Une vente du dev utilise la formule de la curve, impact de prix et frais inclus. |
+| Simulation | Le message de simulation et la PNL card sont envoyés avec `protect_content` : ni transfert ni enregistrement. |
 | Générateur | Chaque clic sur Generate propose un token différent, dans les limites de longueur. |
 | Générateur | Sans Premium, « 🔒 AI Generate » affiche l'alerte Premium et ne génère rien. |
 | Générateur | Tant qu'aucune IA n'est branchée, l'écran Token et l'écran des offres affichent la mention « coming soon ». |
@@ -1142,7 +1192,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 | Données | Un compte inactif depuis 48 h est supprimé, même avec un abonnement actif, une facture en attente ou des fonds ; seuls les admins sont exemptés. |
 | Données | Avant la suppression d'un compte inactif, les SOL de ses wallets sont transférés à la trésorerie, et chaque transfert est enregistré avec l'ID Telegram. |
 | Données | Aucun avertissement n'est envoyé avant la suppression d'un compte inactif. |
-| API | Une requête sans `initData` valide renvoie 401. Une simulation d'un autre utilisateur renvoie 403. |
+| API | Une requête sous `/api` sans `initData` valide renvoie 401. |
 | Transactions | Chaque transaction du bot estime sa priority fee avant l'envoi, dans les bornes de la config. |
 | Démarrage | Le bot refuse de démarrer si le RPC ne pointe pas sur le devnet. |
 
@@ -1154,7 +1204,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 | 2 | Wallets : create, import (clé base58, seed phrase), rename, delete, soldes, refresh, retrait de SOL, chiffrement |
 | 3 | Générateur de token (local, AI Generate branché sur le local en attendant l'IA) et écran Token |
 | 4 | Moteur de simulation, avec tests à seed fixe |
-| 5 | Web app : bandeau démo, token, graphique live, stats, position et ventes, top holders, PNL card, validation initData |
+| 5 | Simulation dans le chat : rendu image (graphique, PNL card), message de simulation édité en direct, ventes du dev, contrôles, PNL card, Run again |
 | 6 | Subscribe : offres, factures avec wallet de dépôt, détection, transfert vers la trésorerie, rappels, activation admin |
 | 7 | Launch Coin : conditions, récap, bouton « Available in V2 » |
 | 8 | Canaux : commande admin d'annonce, format des posts Succès |

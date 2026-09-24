@@ -20,6 +20,7 @@
     "@launchbot/db": "workspace:*",
     "@launchbot/shared": "workspace:*",
     "@launchbot/sim-engine": "workspace:*",
+    "@launchbot/sim-render": "workspace:*",
     "@launchbot/solana": "workspace:*",
     "grammy": "1.46.0"
   }

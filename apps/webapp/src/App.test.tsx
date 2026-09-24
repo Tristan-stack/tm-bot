@@ -34,18 +34,11 @@ describe("legal pages", () => {
 });
 
 describe("routes", () => {
-  it("shows the simulation placeholder for any id", () => {
-    const html = render("/sim/abc");
-
-    expect(html).toContain("<h1>Simulation</h1>");
-    expect(html).toContain("The live simulation screen is coming soon.");
-  });
-
   it("accepts a trailing slash", () => {
     expect(render("/terms/")).toContain("<h1>Terms of Service</h1>");
   });
 
-  it.each(["/", "/unknown", "/sim", "/sim/", "/sim/a/b", "/terms/extra"])(
+  it.each(["/", "/unknown", "/sim", "/sim/abc", "/terms/extra"])(
     "answers Page not found for %s",
     (path) => {
       expect(render(path)).toContain("Page not found.");

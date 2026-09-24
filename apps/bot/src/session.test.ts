@@ -79,7 +79,7 @@ describe("session storage", () => {
   it("survives a restart of the bot: the row a run wrote is read back by the next", async () => {
     const sessions = new Map<string, string>();
     const first = fakePrisma({ sessions });
-    const bot = createBot(TEST_ENV, first, { data: fakeData() });
+    const { bot } = createBot(TEST_ENV, first, { data: fakeData() });
     interceptApi(bot);
 
     await feed(bot, callbackUpdate("home:refresh", { messageId: 55 }));

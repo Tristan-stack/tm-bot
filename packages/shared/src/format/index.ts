@@ -5,15 +5,17 @@ export {
   formatRemaining,
   formatTimeUtc,
 } from "./date.js";
-export { formatClock, formatInt, formatPct, formatTokenAmount } from "./number.js";
+export { formatClock, formatInt, formatPct, formatPctSupply, formatTokenAmount } from "./number.js";
 export {
   formatSol,
   formatSolAmount,
   formatSolExact,
+  formatSolNumber,
   formatSolPrice,
   formatSolWithUsd,
   formatUsd,
   parseSolToLamports,
+  solToLamports,
   usdOf,
   withUsd,
 } from "./sol.js";

@@ -25,7 +25,9 @@ export type PendingInput =
   | { kind: "withdraw_address" }
   | { kind: "withdraw_amount" }
   /** A field of the Token screen (V1-16); `since` lets a forgotten input expire (proposal). */
-  | { kind: "token_field"; flow: TokenFlow; field: TokenInputField; since: number };
+  | { kind: "token_field"; flow: TokenFlow; field: TokenInputField; since: number }
+  /** The Custom dev buy of a simulation (V1-22). */
+  | { kind: "sim_amount" };
 
 /** The two flows the Token step serves (§5): step 1 of a simulation, step 3 of a launch. */
 export const TOKEN_FLOWS = ["SIMULATION", "LAUNCH"] as const;
@@ -59,6 +61,13 @@ export type WithdrawState = {
   confirmToken?: string;
 };
 
+/**
+ * The dev buy chosen in Simulate a Launch (V1-22): kept across screens, so Back from the recap
+ * shows it again. The draft is in `tokenStep.SIMULATION`; the Simulation is found again from
+ * both (reuse rule of V1-22), so its id is not kept here.
+ */
+export type SimFlowState = { devBuySol?: number };
+
 export type SessionData = {
   v: typeof SESSION_VERSION;
   /** The one screen message the navigation edits (§4.4). */
@@ -66,6 +75,7 @@ export type SessionData = {
   pendingInput?: PendingInput;
   withdraw?: WithdrawState;
   tokenStep?: Partial<Record<TokenFlow, TokenStepState>>;
+  sim?: SimFlowState;
 };
 
 export const initialSession = (): SessionData => ({ v: SESSION_VERSION });
@@ -81,6 +91,7 @@ const isPendingInput = (value: unknown): value is PendingInput => {
       return typeof input.walletId === "string";
     case "withdraw_address":
     case "withdraw_amount":
+    case "sim_amount":
       return true;
     case "wallet_import":
       return (
@@ -109,6 +120,12 @@ const isTokenStep = (value: unknown): value is Partial<Record<TokenFlow, TokenSt
   });
 };
 
+const isSimFlow = (value: unknown): value is SimFlowState => {
+  if (typeof value !== "object" || value === null) return false;
+  const { devBuySol } = value as SimFlowState;
+  return devBuySol === undefined || (typeof devBuySol === "number" && Number.isFinite(devBuySol));
+};
+
 const isWithdrawState = (value: unknown): value is WithdrawState => {
   if (typeof value !== "object" || value === null) return false;
   const state = value as WithdrawState;
@@ -129,6 +146,7 @@ export function isSessionData(value: unknown): value is SessionData {
   if (data.screenMessageId !== undefined && typeof data.screenMessageId !== "number") return false;
   if (data.withdraw !== undefined && !isWithdrawState(data.withdraw)) return false;
   if (data.tokenStep !== undefined && !isTokenStep(data.tokenStep)) return false;
+  if (data.sim !== undefined && !isSimFlow(data.sim)) return false;
   return data.pendingInput === undefined || isPendingInput(data.pendingInput);
 }
 

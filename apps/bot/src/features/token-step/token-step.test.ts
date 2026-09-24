@@ -21,7 +21,6 @@ import {
   textUpdate,
 } from "../../test-harness.js";
 import { MENU } from "../home/screen.js";
-import { buildDevBuySoonScreen } from "../simulation/provisional.js";
 import {
   buildEditChoiceScreen,
   buildFieldInputScreen,
@@ -262,23 +261,6 @@ describe("edit and input screens", () => {
       buildFieldInputScreen(ui, "SIMULATION", "name", { ...OTTER, name: "<b>&" }).text,
     ).toContain("Current: &lt;b&gt;&amp;");
   });
-
-  it("renders the provisional step 2 with Back to the Token screen and Menu", () => {
-    const screen = buildDevBuySoonScreen(ui, { name: "Moon <Otter>", symbol: "OTTR" });
-
-    expect(screen.text).toBe(
-      [
-        "<b>📊 SIMULATION · STEP 2/3</b> · 🧪 Devnet\n▰▰▱\nToken › Dev buy › Recap",
-        "🪙 Moon &lt;Otter&gt; · $OTTR\nThe dev buy step is coming soon.",
-      ].join("\n\n"),
-    );
-    expect(keyboardOf(screen)).toEqual([
-      [
-        { text: "⬅️ Back", callback_data: "sim:open" },
-        { text: "🏠 Menu", callback_data: "nav:home" },
-      ],
-    ]);
-  });
 });
 
 describe("imageFileIdOf", () => {
@@ -311,7 +293,7 @@ describe("imageFileIdOf", () => {
   });
 });
 
-describe("Simulate a Launch, provisional (V1-16)", () => {
+describe("Simulate a Launch: the Token step (V1-16)", () => {
   /** The bot with a draft already in the session of the flow, as after a first Generate. */
   function harness(options: Parameters<typeof botHarness>[0] & { draftId?: string } = {}) {
     const h = botHarness(options);
@@ -409,7 +391,7 @@ describe("Simulate a Launch, provisional (V1-16)", () => {
     expect(storedSession(h.prisma)?.tokenStep?.SIMULATION?.showMissing).toBeUndefined();
   });
 
-  it("Continue with a name and a ticker shows the provisional step 2; Back returns", async () => {
+  it("Continue with a name and a ticker shows the Dev buy step (V1-22); the menu returns", async () => {
     const drafts = fakeDrafts({
       rows: [testDraft({ id: "d1", name: "Moon Otter", symbol: "OTTR" })],
     });
@@ -417,7 +399,7 @@ describe("Simulate a Launch, provisional (V1-16)", () => {
 
     await feed(h.bot, callbackUpdate(TOKEN_CB.next("SIMULATION")));
     expect(h.screen()).toContain("<b>📊 SIMULATION · STEP 2/3</b>");
-    expect(h.screen()).toContain("🪙 Moon Otter · $OTTR\nThe dev buy step is coming soon.");
+    expect(h.screen()).toContain("🪙 Moon Otter · $OTTR\n💰 Dev buy: not selected yet");
     expect(h.api.of("answerCallbackQuery").at(-1)?.payload["text"]).toBeUndefined();
 
     await feed(h.bot, callbackUpdate(MENU.simulate));

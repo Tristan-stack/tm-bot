@@ -7,6 +7,7 @@ import {
   formatDayMonth,
   formatInt,
   formatPct,
+  formatPctSupply,
   formatRemaining,
   formatSol,
   formatSolAmount,
@@ -124,6 +125,9 @@ describe("USD", () => {
   it("formats dollars with grouping and 2 decimals", () => {
     expect(formatUsd(1234.56)).toBe("$1,234.56");
     expect(formatUsd(59)).toBe("$59.00");
+    expect(formatUsd(286.53, { decimals: 0 })).toBe("$287");
+    expect(formatUsd(-55.81, { decimals: 0 })).toBe("-$56");
+    expect(formatUsd(-0.3, { decimals: 0 })).toBe("$0");
     expect(formatUsd(0)).toBe("$0.00");
     expect(formatUsd(1_000_000)).toBe("$1,000,000.00");
     expect(formatUsd(-12.5)).toBe("-$12.50");
@@ -234,5 +238,15 @@ describe("numbers", () => {
     expect(utf8ByteLength("🚀")).toBe(4);
     expect(utf8ByteLength("Moon Otter")).toBe(10);
     expect(utf8ByteLength("é")).toBe(2);
+  });
+});
+
+describe("formatPctSupply", () => {
+  it("shows 2 decimals of a share already in percent, and <0.01% under it", () => {
+    expect(formatPctSupply(9.6664)).toBe("9.67%");
+    expect(formatPctSupply(72.88)).toBe("72.88%");
+    expect(formatPctSupply(0.004)).toBe("<0.01%");
+    expect(formatPctSupply(0)).toBe("0.00%");
+    expect(formatPctSupply(100)).toBe("100.00%");
   });
 });

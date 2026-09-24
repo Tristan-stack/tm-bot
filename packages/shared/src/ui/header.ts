@@ -21,6 +21,12 @@ export type FlowName = keyof typeof FLOWS;
 const PROGRESS_DONE = "▰";
 const PROGRESS_TODO = "▱";
 
+/** `▰▰▰▱▱▱▱▱▱▱`: `done` of `total` segments, clamped. */
+export function progressBar(done: number, total: number): string {
+  const filled = Math.min(total, Math.max(0, Math.round(done)));
+  return PROGRESS_DONE.repeat(filled) + PROGRESS_TODO.repeat(total - filled);
+}
+
 /**
  * Flow header (§5): title with step counter, progress bar, step names.
  *
@@ -37,7 +43,7 @@ export function flowHeader(flow: FlowName, step: number, badge: string | null): 
   }
   return [
     withBadge(`${title} · ${en.common.step(step, steps.length)}`, badge),
-    PROGRESS_DONE.repeat(step) + PROGRESS_TODO.repeat(steps.length - step),
+    progressBar(step, steps.length),
     steps.join(" › "),
   ].join("\n");
 }
