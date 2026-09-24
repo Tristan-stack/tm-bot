@@ -680,6 +680,18 @@ export const en = {
      */
     paymentReceived: (plan: string, until: string) =>
       `${E.ok} Payment received. ${plan} is active until ${until}.`,
+    // The reminder the worker sends before the end of a plan (§8.4, V1-34). Every text is
+    // proposed (D19); `left` comes from `planLabel`, `ends` from `formatDateTime`.
+    reminder: {
+      title: `${E.subscribe} SUBSCRIPTION ENDING`,
+      description: (plan: string) =>
+        `Your ${plan} plan ends soon. Renew it to keep access to Launch Coin.`,
+      left: (label: string) => `${E.plan} ${label}`,
+      ends: (at: string) => `${E.updated} Ends ${at}`,
+      /** §8.4: buying the same offer again extends the plan. */
+      extends: "Buying the same plan again extends your current plan.",
+      btnRenew: `${E.renew} Renew`,
+    },
     // Pay from my wallet (§8.3, V1-31). Titles, descriptions and the notes are proposed texts
     // (D19); names arrive escaped (raw in an alert), amounts formatted. The lines a withdrawal
     // shows too (amount, fees, network, reason, Try again) are the ones of `wallets.withdraw`.
@@ -806,6 +818,48 @@ export const en = {
     WITHDRAW_ALL: {
       title: `${E.withdraw} WITHDRAW`,
       steps: ["Address", "Confirm"],
+    },
+  },
+
+  // Messages to the admins (§11.4). Every text is proposed (D19).
+  admin: {
+    // The deposit addresses of the invoices (§8.3, V1-33): what the worker moved to the
+    // treasury and what an admin must refund by hand. Values arrive formatted and escaped.
+    depositAlert: {
+      manualRefund: `${E.warning} MANUAL REFUND`,
+      oldAddress: `${E.warning} OLD DEPOSIT ADDRESS`,
+      sweepFailed: `${E.warning} SWEEP FAILED`,
+      PARTIAL_EXPIRED:
+        "Partial payment on an expired invoice. The funds were moved to the treasury. Refund the user by hand.",
+      LATE_FULL_PAYMENT:
+        "Full payment received more than 24 h after the invoice expired or was canceled. No subscription was activated. The funds were moved to the treasury. Refund the user by hand.",
+      OLD_ADDRESS:
+        "Funds were sent to an old deposit address. They were moved to the treasury. Check with the user.",
+      /** `attempts` is `null` for an invoice found unmoved when its key was due to go. */
+      SWEEP_FAILED: (attempts: number | null) =>
+        attempts === null
+          ? "The deposit funds were never moved to the treasury. Check the worker logs."
+          : `The deposit funds could not be moved to the treasury after ${attempts} attempts. Check the worker logs.`,
+      /** `🧾 Invoice: Premium · 2 days · created 12 Sep 2026, 14:02 UTC` */
+      invoice: (plan: string, duration: string, created: string) =>
+        `${E.invoice} Invoice: ${plan} · ${duration} · created ${created}`,
+      /** `user` is `@username (ID 123456789)` or `ID 123456789`, escaped. */
+      user: (user: string) => `${E.account} User: ${user}`,
+      userWithName: (username: string, telegramId: string) => `@${username} (ID ${telegramId})`,
+      userId: (telegramId: string) => `ID ${telegramId}`,
+      deletedAccount: "deleted account",
+      expected: (amount: string) => `Expected: ${amount}`,
+      received: (amount: string) => `Received: ${amount}`,
+      moved: (amount: string) => `Moved to treasury: ${amount}`,
+      balance: (amount: string) => `Balance: ${amount}`,
+      /** `status` is `Paid`, `Expired` or `Canceled`. */
+      status: (status: string) => `Status: ${status}`,
+      statuses: { PAID: "Paid", SWEPT: "Paid", EXPIRED: "Expired", CANCELED: "Canceled" },
+      /** `short` links to the explorer; `full` is in <code> for a copy. */
+      deposit: (short: string, full: string) => `Deposit: ${short}\n${full}`,
+      from: (address: string) => `From: ${address}`,
+      tx: (link: string) => `Tx: ${link}`,
+      reason: (reason: string) => `Reason: ${reason}`,
     },
   },
 

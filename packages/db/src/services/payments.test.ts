@@ -24,6 +24,8 @@ describe("invoiceViewOf", () => {
     paidAt: null,
     canceledAt: null,
     sweepSignature: null,
+    keyDeletedAt: null,
+    sweepAlertedAt: null,
     createdAt: NOW,
   };
 

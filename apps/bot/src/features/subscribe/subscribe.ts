@@ -4,7 +4,7 @@ import type { AiProviders, Offer, PlanStatus, Ui } from "@launchbot/shared";
 import type { BotContext } from "../../context.js";
 import { notify } from "../../navigation/notify.js";
 import { showScreen } from "../../navigation/show-screen.js";
-import type { ShowMode, ShowResult } from "../../navigation/show-screen.js";
+import type { ShowResult } from "../../navigation/show-screen.js";
 import type { CallbackHandler, CallbackRouter } from "../../router/callback-router.js";
 import type { DataServices } from "../../services/data.js";
 import { createInvoiceFlow } from "./invoice.js";
@@ -24,10 +24,10 @@ export type SubscribeDeps = {
   now?: () => Date;
 };
 
-/** `mode: "new"` for a message of its own (Renew from a reminder, V1-34). */
-export type OffersOptions = Pick<OffersModel, "flags"> & { mode?: ShowMode };
+/** A click edits the message of its button: the menu, an invoice, the reminder (V1-34). */
+export type OffersOptions = Pick<OffersModel, "flags">;
 
-/** What the later tickets call: Renew (V1-34), Launch Coin (V1-35). */
+/** What the later tickets call: Launch Coin (V1-35). */
 export type Subscribe = {
   showOffersScreen: (ctx: BotContext, options?: OffersOptions) => Promise<ShowResult>;
   /**
@@ -46,16 +46,16 @@ export function createSubscribe(deps: SubscribeDeps): Subscribe {
 
   const statusOf = (ctx: BotContext) => data.getPlanStatus(ctx.user.id);
 
-  const showOffers = (ctx: BotContext, status: PlanStatus, options: OffersOptions = {}) => {
-    const { mode, ...rest } = options;
-    const screen = buildOffersScreen(ui, {
-      ...rest,
-      status,
-      aiModelAvailable: isAiModelAvailable(providers),
-      now: now(),
-    });
-    return showScreen(ctx, screen, { mode });
-  };
+  const showOffers = (ctx: BotContext, status: PlanStatus, options: OffersOptions = {}) =>
+    showScreen(
+      ctx,
+      buildOffersScreen(ui, {
+        ...options,
+        status,
+        aiModelAvailable: isAiModelAvailable(providers),
+        now: now(),
+      }),
+    );
   const showOffersScreen: Subscribe["showOffersScreen"] = async (ctx, options) =>
     showOffers(ctx, await statusOf(ctx), options);
 

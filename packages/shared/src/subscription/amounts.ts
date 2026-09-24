@@ -1,4 +1,5 @@
 import { SOL_USD_RATE_DECIMALS } from "../constants.js";
+import { formatSol } from "../format/sol.js";
 
 const RATE_SCALE = 10n ** BigInt(SOL_USD_RATE_DECIMALS);
 /** Cents → lamports at a rate scaled by 10^8: cents / 100 × 10^9 × 10^8. */
@@ -18,9 +19,7 @@ function scaledRate(rate: string): bigint {
 
 /**
  * The lamports an invoice expects (§8.3): the USD price at the recorded rate, rounded up to the
- * lamport, in integers only. $59 at 103.36 → 570 820 434. A screen shows it with
- * `formatSol(lamports, { decimals: 4, rounding: "ceil" })`, « 0.5709 SOL »: never below what is
- * expected (DEC-06, validated on 24/09/2026).
+ * lamport, in integers only. $59 at 103.36 → 570 820 434. A screen shows it with `invoiceSol`.
  */
 export function computeExpectedLamports(priceUsdCents: number, solUsdRate: string): bigint {
   const rate = scaledRate(solUsdRate);
@@ -28,3 +27,12 @@ export function computeExpectedLamports(priceUsdCents: number, solUsdRate: strin
   const scaled = BigInt(priceUsdCents) * CENTS_TO_SCALED_LAMPORTS;
   return (scaled + rate - 1n) / rate;
 }
+
+/**
+ * An amount of an invoice (§8.3): 4 decimals rounded **up**, so « Send exactly » never asks for
+ * less than the lamports expected (570 820 434 → `0.5709 SOL`, DEC-06 validated on 24/09/2026),
+ * and what is left to send is never understated. The invoice (V1-30), Pay from my wallet (V1-31)
+ * and the admin alerts (V1-33) show the same amounts.
+ */
+export const invoiceSol = (lamports: bigint): string =>
+  formatSol(lamports, { decimals: 4, rounding: "ceil" });

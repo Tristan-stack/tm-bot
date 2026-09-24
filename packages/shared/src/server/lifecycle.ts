@@ -12,11 +12,15 @@ export type Service = {
 export type RunProcessOptions = {
   /** Called after every service has stopped: `disconnectPrisma`. */
   onShutdown?: () => Promise<void> | void;
+  /**
+   * Hard exit if a service hangs on stop. The worker (V1-32) gives its jobs 30 s to finish, so
+   * it waits longer than the bot.
+   */
+  forceExitAfterMs?: number;
   /** Test seam. */
   exit?: (code: number) => void;
 };
 
-/** Hard exit if a service hangs on stop. */
 const FORCE_EXIT_AFTER_MS = 10 * SECOND_MS;
 
 /**
@@ -33,13 +37,14 @@ const exitSoon = (code: number): void => {
 /**
  * Starts the services in order and stops them in reverse order on SIGINT / SIGTERM (only
  * SIGINT on Windows). §12: the bot and the API share one process. A failed start stops
- * whatever already started and exits with code 1. Errors are logged by name and message only.
+ * whatever already started and exits with code 1; a second signal during the shutdown exits at
+ * once. Errors are logged by name and message only.
  */
 export async function runProcess(
   services: readonly Service[],
   options: RunProcessOptions = {},
 ): Promise<void> {
-  const { onShutdown, exit = exitSoon } = options;
+  const { onShutdown, forceExitAfterMs = FORCE_EXIT_AFTER_MS, exit = exitSoon } = options;
   const log = createLogger("process");
   const started: Service[] = [];
   let shuttingDown = false;
@@ -51,7 +56,7 @@ export async function runProcess(
     const forced = setTimeout(() => {
       log.error({ reason }, "Shutdown timed out, exiting now");
       exit(1);
-    }, FORCE_EXIT_AFTER_MS);
+    }, forceExitAfterMs);
     forced.unref();
 
     for (const service of started.reverse()) {
@@ -73,7 +78,15 @@ export async function runProcess(
   };
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.on(signal, () => void shutdown(signal, 0));
+    process.on(signal, () => {
+      // Ctrl+C twice: the operator does not want to wait for the jobs.
+      if (shuttingDown) {
+        log.warn({ signal }, "Second signal, exiting now");
+        exit(1);
+        return;
+      }
+      void shutdown(signal, 0);
+    });
   }
   process.on("unhandledRejection", (err) => {
     log.fatal({ err }, "Unhandled rejection");

@@ -10,12 +10,13 @@ import type {
   KeyVault,
   SignatureOutcome,
   SignerSource,
+  TransferApi,
   TransferQuote,
   TransferRequest,
   TxFailure,
   TxSuccess,
 } from "@launchbot/solana";
-import type { PrismaClient, Withdrawal } from "../generated/prisma/client.js";
+import type { Prisma, PrismaClient, Withdrawal } from "../generated/prisma/client.js";
 import { readFreshWallet, WALLET_SUMMARY_SELECT } from "./balances.js";
 import type { BalancesService, WalletDetailData } from "./balances.js";
 import type { WalletSummary } from "./wallets.js";
@@ -71,28 +72,8 @@ export type WithdrawOutcome =
   | { status: "in_progress" }
   | { status: "not_found" };
 
-/**
- * The transaction helpers of @launchbot/solana (V1-13), bound to the context of the process:
- * this package does not load that package, it is handed what it needs.
- */
-export type TransferApi = {
-  estimateFee: (from: string) => Promise<bigint>;
-  rentMin: () => Promise<bigint>;
-  prepare: (params: {
-    from: string;
-    to: string;
-    amount: bigint | "max";
-  }) => Promise<TransferQuote | TxFailure>;
-  send: (
-    request: TransferRequest,
-    signer: SignerSource,
-    options?: {
-      onPrepared?: (quote: TransferQuote) => Promise<void>;
-      onSubmitted?: (signature: string) => Promise<void>;
-    },
-  ) => Promise<TxSuccess | TxFailure>;
-  lookup: (signature: string) => Promise<SignatureOutcome>;
-};
+/** The transfer helpers of V1-13 (`createTransferApi` of @launchbot/solana), handed in. */
+export type { TransferApi };
 
 export type WithdrawalsDeps = {
   prisma: PrismaClient;
@@ -144,7 +125,7 @@ const failed = (value: TransferQuote | TxSuccess | TxFailure): value is TxFailur
   "ok" in value && value.ok === false;
 
 /** `Withdrawal.error`: the code, then the short program detail of V1-13. Never a secret. */
-const errorText = (code: string, detail?: string): string =>
+export const errorText = (code: string, detail?: string): string =>
   `${code}${detail === undefined ? "" : `: ${detail}`}`.slice(0, WITHDRAWAL_ERROR_MAX_CHARS);
 
 /**
@@ -168,6 +149,122 @@ export const mayStillLand = (outcome: SignatureOutcome, ageMs: number): boolean 
   outcome.status === "unavailable" ||
   (outcome.status === "not_found" && ageMs < WITHDRAWAL_IN_FLIGHT_MS);
 
+/** What the chain says of a transfer still PENDING (§13). Nothing is written: the caller does. */
+export type Settlement =
+  | { status: "in_flight" }
+  | { status: "landed"; signature: string; slot: number }
+  | { status: "failed"; error: string };
+
+const IN_FLIGHT: Settlement = { status: "in_flight" };
+
+/**
+ * A PENDING `Withdrawal` against the chain: the withdrawal (V1-14) and the treasury (V1-33)
+ * settle their rows by the same rules, then record the result their own way.
+ */
+export async function settleTransfer(
+  lookup: TransferApi["lookup"],
+  row: Pick<Withdrawal, "signature" | "createdAt">,
+  nowMs: number,
+): Promise<Settlement> {
+  const ageMs = nowMs - row.createdAt.getTime();
+  const { signature } = row;
+  if (signature === null) {
+    // Being signed, or recorded and never broadcast (the process stopped between the two).
+    return ageMs < WITHDRAWAL_IN_FLIGHT_MS ? IN_FLIGHT : { status: "failed", error: "NEVER_SENT" };
+  }
+  const outcome = await lookup(signature);
+  if (outcome.status === "confirmed") return { status: "landed", signature, slot: outcome.slot };
+  if (outcome.status === "failed") {
+    return { status: "failed", error: errorText("TRANSACTION_REJECTED", outcome.detail) };
+  }
+  return mayStillLand(outcome, ageMs)
+    ? IN_FLIGHT
+    : { status: "failed", error: "BLOCKHASH_EXPIRED" };
+}
+
+/** The columns a confirmed transfer writes: `max` is recomputed at the send, what moved. */
+export type ConfirmedTransfer = {
+  status: "CONFIRMED";
+  signature: string;
+  feeLamports: bigint;
+  lamports: bigint;
+};
+
+export type RecordedSend =
+  /** Refused at the quote: nothing was written, nothing was sent. */
+  | { status: "refused"; failure: TxFailure }
+  /** The row is still PENDING: the caller writes `confirmed`, with what it records beside it. */
+  | {
+      status: "sent";
+      row: Withdrawal;
+      quote: TransferQuote;
+      slot: number;
+      confirmed: ConfirmedTransfer;
+    }
+  /** Written FAILED, or kept PENDING with its signature when the outcome is unknown. */
+  | { status: "failed"; row: Withdrawal; failure: TxFailure };
+
+/**
+ * A transfer recorded as a `Withdrawal` (§13): the row from the one fresh quote of V1-13, before
+ * anything is signed, and its signature on file before the confirmation — whatever happens next,
+ * an outcome the RPC could not give is looked up, never sent again.
+ */
+export async function sendRecorded(
+  deps: { prisma: PrismaClient; send: TransferApi["send"] },
+  request: TransferRequest,
+  signer: SignerSource,
+  record: Pick<Prisma.WithdrawalUncheckedCreateInput, "userId" | "walletId" | "kind" | "createdAt">,
+): Promise<RecordedSend> {
+  const { prisma, send } = deps;
+  let row: Withdrawal | undefined;
+  let quote: TransferQuote | undefined;
+  const result = await send(request, signer, {
+    onPrepared: async (prepared) => {
+      quote = prepared;
+      row = await prisma.withdrawal.create({
+        data: {
+          ...record,
+          fromAddress: request.from,
+          toAddress: request.to,
+          lamports: prepared.amountLamports,
+          feeLamports: prepared.fee.totalFeeLamports,
+        },
+      });
+    },
+    onSubmitted: async (signature) => {
+      if (row !== undefined) {
+        await prisma.withdrawal.update({ where: { id: row.id }, data: { signature } });
+      }
+    },
+  });
+
+  if (row === undefined || quote === undefined) {
+    if (result.ok) throw new Error("A transfer was sent without its quote");
+    return { status: "refused", failure: result };
+  }
+  if (result.ok) {
+    const confirmed: ConfirmedTransfer = {
+      status: "CONFIRMED",
+      signature: result.signature,
+      feeLamports: result.feeLamports,
+      lamports: result.amountLamports ?? row.lamports,
+    };
+    return { status: "sent", row, quote, slot: result.slot, confirmed };
+  }
+  // A signature `onSubmitted` wrote stays: a broadcast that never landed is still a fact. An
+  // unknown outcome keeps the row PENDING (proposal): the next attempt reads the chain first.
+  const failedRow = await prisma.withdrawal.update({
+    where: { id: row.id },
+    data: {
+      ...(result.signature === undefined ? {} : { signature: result.signature }),
+      ...(result.landed === "unknown"
+        ? {}
+        : { status: "FAILED", error: errorText(result.code, result.detail) }),
+    },
+  });
+  return { status: "failed", row: failedRow, failure: result };
+}
+
 export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalService {
   const { prisma, balances, transfer, vault, withdrawFeeBudgetLamports, now = Date.now } = deps;
 
@@ -179,31 +276,17 @@ export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalServic
 
   /** A PENDING row brought up to date from the chain (§13). Fees paid mean balances moved. */
   async function settle(row: Withdrawal, userId: string): Promise<Withdrawal> {
-    if (row.signature === null) {
-      // Never broadcast: the process stopped between the row and the send.
-      return isStale(row) ? update(row.id, { status: "FAILED", error: "NEVER_SENT" }) : row;
+    const settled = await settleTransfer(transfer.lookup, row, now());
+    if (settled.status === "in_flight") return row;
+    if (settled.status === "failed") {
+      const withdrawal = await update(row.id, { status: "FAILED", error: settled.error });
+      if (row.signature !== null) balances.invalidateUserBalances(userId);
+      return withdrawal;
     }
-    const outcome = await transfer.lookup(row.signature);
-    switch (outcome.status) {
-      case "confirmed": {
-        const withdrawal = await update(row.id, { status: "CONFIRMED" });
-        balances.invalidateUserBalances(userId);
-        log.info({ withdrawalId: row.id, slot: outcome.slot }, "withdrawal.confirmed.late");
-        return withdrawal;
-      }
-      case "failed": {
-        const withdrawal = await update(row.id, {
-          status: "FAILED",
-          error: errorText("TRANSACTION_REJECTED", outcome.detail),
-        });
-        balances.invalidateUserBalances(userId);
-        return withdrawal;
-      }
-      default:
-        return mayStillLand(outcome, now() - row.createdAt.getTime())
-          ? row
-          : update(row.id, { status: "FAILED", error: "BLOCKHASH_EXPIRED" });
-    }
+    const withdrawal = await update(row.id, { status: "CONFIRMED" });
+    balances.invalidateUserBalances(userId);
+    log.info({ withdrawalId: row.id, slot: settled.slot }, "withdrawal.confirmed.late");
+    return withdrawal;
   }
 
   async function check(userId: string, walletId: string): Promise<WithdrawCheck> {
@@ -262,8 +345,8 @@ export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalServic
 
       const { encSecretKey, iv, authTag, ...summary } = wallet;
       const from = summary.publicKey;
-      let row: Withdrawal | undefined;
-      const result = await transfer.send(
+      const sent = await sendRecorded(
+        { prisma, send: transfer.send },
         // In `max` mode the amount is whatever V1-13 quotes: the field is not read.
         {
           from,
@@ -272,60 +355,24 @@ export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalServic
           amountLamports: amount.kind === "max" ? 0n : amount.lamports,
         },
         { kind: "vault", vault, enc: { encSecretKey, iv, authTag }, address: from },
-        {
-          // Recorded from the one fresh quote of V1-13, before anything is signed.
-          onPrepared: async (quote) => {
-            row = await prisma.withdrawal.create({
-              data: {
-                userId,
-                walletId,
-                fromAddress: from,
-                toAddress: to,
-                lamports: quote.amountLamports,
-                feeLamports: quote.fee.totalFeeLamports,
-                kind: "USER",
-              },
-            });
-          },
-          // Written before the confirmation: whatever happens next, the signature is on file.
-          onSubmitted: async (signature) => {
-            if (row !== undefined) await update(row.id, { signature });
-          },
-        },
+        { userId, walletId, kind: "USER" },
       );
-
-      if (row === undefined) {
-        // Refused at the quote: nothing was written, nothing was sent.
-        if (result.ok) throw new Error("A transfer was sent without its quote");
-        return { status: "refused", failure: result };
-      }
-      if (result.ok) {
-        const withdrawal = await update(row.id, {
-          status: "CONFIRMED",
-          signature: result.signature,
-          feeLamports: result.feeLamports,
-          // Max is recomputed at the send: what moved, not what was quoted.
-          lamports: result.amountLamports ?? row.lamports,
-        });
+      if (sent.status === "refused") return sent;
+      const { row } = sent;
+      if (sent.status === "sent") {
+        const withdrawal = await update(row.id, sent.confirmed);
         balances.invalidateUserBalances(userId);
         log.info(
-          { userId, walletId, withdrawalId: row.id, slot: result.slot },
+          { userId, walletId, withdrawalId: row.id, slot: sent.slot },
           "withdrawal.confirmed",
         );
         return { status: "sent", withdrawal };
       }
-      // A signature `onSubmitted` wrote stays: a broadcast that never landed is still a fact.
-      // An unknown outcome keeps the row PENDING (proposal): `resolve` reads the chain later.
-      const withdrawal = await update(row.id, {
-        ...(result.signature === undefined ? {} : { signature: result.signature }),
-        ...(result.landed === "unknown"
-          ? {}
-          : { status: "FAILED", error: errorText(result.code, result.detail) }),
-      });
+      const { failure } = sent;
       // Landed and failed: the fees were paid, the balances moved.
-      if (result.landed === "yes") balances.invalidateUserBalances(userId);
-      log.warn({ userId, walletId, withdrawalId: row.id, code: result.code }, "withdrawal.failed");
-      return { status: "failed", wallet: summary, withdrawal, failure: result };
+      if (failure.landed === "yes") balances.invalidateUserBalances(userId);
+      log.warn({ userId, walletId, withdrawalId: row.id, code: failure.code }, "withdrawal.failed");
+      return { status: "failed", wallet: summary, withdrawal: row, failure };
     },
 
     async resolve(userId, walletId) {

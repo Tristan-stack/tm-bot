@@ -49,6 +49,7 @@ export { decodePumpGlobal, PumpGlobalError, pumpGlobalToCurveParams } from "./pu
 export type { PumpAccount, PumpGlobalFailure, PumpGlobalRaw } from "./pump/global.js";
 export type { SolPriceProvider, SolUsdPrice, SolUsdQuote } from "./price/sol-usd.js";
 export { getSolanaRpc, RpcUnavailableError } from "./rpc.js";
+export { findLastSender } from "./sender.js";
 export type { TxFailure, TxLanded } from "./tx/errors.js";
 export { isTxFailure } from "./tx/fees.js";
 export { getRentExemptMinimum } from "./tx/rent.js";
@@ -63,6 +64,8 @@ export {
   validateTransfer,
 } from "./tx/transfer.js";
 export type { TransferChecks, TransferRequest } from "./tx/transfer.js";
+export { createTransferApi } from "./tx/transfer-api.js";
+export type { TransferApi } from "./tx/transfer-api.js";
 export type {
   FeeEstimate,
   Lamports,

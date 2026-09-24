@@ -974,12 +974,60 @@ de la version 2 dans [packages/shared/src/legal.ts](packages/shared/src/legal.ts
 
 Règles pures dans `packages/shared/src/subscription/` (sans Prisma : bot, worker et builders
 d'écrans les lisent), partie base dans `packages/db/src/services/` (`subscriptions.ts`,
-`payments.ts`, `wallet-payments.ts`), écrans dans `apps/bot/src/features/subscribe/`.
+`payments.ts`, `wallet-payments.ts`, `treasury.ts`, `reminders.ts`), écrans dans
+`apps/bot/src/features/subscribe/`, jobs de fond dans `apps/worker/`.
 
 Seed de dev pour les variantes de l'écran des offres : `pnpm db:seed` donne un Premium qui finit
 dans 28 h ; `SEED_PLAN=CLASSIC` un Classic, `SEED_HOURS=200` une fin au-delà de 72 h
 (« until 12 Oct »), `SEED_HOURS=-1` un abonnement expiré. Sous PowerShell :
 `$env:SEED_PLAN="CLASSIC"; pnpm db:seed`. L'utilisateur est le premier id de `ADMIN_TELEGRAM_IDS`.
+
+### Worker : détection des paiements, trésorerie, rappels (V1-32 à V1-34)
+
+`apps/worker` est un process à part (`pnpm --filter @launchbot/worker dev`, lancé aussi par
+`pnpm dev`) : `src/main.ts` → `runProcess([createWorkerService()])`. Au démarrage, dans l'ordre :
+env, garde-fou devnet (le worker signe les transferts des dépôts), base
+(`assertDatabaseReachable`, partagé avec le bot), `getMe` sur `BOT_TOKEN`, avertissement si
+`TREASURY_WALLET` n'existe pas encore sur le devnet (l'alimenter une fois au faucet), pg-boss,
+files et crons, puis la boucle. Telegram par `new Api(token)` seulement : jamais de polling, qui
+couperait celui du bot (409). Arrêt : la boucle finit son tick, le verrou est rendu, les jobs ont
+30 s (`boss.stop`), puis Prisma ; un second Ctrl+C sort tout de suite (`runProcess`).
+
+- **pg-boss 12.34.0** (version figée), schéma `pgboss` que Prisma ne voit pas. Files en politique
+  `exclusive` : un seul job en attente ou actif par `singletonKey` (l'id de la facture), et un
+  cron ne se chevauche jamais. Crons en UTC, sans retry (le passage suivant réessaie), leur file
+  interrogée toutes les 30 s (2 s pour « Payment received » et les transferts).
+- **Boucle de paiement** (`runEvery`, 15 s, jamais deux ticks à la fois, un tick lent enchaîne
+  aussitôt) : `listInvoicesToCheck` → `checkInvoicesBatch` (un appel RPC par 100 adresses) →
+  `expireDueInvoices`, puis pour chaque facture que le worker a lui-même activée
+  (`activatedNow`) : `payments.notify-paid` et le transfert vers la trésorerie. Une seule
+  instance tourne la boucle : verrou advisory de session sur une connexion `pg` à elle
+  (proposition), une instance en attente réessaie toutes les 30 s.
+- **« Payment received »** : nouveau message, écran de V1-30 (`buildPaymentReceivedScreen`), plan
+  et fin relus au moment de l'envoi (`getPaidNotice`, prolongation comprise). Bot bloqué ou chat
+  inconnu → rien à refaire ; 429 → `auto-retry` attend, puis pg-boss réessaie (5 fois,
+  backoff), comme pour une erreur réseau ou 5xx.
+- **Trésorerie** (`createTreasuryService`) : `deposits.sweep` (8 retries, 30 s doublés) vide un
+  dépôt en mode `max` (solde − frais, 0 restant) vers `TREASURY_WALLET`. Chaque transfert est une
+  ligne `Withdrawal` de type `DEPOSIT_SWEEP`, enregistrée comme un retrait (`sendRecorded` et
+  `settleTransfer` de `withdrawals.ts`, communs aux deux) : ligne écrite avant la signature,
+  signature avant la confirmation, une issue inconnue relue avant tout nouvel essai, jamais
+  renvoyée. La confirmation et la mise à jour de la facture passent dans une transaction.
+  PAID → SWEPT à l'activation par le worker et par le cron `deposits.sweep-paid` (chaque minute,
+  rattrape « I've paid » et le paiement depuis un wallet). `deposits.watch` (toutes les 5 min)
+  surveille 30 jours les adresses déjà vidées et celles des factures expirées ou annulées, jamais
+  avant la fin de leurs 24 h + 2 min ; cas `OLD_ADDRESS`, `LATE_FULL_PAYMENT`, `PARTIAL_EXPIRED` →
+  alerte admin après le transfert (montants exacts au lamport, liens explorer, expéditeur du
+  dernier dépôt si le RPC le donne). Dernier essai raté → une alerte `SWEEP FAILED`, une seule
+  (`Payment.sweepAlertedAt`, remis à zéro par un transfert réussi). `deposits.purge-keys` (03:15
+  UTC) efface les clés à J+30 (`keyDeletedAt`), transfère d'abord ce qui reste, ne touche jamais
+  une facture PAID non transférée (alerte).
+- **Rappels** (`createReminderService`) : `subscriptions.remind` chaque minute, 24 h avant la fin
+  (6 h pour un pass 2 jours, selon la durée du dernier pass), réservé avant l'envoi par une mise
+  à jour conditionnelle (`reminderForExpiresAt` = la fin rappelée ; une prolongation déplace la
+  fin et réarme le rappel). Bot bloqué → réservation gardée ; autre échec → réservation rendue,
+  essai au passage suivant. Bouton `🔄 Renew` (`sub:open`, `SUB_OPEN` de shared, comme le menu)
+  → l'écran des offres remplace le rappel. `subscriptions.expire` chaque minute : `expireDueSubscriptions`, aucun message.
 
 ### Payer depuis un wallet du bot (V1-31)
 
@@ -1540,4 +1588,6 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 24/09/2026 | **Index unique partiel déclaré dans le schéma avec la preview Prisma `partialIndexes`** (V1-27) : `@@unique([userId], where: raw("status = 'ACTIVE'"))`, au plus un abonnement actif par utilisateur. Écrit à la main dans une migration, l'index aurait été vu comme une dérive et supprimé au prochain `migrate dev` ; déclaré, `migrate diff` reste vide. Revers : le client généré accepte `userId` dans un `findUnique` sans la condition, à ne jamais utiliser. |
 | 24/09/2026 | **Montants de facture en entiers, sans decimal.js** (V1-28) : le taux SOL/USD est d'abord arrondi à 8 décimales, celles de la colonne, puis `lamports = ceil(cents × 10^15 / taux × 10^8)` en `bigint`. Le montant attendu se recalcule donc à l'identique depuis la ligne. L'écran l'arrondit vers le haut à 4 décimales (`formatSol(x, { decimals: 4, rounding: "ceil" })`) : qui envoie le montant affiché n'est jamais en paiement partiel (DEC-06, validé le 24/09/2026). |
 | 24/09/2026 | **Un paiement depuis un wallet du bot à la fois par facture, par un verrou advisory de transaction** (V1-31) : `pg_try_advisory_xact_lock(hashtext('pay:' \|\| paymentId))` pris dans une transaction interactive qui reste ouverte pendant l'envoi (délai : toutes les tentatives de V1-13 plus une minute), plutôt qu'un verrou de session sur une connexion dédiée, que le pool de Prisma ne garantit pas. Déjà pris → rien n'est envoyé. Une transaction qui expirerait pendant l'envoi perd son verrou, jamais le résultat de l'envoi. Avant tout envoi, le dépôt est relu : une facture déjà couverte s'active sans nouvel envoi. |
+| 25/09/2026 | **pg-boss 12.34.0 pour les jobs du worker, une boucle à part pour les paiements** (V1-32). Le cron de pg-boss descend à la minute : la détection toutes les 15 s est une boucle `runEvery` dans le process, tenue par une seule instance grâce à un verrou advisory de session sur une connexion `pg` dédiée (le pool de Prisma et celui de pg-boss prêtent une connexion par requête, un verrou de session n'y tiendrait pas). Les files sont `exclusive` : l'id de la facture en `singletonKey` dédoublonne les envois, un cron ne se chevauche pas. |
+| 25/09/2026 | **Les transferts d'un dépôt vers la trésorerie sont des lignes `Withdrawal` de type `DEPOSIT_SWEEP`** (V1-33, migration `payment_deposit_key_lifecycle`), plutôt que des colonnes de plus sur `Payment`. La ligne est écrite avant la signature et reçoit la signature avant la confirmation : un résultat inconnu est relu avant tout nouvel essai, par le même code que le retrait (`sendRecorded`, `settleTransfer`), et chaque transfert reste en comptabilité avec ses frais. `Payment.sweepSignature` garde le dernier transfert confirmé. |
 | 24/09/2026 | **Limite de création de factures comptée en base** (V1-28), pas dans le compteur mémoire du bot : les factures créées par l'utilisateur depuis 10 minutes, sous un verrou advisory par utilisateur qui sérialise aussi la réutilisation d'une facture ouverte. La limite tient aux redémarrages et le service reste utilisable hors du bot. |

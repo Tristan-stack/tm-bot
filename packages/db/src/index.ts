@@ -8,7 +8,13 @@
  */
 export const PACKAGE_NAME = "@launchbot/db";
 
-export { createPrismaClient, disconnectPrisma, lockUserScope, prisma } from "./client.js";
+export {
+  assertDatabaseReachable,
+  createPrismaClient,
+  disconnectPrisma,
+  lockUserScope,
+  prisma,
+} from "./client.js";
 export { isUniqueViolation } from "./errors.js";
 export { createBalancesService, readFreshWallet } from "./services/balances.js";
 export type {
@@ -37,9 +43,12 @@ export type {
   InvoiceCheck,
   InvoiceRow,
   InvoiceView,
+  PaidNotice,
   PaymentsDeps,
   PaymentService,
 } from "./services/payments.js";
+export { createReminderService } from "./services/reminders.js";
+export type { DueReminder, ReminderService } from "./services/reminders.js";
 export { createSimulationStore } from "./services/simulations.js";
 export type {
   NewSimulation,
@@ -81,6 +90,8 @@ export type {
   WalletSummary,
   WalletVault,
 } from "./services/wallets.js";
+export { createTreasuryService } from "./services/treasury.js";
+export type { SweepResult, TreasuryService } from "./services/treasury.js";
 export { createWalletPaymentService } from "./services/wallet-payments.js";
 export type {
   PayChoice,

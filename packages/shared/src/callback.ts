@@ -82,3 +82,9 @@ export const NAV_HOME = encodeCallback("nav", "home");
 
 /** The Launch Coin entry: the main menu (V1-08) and « Payment received » (V1-30, V1-32). */
 export const LAUNCH_COIN = encodeCallback("lc", "open");
+
+/**
+ * The offers screen (V1-29): the Subscribe button of the menu, and Renew on the end-of-plan
+ * reminder the worker sends (V1-34).
+ */
+export const SUB_OPEN = encodeCallback("sub", "open");

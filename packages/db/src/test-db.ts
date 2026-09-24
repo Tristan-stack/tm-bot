@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { loadDotenvOnce } from "@launchbot/shared/server";
+import { generateKeypair } from "@launchbot/solana";
 import type { TransferQuote } from "@launchbot/solana";
 import { createPrismaClient } from "./client.js";
 import type { Prisma, PrismaClient } from "./generated/prisma/client.js";
@@ -63,16 +64,29 @@ let nextTelegramId = 7_000_000n;
 export const createTestUser = (prisma: PrismaClient) =>
   prisma.user.create({ data: { telegramId: nextTelegramId++ } });
 
-/** A `Wallet` row with placeholder key material: what a test needs when it is not about keys. */
+/** Placeholder key material: what a test needs when it is not about keys (nothing decrypts it). */
+export const TEST_KEY = {
+  encSecretKey: new Uint8Array([1, 2, 3]),
+  iv: new Uint8Array([4, 5]),
+  authTag: new Uint8Array([6]),
+};
+
+/** A `Wallet` row with placeholder key material. */
 export const testWalletData = (userId: string, name: string, publicKey: string) => ({
   userId,
   name,
   publicKey,
   source: "CREATED" as const,
-  encSecretKey: new Uint8Array([1, 2, 3]),
-  iv: new Uint8Array([4, 5]),
-  authTag: new Uint8Array([6]),
+  ...TEST_KEY,
 });
+
+/** The chain of the deposit tests: lamports by address, 0 for an address never funded. */
+export function fakeChain() {
+  const lamports = new Map<string, bigint>();
+  const read = (addresses: readonly string[]) =>
+    Promise.resolve(new Map(addresses.map((address) => [address, lamports.get(address) ?? 0n])));
+  return { lamports, read };
+}
 
 /**
  * A `Payment` row without key material: $59 at $103.36 (570 820 434 lamports, §8.3), pending
@@ -112,3 +126,20 @@ export const testTransferQuote = (overrides: Partial<TransferQuote> = {}): Trans
   },
   ...overrides,
 });
+
+/** An invoice of a new user with placeholder key material, its deposit holding `balance`. */
+export async function fundedInvoice(
+  prisma: PrismaClient,
+  chain: Map<string, bigint>,
+  balance: bigint,
+  overrides: Partial<Prisma.PaymentUncheckedCreateInput> = {},
+) {
+  const user = await createTestUser(prisma);
+  const deposit = generateKeypair();
+  deposit.secretKey.dispose();
+  chain.set(deposit.address, balance);
+  const row = await prisma.payment.create({
+    data: testPaymentData(user.id, deposit.address, { ...TEST_KEY, ...overrides }),
+  });
+  return { row, user };
+}

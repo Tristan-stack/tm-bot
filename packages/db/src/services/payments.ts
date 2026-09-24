@@ -1,5 +1,4 @@
 import {
-  chunk,
   computeExpectedLamports,
   decideInvoice,
   decidePurchase,
@@ -10,7 +9,6 @@ import {
   INVOICE_TTL_MS,
   isPaid,
   LATE_PAYMENT_TOLERANCE_MS,
-  MAX_ACCOUNTS_PER_READ,
   RATE_LIMITS,
 } from "@launchbot/shared";
 import type { InvoiceReportKind, Offer } from "@launchbot/shared";
@@ -19,6 +17,7 @@ import type { GeneratedKeypair, KeyVault } from "@launchbot/solana";
 import { lockUserScope } from "../client.js";
 import type { Db } from "../client.js";
 import type { Payment, PaymentStatus, Plan, PrismaClient } from "../generated/prisma/client.js";
+import { readBalancesInGroups } from "./balances.js";
 import { getActiveSubscription, getPlanStatus } from "./subscriptions.js";
 import type { SubscriptionService } from "./subscriptions.js";
 
@@ -126,7 +125,15 @@ export type PaymentService = {
   cancelInvoice: (paymentId: string, userId: string, now: Date) => Promise<CancelResult>;
   /** PENDING past their 30 minutes → EXPIRED; the number of rows changed. */
   expireDueInvoices: (now: Date) => Promise<number>;
+  /**
+   * « Payment received » of the worker (V1-32): who to tell, and the plan as it stands now —
+   * an extension moved the end of a row the invoice is not linked to. `null` for a purged
+   * account, or a plan that is over already.
+   */
+  getPaidNotice: (paymentId: string, now: Date) => Promise<PaidNotice | null>;
 };
+
+export type PaidNotice = { telegramId: bigint; plan: Plan; expiresAt: Date };
 
 export function invoiceViewOf(row: InvoiceRow, now: Date): InvoiceView {
   const remaining = row.expectedLamports - row.receivedLamports;
@@ -335,23 +342,19 @@ export function createPaymentService(deps: PaymentsDeps): PaymentService {
     checkInvoiceWithBalance,
 
     async checkInvoicesBatch(payments, now) {
+      const balances = await readBalancesInGroups(
+        readLamports,
+        payments.map((payment) => payment.depositAddress),
+      );
       const checks = new Map<string, InvoiceCheck>();
-      for (const slice of chunk(payments, MAX_ACCOUNTS_PER_READ)) {
-        let balances: Map<string, bigint>;
+      for (const payment of payments) {
+        const balance = balances.get(payment.depositAddress);
+        if (balance === undefined) continue;
         try {
-          balances = await readLamports(slice.map((payment) => payment.depositAddress));
+          checks.set(payment.id, await checkInvoiceWithBalance(payment, balance, now));
         } catch (error) {
-          log.warn({ err: error, invoices: slice.length }, "payment.batch_read_failed");
-          continue;
-        }
-        for (const payment of slice) {
-          try {
-            const balance = balances.get(payment.depositAddress) ?? 0n;
-            checks.set(payment.id, await checkInvoiceWithBalance(payment, balance, now));
-          } catch (error) {
-            // One invoice that fails never stops the others.
-            log.error({ err: error, paymentId: payment.id }, "payment.check_failed");
-          }
+          // One invoice that fails never stops the others.
+          log.error({ err: error, paymentId: payment.id }, "payment.check_failed");
         }
       }
       return checks;
@@ -403,6 +406,18 @@ export function createPaymentService(deps: PaymentsDeps): PaymentService {
         data: { status: "EXPIRED" },
       });
       return count;
+    },
+
+    async getPaidNotice(paymentId, now) {
+      const payment = await prisma.payment.findUnique({
+        where: { id: paymentId },
+        select: { userId: true, user: { select: { telegramId: true } } },
+      });
+      if (payment?.userId == null || payment.user === null) return null;
+      const status = await getPlanStatus(prisma, payment.userId, now);
+      if (status.kind !== "ACTIVE") return null;
+      const { plan, expiresAt } = status.subscription;
+      return { telegramId: payment.user.telegramId, plan, expiresAt };
     },
   };
 }

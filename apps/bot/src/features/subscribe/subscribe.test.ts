@@ -7,9 +7,11 @@ import {
   isCallbackDataSize,
   MINUTE_MS,
   OFFER_CODES,
+  SUB_OPEN,
 } from "@launchbot/shared";
 import type { PlanStatus, SubscriptionPeriod } from "@launchbot/shared";
-import { describe, expect, it } from "vitest";
+import { resetRateLimits } from "@launchbot/shared/server";
+import { beforeEach, describe, expect, it } from "vitest";
 import { botHarness, callbackUpdate, feed, telegramError } from "../../test-harness.js";
 import { MENU } from "../home/screen.js";
 import { buildOffersScreen, buildUpgradeScreen, SUB_CB } from "./screens.js";
@@ -234,5 +236,32 @@ describe("offer clicks (§8.4)", () => {
     await feed(h.bot, callbackUpdate("sub:buy:X9Z"));
 
     expect(h.screen()).toContain("<b>⭐ SUBSCRIBE</b>");
+  });
+});
+
+describe("Renew on the reminder of the worker (V1-34)", () => {
+  // The global limit counts the clicks of the whole file per user.
+  beforeEach(resetRateLimits);
+
+  it("replaces the reminder with the offers, the current plan as on the home screen", async () => {
+    const soon = new Date(Date.now() + 5 * HOUR_MS + 30 * MINUTE_MS);
+    const h = botHarness({
+      data: { getPlanStatus: () => Promise.resolve(active("PREMIUM", soon)) },
+    });
+
+    await feed(h.bot, callbackUpdate(SUB_OPEN, { messageId: 88 }));
+
+    expect(h.api.of("editMessageText")[0]?.payload).toMatchObject({ message_id: 88 });
+    expect(h.api.screen()).toContain("📋 Current plan: Premium · 5h left");
+    expect(h.api.screen()).toContain(CLASSIC_LINE);
+    expect(h.api.of("sendMessage")).toHaveLength(0);
+  });
+
+  it("shows the offers of a plan that ended since the reminder", async () => {
+    const h = botHarness({ data: { getPlanStatus: () => Promise.resolve(EXPIRED_CLASSIC) } });
+
+    await feed(h.bot, callbackUpdate(SUB_OPEN));
+
+    expect(h.api.screen()).toContain("📋 Current plan: Classic ⚠️ expired");
   });
 });

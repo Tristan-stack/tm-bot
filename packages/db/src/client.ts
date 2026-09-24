@@ -60,6 +60,22 @@ export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   },
 });
 
+/**
+ * The start of a process (V1-04, V1-32): the database answers, or the process refuses to
+ * start. A Prisma error can quote the connection string: only its code is kept.
+ */
+export async function assertDatabaseReachable(db: PrismaClient): Promise<void> {
+  try {
+    await db.$queryRaw`SELECT 1`;
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    throw new Error(
+      `Refusing to start: cannot reach the database of DATABASE_URL (${String(code)}). Is PostgreSQL running (pnpm db:up)?`,
+      { cause: error },
+    );
+  }
+}
+
 /** Clean shutdown (V1-04, V1-32). */
 export async function disconnectPrisma(): Promise<void> {
   if (client === undefined) return;

@@ -10,6 +10,7 @@ import {
   navRow,
   planLabel,
   renderScreen,
+  SUB_OPEN,
   tree,
 } from "@launchbot/shared";
 import type {
@@ -27,8 +28,11 @@ import type {
  * data, so a button works whatever the session holds; the invoice is read again at each click.
  */
 export const SUB_CB = {
-  /** Also the Subscribe button of the main menu, Cancel of the warning and Back of an offer. */
-  open: encodeCallback("sub", "open"),
+  /**
+   * Also the Subscribe button of the main menu, Cancel of the warning, Back of an offer, and
+   * Renew on the reminder of the worker (V1-34): `SUB_OPEN` of shared.
+   */
+  open: SUB_OPEN,
   buy: (code: OfferCode) => encodeCallback("sub", "buy", code),
   /** Continue on the warning: the move from Classic to Premium is accepted. */
   upgrade: (code: OfferCode) => encodeCallback("sub", "up", code),

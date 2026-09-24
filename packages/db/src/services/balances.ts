@@ -1,4 +1,10 @@
-import { CACHE_TTL_MS, createTtlCache, PER_USER_CACHE_MAX_ENTRIES } from "@launchbot/shared";
+import {
+  CACHE_TTL_MS,
+  chunk,
+  createTtlCache,
+  MAX_ACCOUNTS_PER_READ,
+  PER_USER_CACHE_MAX_ENTRIES,
+} from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
 import type { PrismaClient } from "../generated/prisma/client.js";
 
@@ -147,4 +153,26 @@ export async function readFreshWallet(
     return { status: "balance_unavailable", detail };
   }
   return { status: "fresh", detail, lamports: wallet.lamports };
+}
+
+/**
+ * Balances by groups of 100 addresses, one `getMultipleAccountsInfo` each: a group the RPC
+ * refuses is left out, logged, and the others are still read. Every address of a group read is
+ * in the map (0 when it holds nothing), so a missing one means « not read » — nothing is decided
+ * on it. The payment loop (V1-32) and the treasury (V1-33) read their deposits this way.
+ */
+export async function readBalancesInGroups(
+  read: (addresses: readonly string[]) => Promise<Map<string, bigint>>,
+  addresses: readonly string[],
+): Promise<Map<string, bigint>> {
+  const balances = new Map<string, bigint>();
+  for (const group of chunk(addresses, MAX_ACCOUNTS_PER_READ)) {
+    try {
+      const lamports = await read(group);
+      for (const address of group) balances.set(address, lamports.get(address) ?? 0n);
+    } catch (error) {
+      log.warn({ err: error, addresses: group.length }, "balances.group_read_failed");
+    }
+  }
+  return balances;
 }

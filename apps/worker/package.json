@@ -5,16 +5,23 @@
   "description": "pg-boss jobs: payments, sweeps, reminders, cleanup",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run --root ../.. --project worker"
   },
   "dependencies": {
-    "@launchbot/shared": "workspace:*",
+    "@grammyjs/auto-retry": "2.0.2",
     "@launchbot/db": "workspace:*",
-    "@launchbot/solana": "workspace:*"
+    "@launchbot/shared": "workspace:*",
+    "@launchbot/solana": "workspace:*",
+    "grammy": "1.46.0",
+    "pg": "8.23.0",
+    "pg-boss": "12.34.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
   }
 }

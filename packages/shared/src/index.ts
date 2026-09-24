@@ -5,6 +5,8 @@
  */
 export const PACKAGE_NAME = "@launchbot/shared";
 
+export { buildDepositAlert } from "./admin/deposit-alerts.js";
+export type { AlertInvoice, DepositAlert } from "./admin/deposit-alerts.js";
 export * from "./ai/types.js";
 export { chunk } from "./array.js";
 export * from "./cache/last-known.js";

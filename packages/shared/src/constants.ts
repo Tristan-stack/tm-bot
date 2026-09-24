@@ -31,6 +31,26 @@ export const REMINDER_BEFORE_MS = {
 /** Under this remaining time the home screen shows `1d 4h left` instead of `until 12 Oct`. */
 export const REMAINING_DETAIL_BELOW_MS = 72 * HOUR_MS;
 
+// The worker (§12, V1-32 to V1-34). Cron expressions are in UTC (D18); every value is a proposal.
+/** A worker without the lock of the payment loop tries to take it again at this pace. */
+export const WORKER_LOCK_RETRY_MS = 30 * SECOND_MS;
+/** What the jobs of a stopping worker get to finish (`boss.stop`). */
+export const WORKER_STOP_TIMEOUT_MS = 30 * SECOND_MS;
+export const EVERY_MINUTE_CRON = "* * * * *";
+/** « Payment received »: attempts after a network error or a 5xx of Telegram. */
+export const NOTIFY_RETRY_LIMIT = 5;
+/** A deposit that holds less than this once the fees are paid is left where it is (V1-33). */
+export const SWEEP_DUST_LAMPORTS = 10_000n;
+/** Attempts of a transfer to the treasury, `SWEEP_RETRY_DELAY_SEC` doubled each time. */
+export const SWEEP_RETRY_LIMIT = 8;
+export const SWEEP_RETRY_DELAY_SEC = 30;
+/** An address is not emptied until this long after its 24 h: the payment loop may be on it. */
+export const WATCH_RACE_MARGIN_MS = 2 * MINUTE_MS;
+export const DEPOSIT_WATCH_CRON = "*/5 * * * *";
+export const DEPOSIT_KEY_PURGE_CRON = "15 3 * * *";
+/** Reminders sent per run of the job, the closest ends first (V1-34). */
+export const REMINDER_BATCH_SIZE = 100;
+
 // Wallets (§9.1). D1 validated on 16/09/2026: 3 wallets without a subscription (§8.1 said 0).
 export const WALLET_LIMITS = { NONE: 3, CLASSIC: 5, PREMIUM: 10 } as const satisfies Record<
   Plan | "NONE",

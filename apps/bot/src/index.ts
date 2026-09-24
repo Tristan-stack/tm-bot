@@ -3,6 +3,7 @@ import { conversations } from "@grammyjs/conversations";
 import type { ConversationData, VersionedState } from "@grammyjs/conversations";
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import {
+  assertDatabaseReachable,
   createAiQuotaStore,
   createPaymentService,
   createSimulationStore,
@@ -34,6 +35,7 @@ import type { Env, Service, TokenImageService } from "@launchbot/shared/server";
 import {
   assertDevnet,
   createKeyVault,
+  createTransferApi,
   generateKeypair,
   generateMnemonicWallet,
   getBalancesFresh,
@@ -73,7 +75,6 @@ import type { DataServices } from "./services/data.js";
 import { createSimRunner } from "./services/sim-runner.js";
 import type { SimRunner, SimRunnerDeps } from "./services/sim-runner.js";
 import { createSimulationService } from "./services/simulation.js";
-import { createTransferApi } from "./services/transfer.js";
 
 const log = createLogger("bot");
 
@@ -125,6 +126,7 @@ export function createBot(
       vault,
       withdrawFeeBudgetLamports,
     });
+  // The transfers of V1-13 on the connection the devnet guard verified, with the fee bounds of §12.
   const transfer = createTransferApi(env);
   const withdrawals =
     options.withdrawals ??
@@ -247,16 +249,7 @@ export function createBotService(options: BotServiceOptions = {}): Service {
         getGenesisHash: options.getGenesisHash,
       });
 
-      try {
-        await prisma.$queryRaw`SELECT 1`;
-      } catch (error) {
-        // A Prisma error can quote the connection string: only its code is kept.
-        const code = (error as { code?: unknown }).code;
-        throw new Error(
-          `Refusing to start: cannot reach the database of DATABASE_URL (${String(code)}). Is PostgreSQL running (pnpm db:up)?`,
-          { cause: error },
-        );
-      }
+      await assertDatabaseReachable(prisma);
 
       ({ bot, simRunner } = createBot(env, prisma));
       try {

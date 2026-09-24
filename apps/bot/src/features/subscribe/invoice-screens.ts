@@ -7,6 +7,7 @@ import {
   formatSol,
   formatTimeUtc,
   INVOICE_TTL_MS,
+  invoiceSol,
   MINUTE_MS,
   renderScreen,
   withUsd,
@@ -15,14 +16,6 @@ import type { OptionalLine, Screen, Ui } from "@launchbot/shared";
 import { offerHeader, SUB_CB } from "./screens.js";
 
 const { invoice: texts } = en.subscribe;
-
-/**
- * An amount of an invoice (§8.3): 4 decimals rounded **up**, so « Send exactly » never asks for
- * less than the lamports expected (570 820 434 → `0.5709 SOL`), and what is left to send is
- * never understated. Pay from my wallet (V1-31) shows the same amounts.
- */
-export const invoiceSol = (lamports: bigint): string =>
-  formatSol(lamports, { decimals: 4, rounding: "ceil" });
 
 /** What was received: floored, like a balance, never overstated. */
 const receivedSol = (lamports: bigint): string => formatSol(lamports, { decimals: 4 });

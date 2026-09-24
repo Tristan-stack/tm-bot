@@ -4,6 +4,7 @@ import {
   computeExpectedLamports,
   createUi,
   getOffer,
+  invoiceSol,
   isCallbackDataSize,
   parseSolToLamports,
 } from "@launchbot/shared";
@@ -24,7 +25,7 @@ import {
   testInvoice,
 } from "../../test-harness.js";
 import { MENU } from "../home/screen.js";
-import { buildInvoiceExpiredScreen, buildInvoiceScreen, invoiceSol } from "./invoice-screens.js";
+import { buildInvoiceExpiredScreen, buildInvoiceScreen } from "./invoice-screens.js";
 import type { InvoicePayments } from "./invoice.js";
 import { SUB_CB } from "./screens.js";
 

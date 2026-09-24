@@ -4,7 +4,7 @@ import type { TxSuccess } from "@launchbot/solana";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createPrismaClient } from "../client.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
-import { createTestUser, resetTestDatabase, testWalletData } from "../test-db.js";
+import { createTestUser, fakeChain, resetTestDatabase, testWalletData } from "../test-db.js";
 import { createBalancesService } from "./balances.js";
 import { createPaymentService } from "./payments.js";
 import { createSubscriptionService } from "./subscriptions.js";
@@ -18,10 +18,7 @@ const FEE = 15_000n;
 // Needs PostgreSQL (`pnpm db:up`), in a database of its own: suites run in parallel.
 describe.skipIf(!process.env["RUN_DB_TESTS"])("payment from a bot wallet (db)", () => {
   let prisma: PrismaClient;
-  /** The fake chain: lamports by address, 0 when absent. */
-  const chain = new Map<string, bigint>();
-  const read = (addresses: readonly string[]) =>
-    Promise.resolve(new Map(addresses.map((address) => [address, chain.get(address) ?? 0n])));
+  const { lamports: chain, read } = fakeChain();
 
   beforeAll(async () => {
     prisma = createPrismaClient(await resetTestDatabase("wallet_payments"));

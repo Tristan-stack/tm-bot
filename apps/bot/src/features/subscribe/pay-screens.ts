@@ -6,6 +6,7 @@ import {
   encodeCallback,
   escapeHtml,
   formatSol,
+  invoiceSol,
   renderScreen,
   shortAddress,
   tree,
@@ -14,7 +15,7 @@ import type { OptionalLine, Screen, Ui } from "@launchbot/shared";
 import type { TxFailure } from "@launchbot/solana";
 import { balanceText, WALLET_CB } from "../wallets/screens.js";
 import { txFailureText } from "../wallets/withdraw-screens.js";
-import { invoiceAmount, invoiceSol, partialLines } from "./invoice-screens.js";
+import { invoiceAmount, partialLines } from "./invoice-screens.js";
 import { SUB_CB } from "./screens.js";
 
 /**
