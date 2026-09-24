@@ -66,6 +66,12 @@ export type InvoiceCheck =
     } & Viewed)
   | { kind: "NOT_FOUND"; checkedAt: Date };
 
+/** An invoice still waiting for its money: the screen of V1-30 stays, a wallet can pay it (V1-31). */
+export type AwaitingCheck = { kind: "NOT_DETECTED" | "PARTIAL" } & Viewed;
+
+export const isAwaitingPayment = (check: InvoiceCheck): check is AwaitingCheck =>
+  check.kind === "NOT_DETECTED" || check.kind === "PARTIAL";
+
 export type CancelResult = "CANCELED" | "ALREADY_PAID" | "NOOP" | "NOT_FOUND";
 
 export type PaymentsDeps = {

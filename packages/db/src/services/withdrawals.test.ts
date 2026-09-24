@@ -158,12 +158,12 @@ function harness(
     prepare: vi.fn((params) =>
       Promise.resolve(options.prepare ?? quoteOf(params.amount === "max" ? "max" : params.amount)),
     ),
-    send: vi.fn(async (request, signer, { onPrepared, onSubmitted }) => {
+    send: vi.fn(async (request, signer, { onPrepared, onSubmitted } = {}) => {
       signers.push(signer);
       // What V1-13 does: quote, hand it over, broadcast, then the scripted outcome.
       if (options.prepare !== undefined) return options.prepare;
-      await onPrepared(quoteOf(request.mode === "max" ? "max" : request.amountLamports));
-      await onSubmitted(send.signature ?? SIGNATURE);
+      await onPrepared?.(quoteOf(request.mode === "max" ? "max" : request.amountLamports));
+      await onSubmitted?.(send.signature ?? SIGNATURE);
       return send;
     }),
     lookup: vi.fn(() => Promise.resolve(options.lookup ?? { status: "not_found" })),

@@ -1,6 +1,10 @@
 import { resolveWithdrawAmount } from "@launchbot/db";
 import type {
   AiQuotaStore,
+  InvoiceCheck,
+  InvoiceView,
+  PayChoices,
+  PayQuote,
   PrismaClient,
   TokenDraft,
   TokenDraftService,
@@ -9,13 +13,14 @@ import type {
   WalletBalance,
   WalletDetailData,
   WalletListData,
+  WalletPaymentService,
   WalletService,
   WalletSummary,
   Withdrawal,
   WithdrawalService,
   WithdrawCheck,
 } from "@launchbot/db";
-import { AI_GENERATIONS_PER_DAY, computeMaxAmount } from "@launchbot/shared";
+import { AI_GENERATIONS_PER_DAY, computeMaxAmount, getOffer } from "@launchbot/shared";
 import type { AiProviders } from "@launchbot/shared";
 import { FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import type { Simulation, SimulationStore } from "@launchbot/db";
@@ -25,6 +30,7 @@ import { BotError, GrammyError } from "grammy";
 import type { Bot } from "grammy";
 import type { ApiResponse, ChatMember, InlineKeyboardMarkup, Update } from "grammy/types";
 import type { BotContext, SessionData } from "./context.js";
+import type { InvoicePayments } from "./features/subscribe/invoice.js";
 import { createBot } from "./index.js";
 import type { Scheduler, SimRender, SimRunnerDeps } from "./services/sim-runner.js";
 import type { DataServices } from "./services/data.js";
@@ -601,6 +607,110 @@ export function fakeWithdrawals(overrides: Partial<WithdrawalService> = {}): Wit
   };
 }
 
+/** The deposit address of the mockup of §8.3: a public example address, no key behind it. */
+export const TEST_DEPOSIT = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
+/** A cuid of 25 characters, as the ids of `Payment` are: the callback data are measured on it. */
+export const TEST_INVOICE_ID = "cmfq3v0n90000pay0invoice1";
+/** $59 at $103.36 (§8.3): `0.5709 SOL` once rounded up. */
+export const TEST_EXPECTED = 570_820_434n;
+/** The end of the plan the fake activations give. */
+export const TEST_PLAN_END = new Date("2026-09-26T12:05:00Z");
+
+/** An invoice of V1-28: Premium 2 days of the user, pending, nothing received, 30:00 left. */
+export const testInvoice = (overrides: Partial<InvoiceView> = {}): InvoiceView => ({
+  id: TEST_INVOICE_ID,
+  userId: TEST_USER.id,
+  offer: getOffer("PREMIUM", "TWO_DAYS"),
+  priceUsd: "59.00",
+  solUsdRate: "103.36",
+  expectedLamports: TEST_EXPECTED,
+  receivedLamports: 0n,
+  remainingLamports: TEST_EXPECTED,
+  depositAddress: TEST_DEPOSIT,
+  status: "PENDING",
+  expiresAt: new Date("2026-09-24T12:35:00Z"),
+  secondsLeft: 1_800,
+  ...overrides,
+});
+
+/** The invoice once paid, as an activation reports it. */
+export const activatedCheck = (checkedAt = new Date("2026-09-24T12:05:00Z")): InvoiceCheck => ({
+  kind: "ACTIVATED",
+  activatedNow: true,
+  plan: "PREMIUM",
+  expiresAt: TEST_PLAN_END,
+  invoice: testInvoice({ status: "PAID", receivedLamports: TEST_EXPECTED, remainingLamports: 0n }),
+  checkedAt,
+});
+
+/**
+ * The invoices of V1-28 on the one pending invoice of the user (`TEST_INVOICE_ID`): any other
+ * id, or another user, is not found; « I've paid » detects nothing; Cancel cancels.
+ */
+export function fakePayments(overrides: Partial<InvoicePayments> = {}): InvoicePayments {
+  const mine = (paymentId: string, userId?: string) =>
+    paymentId === TEST_INVOICE_ID && userId === TEST_USER.id;
+  return {
+    createInvoice: ({ offer }) =>
+      Promise.resolve({ ok: true, invoice: testInvoice({ offer }), reused: false }),
+    getInvoice: (paymentId, userId) =>
+      Promise.resolve(mine(paymentId, userId) ? testInvoice() : null),
+    checkInvoice: (paymentId, { now, userId }) =>
+      Promise.resolve(
+        mine(paymentId, userId)
+          ? { kind: "NOT_DETECTED", invoice: testInvoice(), checkedAt: now }
+          : { kind: "NOT_FOUND", checkedAt: now },
+      ),
+    cancelInvoice: (paymentId, userId) =>
+      Promise.resolve(mine(paymentId, userId) ? "CANCELED" : "NOT_FOUND"),
+    ...overrides,
+  };
+}
+
+/**
+ * Pay from my wallet (V1-31) on the fake balances: both wallets can pay the invoice, and every
+ * Confirm shows its sending screen, then activates the plan.
+ */
+export function fakeWalletPayments(
+  overrides: Partial<WalletPaymentService> = {},
+): WalletPaymentService {
+  const quoteOf = (wallet: WalletBalance): PayQuote => ({
+    invoice: testInvoice(),
+    feeLamports: TEST_FEE,
+    wallet,
+  });
+  const choices = (): PayChoices => ({
+    invoice: testInvoice(),
+    feeLamports: TEST_FEE,
+    wallets: TEST_BALANCES.wallets.map((wallet) => ({ wallet, missingLamports: 0n })),
+  });
+  return {
+    listChoices: () => Promise.resolve({ status: "ok", ...choices() }),
+    quote: (_userId, _paymentId, walletId) => {
+      const wallet = findTestWallet(walletId);
+      return Promise.resolve(
+        wallet === undefined
+          ? { status: "wallet_not_found", ...choices() }
+          : { status: "ok", ...quoteOf(wallet) },
+      );
+    },
+    pay: async (_userId, request, options = {}) => {
+      const wallet = findTestWallet(request.walletId);
+      if (wallet === undefined) return { status: "wallet_not_found", ...choices() };
+      await options.onSending?.(quoteOf(wallet));
+      return { status: "sent", check: activatedCheck() };
+    },
+    ...overrides,
+  };
+}
+
+/** The data of the first button of the last screen edited: the Confirm of a flow (V1-14, V1-31). */
+export const confirmData = (api: ReturnType<typeof interceptApi>): string => {
+  const button = api.keyboard("editMessageText", -1)[0]?.[0];
+  if (button === undefined || !("callback_data" in button)) throw new Error("no Confirm");
+  return button.callback_data;
+};
+
 /** A row of `TokenDraft` (§13), empty unless told otherwise. */
 export const testDraft = (overrides: Partial<TokenDraft> = {}): TokenDraft => ({
   id: "d1",
@@ -726,6 +836,8 @@ export function botHarness(
     data?: Partial<DataServices>;
     wallets?: Partial<WalletService>;
     withdrawals?: Partial<WithdrawalService>;
+    payments?: Partial<InvoicePayments>;
+    walletPayments?: Partial<WalletPaymentService>;
     drafts?: ReturnType<typeof fakeDrafts>;
     simulations?: ReturnType<typeof fakeSimulations>;
     aiQuota?: ReturnType<typeof fakeAiQuota>;
@@ -740,6 +852,8 @@ export function botHarness(
   const data = fakeData(options.data);
   const wallets = fakeWallets(options.wallets);
   const withdrawals = fakeWithdrawals(options.withdrawals);
+  const payments = fakePayments(options.payments);
+  const walletPayments = fakeWalletPayments(options.walletPayments);
   const drafts = options.drafts ?? fakeDrafts();
   const simulations =
     options.simulations ?? fakeSimulations({ draftOf: (draftId) => drafts.rows.get(draftId) });
@@ -749,6 +863,8 @@ export function botHarness(
     data,
     wallets,
     withdrawals,
+    payments,
+    walletPayments,
     drafts,
     simulations,
     aiQuota,
@@ -765,6 +881,8 @@ export function botHarness(
     data,
     wallets,
     withdrawals,
+    payments,
+    walletPayments,
     drafts,
     simulations,
     aiQuota,

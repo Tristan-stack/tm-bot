@@ -1,4 +1,4 @@
-import type { User } from "@launchbot/db";
+import type { PayInFlight, User } from "@launchbot/db";
 import { TOKEN_FIELDS } from "@launchbot/shared";
 import type { ImportFormat, TokenField } from "@launchbot/shared";
 import type { ConversationFlavor } from "@grammyjs/conversations";
@@ -68,6 +68,25 @@ export type WithdrawState = {
  */
 export type SimFlowState = { devBuySol?: number };
 
+/**
+ * Pay from my wallet (V1-31): ids and the amount the confirmation showed, read again from the
+ * database at every click; never a balance, never a key. Not tied to the screens like
+ * `withdraw`: a send of unknown outcome must be remembered on the invoice screen it returns to.
+ */
+export type PayState = {
+  paymentId: string;
+  /** The confirmation shown last: its wallet, the rest it showed, the token of its Confirm. */
+  confirm?: {
+    walletId: string;
+    /** Lamports as a decimal string: JSON has no bigint. */
+    amount: string;
+    /** Spent before the send: an older Confirm, or a second click, is a stale button. */
+    token?: string;
+  };
+  /** A send whose outcome was unknown (proposal): the next Confirm reads its signature first. */
+  sent?: PayInFlight;
+};
+
 export type SessionData = {
   v: typeof SESSION_VERSION;
   /** The one screen message the navigation edits (§4.4). */
@@ -76,6 +95,7 @@ export type SessionData = {
   withdraw?: WithdrawState;
   tokenStep?: Partial<Record<TokenFlow, TokenStepState>>;
   sim?: SimFlowState;
+  pay?: PayState;
 };
 
 export const initialSession = (): SessionData => ({ v: SESSION_VERSION });
@@ -138,6 +158,28 @@ const isWithdrawState = (value: unknown): value is WithdrawState => {
   );
 };
 
+const isPayConfirm = (value: unknown): boolean => {
+  if (typeof value !== "object" || value === null) return false;
+  const { walletId, amount, token } = value as Record<string, unknown>;
+  return typeof walletId === "string" && typeof amount === "string" && isOptionalString(token);
+};
+
+const isPaySent = (value: unknown): boolean => {
+  if (typeof value !== "object" || value === null) return false;
+  const { signature, sentAt } = value as Record<string, unknown>;
+  return typeof signature === "string" && typeof sentAt === "number";
+};
+
+const isPayState = (value: unknown): value is PayState => {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as PayState;
+  return (
+    typeof state.paymentId === "string" &&
+    (state.confirm === undefined || isPayConfirm(state.confirm)) &&
+    (state.sent === undefined || isPaySent(state.sent))
+  );
+};
+
 /** True for data this version can use; anything else is replaced by a fresh session. */
 export function isSessionData(value: unknown): value is SessionData {
   if (typeof value !== "object" || value === null) return false;
@@ -145,6 +187,7 @@ export function isSessionData(value: unknown): value is SessionData {
   if (data.v !== SESSION_VERSION) return false;
   if (data.screenMessageId !== undefined && typeof data.screenMessageId !== "number") return false;
   if (data.withdraw !== undefined && !isWithdrawState(data.withdraw)) return false;
+  if (data.pay !== undefined && !isPayState(data.pay)) return false;
   if (data.tokenStep !== undefined && !isTokenStep(data.tokenStep)) return false;
   if (data.sim !== undefined && !isSimFlow(data.sim)) return false;
   return data.pendingInput === undefined || isPendingInput(data.pendingInput);

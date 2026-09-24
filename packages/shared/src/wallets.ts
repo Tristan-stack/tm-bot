@@ -36,6 +36,22 @@ export const getWithdrawFeeBudgetLamports = (priorityFeeMaxMicrolamports: number
 export const computeMaxAmount = (balance: bigint, fee: bigint): bigint =>
   balance > fee ? balance - fee : 0n;
 
+/**
+ * What a balance lacks to send `amount` plus its fees under the rules of §9.5 (`validateTransfer`
+ * of V1-13): 0 when it can. The balance left must be 0 or at least the rent-exempt minimum, so a
+ * dust left adds what brings it to that minimum (proposal, Pay from my wallet V1-31).
+ */
+export function transferShortfall(checks: {
+  balance: bigint;
+  amount: bigint;
+  fee: bigint;
+  rentMin: bigint;
+}): bigint {
+  const left = checks.balance - checks.amount - checks.fee;
+  if (left < 0n) return -left;
+  return left > 0n && left < checks.rentMin ? checks.rentMin - left : 0n;
+}
+
 /** §9.3: a wallet that still holds more than the fees of a withdrawal cannot be deleted. */
 export const isBalanceWithdrawable = (lamports: bigint, feeBudgetLamports: bigint): boolean =>
   lamports > feeBudgetLamports;

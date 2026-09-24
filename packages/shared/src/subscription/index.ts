@@ -22,6 +22,7 @@ export {
   type Offer,
   type OfferCode,
 } from "./offers.js";
+export { buildPaymentReceivedScreen } from "./payment-received.js";
 export {
   computeActivation,
   decidePurchase,

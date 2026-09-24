@@ -639,11 +639,96 @@ export const en = {
       // proposed text (D19)
       newPlan: (emoji: string, offer: string) => `${emoji} New plan: ${offer}`,
     },
-    // Provisional invoice screen, until V1-30. proposed texts (D19)
-    invoiceSoon: {
-      description: "Invoices are not available yet.",
-      plan: (emoji: string, offer: string) => `${emoji} Plan: ${offer}`,
-      flag: `${E.construction} Payment in SOL arrives in the next update.`,
+    // The invoice (§8.3, V1-30). Amounts arrive formatted (4 decimals), times as `formatClock`
+    // (`30:00`) or `formatTimeUtc`. Only « Invoice expired. » and the status lines come from the
+    // context; the other texts are proposed (D19).
+    invoice: {
+      /** `0.5709 SOL ($59.00)`: rounded up, never short of the amount expected. */
+      sendExactly: (amount: string) => `Send exactly ${amount} to:`,
+      waiting: (countdown: string) => `${E.waiting} Waiting for payment · expires in ${countdown}`,
+      lastCheck: (time: string) => `${E.waiting} Waiting for payment · last check ${time}`,
+      // proposed text (D19): the deadline stays visible after « I've paid »
+      expiresIn: (countdown: string) => `Expires in ${countdown}.`,
+      paymentSent: `${E.waiting} Payment sent, waiting for confirmation…`,
+      // proposed text (D19)
+      partial: (received: string, remaining: string) =>
+        `${E.warning} Partial payment: ${received} received, ${remaining} still to send.`,
+      // Toasts of « I've paid »: the screen says the same with its status line.
+      notDetected: "Payment not detected yet. It can take up to a minute.",
+      // proposed text (D19)
+      partialDetected: "Partial payment detected.",
+      // proposed texts (D19): a blocked click, then the screen with its line (§4.5)
+      notFound: warn("Invoice not found."),
+      priceUnavailable: warn("Payments are temporarily unavailable."),
+      tooManyInvoices: warn("Too many invoices. Try again in a few minutes."),
+      checkFailed: warn("We couldn't check the payment. Try again in a moment."),
+      expired: `${E.expired} Invoice expired.`,
+      // proposed text (D19)
+      expiredNote: (minutes: number) =>
+        `The SOL amount was locked for ${minutes} minutes. A new invoice uses the current SOL price.`,
+      // proposed texts (D19): what arrived on an invoice that can no longer activate
+      partialExpired: (received: string) =>
+        `${E.warning} ${received} received. Contact support for a refund.`,
+      latePayment: `${E.warning} Payment received after the deadline. Contact support for a refund.`,
+      btnPayFromWallet: `${E.payFromWallet} Pay from my wallet`,
+      btnPaid: `${E.ok} I've paid`,
+      btnNewInvoice: `${E.invoice} New invoice`,
+    },
+    /**
+     * The screen of an invoice paid (§8.3), in the bot and in the message of the worker (V1-32),
+     * which knows only the plan and its end. `until` comes from `formatDateTime`.
+     */
+    paymentReceived: (plan: string, until: string) =>
+      `${E.ok} Payment received. ${plan} is active until ${until}.`,
+    // Pay from my wallet (§8.3, V1-31). Titles, descriptions and the notes are proposed texts
+    // (D19); names arrive escaped (raw in an alert), amounts formatted. The lines a withdrawal
+    // shows too (amount, fees, network, reason, Try again) are the ones of `wallets.withdraw`.
+    payFromWallet: {
+      title: `${E.payFromWallet} PAY FROM WALLET`,
+      description: "Choose the wallet that pays this invoice.",
+      /** §10.1, reused. */
+      noWallet: "You have no wallet yet. Create or import one first.",
+      /** `⭐ Premium · 2 days · 0.5708 SOL ($59.00)` */
+      invoice: (plan: string, duration: string, amount: string) =>
+        `${E.subscribe} ${plan} · ${duration} · ${amount}`,
+      walletOk: (name: string, balance: string) => `${name} · ${balance} ${E.ok}`,
+      walletShort: (name: string, balance: string, missing: string) =>
+        `${name} · ${balance} ${E.warning} Insufficient funds (${missing} missing)`,
+      /** A balance the RPC could not give (`— SOL`): the click reads it again. */
+      walletUnknown: (name: string, balance: string) => `${name} · ${balance}`,
+      insufficient: {
+        alert: (name: string) => `${name} can't cover this payment.`,
+        /** `address` arrives in <code>. */
+        note: (name: string, amount: string, missing: string, address: string) =>
+          [
+            `${E.warning} INSUFFICIENT FUNDS`,
+            `${name} can't cover ${amount} + fees: ${missing} missing.`,
+            `Send SOL to ${name}, then tap it again:`,
+            address,
+          ].join("\n"),
+      },
+      confirm: {
+        title: `${E.payFromWallet} CONFIRM PAYMENT`,
+        description: "Check the payment, then tap Confirm. The SOL is sent right away.",
+        for: (plan: string, duration: string) => `${E.subscribe} For: ${plan} · ${duration}`,
+        from: (name: string, address: string, balance: string) =>
+          `From: ${name} · ${address} · ${balance}`,
+        /** `address` arrives in <code>. */
+        to: (address: string) => `To: ${address}`,
+        amountUpdated: warn("Amount updated."),
+        tooMany: warn("Too many payment attempts. Try again in a few minutes."),
+        locked: warn("A payment is already being sent."),
+      },
+      sending: {
+        title: `${E.payFromWallet} SENDING PAYMENT`,
+        description: (amount: string, name: string) =>
+          `Sending ${amount} from ${name}. This can take a few seconds.`,
+      },
+      failed: {
+        title: `${E.fail} PAYMENT FAILED`,
+        description: "The payment could not be sent. Your invoice is still open.",
+        from: (name: string, balance: string) => `From: ${name} · ${balance}`,
+      },
     },
   },
 

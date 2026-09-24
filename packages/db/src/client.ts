@@ -15,6 +15,16 @@ export async function lockUserScope(tx: Db, scope: string, userId: string): Prom
 }
 
 /**
+ * The same lock without waiting: `false` when another transaction holds it, so the caller
+ * refuses instead of queueing behind a send of a minute (a payment from a wallet, V1-31).
+ */
+export async function tryLockScope(tx: Db, scope: string, key: string): Promise<boolean> {
+  const [row] = await tx.$queryRaw<{ locked: boolean }[]>`
+    SELECT pg_try_advisory_xact_lock(hashtext(${`${scope}:${key}`})) AS locked`;
+  return row?.locked === true;
+}
+
+/**
  * Query logging is never enabled: query parameters hold encSecretKey, iv, authTag and
  * encMnemonic.
  */

@@ -18,7 +18,8 @@ export type TransferEnv = Pick<
 /**
  * The transaction helpers of V1-13 bound to the process: the connection the devnet guard
  * verified (the same object as the reads of `createDataServices`, so the rent cache is one)
- * and the priority fee bounds of §12. What the withdrawal service is handed (V1-14).
+ * and the priority fee bounds of §12. What the withdrawal (V1-14) and the payment from a wallet
+ * (V1-31) are handed.
  */
 export function createTransferApi(env: TransferEnv): TransferApi {
   const ctx: TxContext = {

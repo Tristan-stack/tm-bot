@@ -8,6 +8,7 @@ import {
   formatSolPrice,
   formatSolWithUsd,
   formatTimeUtc,
+  LAUNCH_COIN,
   planLabel,
   renderScreen,
   tree,
@@ -23,7 +24,7 @@ import type { HomeData } from "./data.js";
  * values when it replaces the provisional screen of its domain.
  */
 export const MENU = {
-  launchCoin: encodeCallback("lc", "open"),
+  launchCoin: LAUNCH_COIN,
   simulate: encodeCallback("sim", "open"),
   subscribe: encodeCallback("sub", "open"),
   wallets: encodeCallback("wal", "list"),

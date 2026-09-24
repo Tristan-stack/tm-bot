@@ -35,6 +35,29 @@ describe("session data", () => {
       { v: SESSION_VERSION, pendingInput: { kind: "x" } },
       false,
     ],
+    [
+      "a payment from a wallet with a send of unknown outcome",
+      {
+        v: SESSION_VERSION,
+        pay: {
+          paymentId: "p1",
+          confirm: { walletId: "w1", amount: "1" },
+          sent: { signature: "s", sentAt: 1 },
+        },
+      },
+      true,
+    ],
+    ["a payment without its invoice", { v: SESSION_VERSION, pay: { sent: undefined } }, false],
+    [
+      "a confirmation without its amount",
+      { v: SESSION_VERSION, pay: { paymentId: "p1", confirm: { walletId: "w1" } } },
+      false,
+    ],
+    [
+      "a payment whose send lost its time",
+      { v: SESSION_VERSION, pay: { paymentId: "p1", sent: { signature: "s" } } },
+      false,
+    ],
     ["null", null, false],
     ["a string", "session", false],
   ])("accepts %s: %j", (_label, value, expected) => {

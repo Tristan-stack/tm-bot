@@ -122,11 +122,14 @@ export function renderInputScreen(params: InputScreenParams): Screen {
  *     ┌ @username
  *     ├ 🆔 123456789
  *     └ 👛 No wallet yet
+ *
+ * `null`: the branches alone, under a line of their own (the wallets that can pay, V1-31).
  */
-export function tree(title: string, lines: string[]): string {
+export function tree(title: string | null, lines: string[]): string {
   const last = lines.length - 1;
   const branch = (index: number) => (index === last ? "└" : index === 0 ? "┌" : "├");
-  return [`<b>${title}</b>`, ...lines.map((line, index) => `${branch(index)} ${line}`)].join("\n");
+  const branches = lines.map((line, index) => `${branch(index)} ${line}`);
+  return (title === null ? branches : [`<b>${title}</b>`, ...branches]).join("\n");
 }
 
 /** `data` comes from `encodeCallback`, which has already checked its format and its size. */

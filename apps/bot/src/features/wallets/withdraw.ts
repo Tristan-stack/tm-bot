@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import type {
   WalletSummary,
   Withdrawal,
@@ -19,6 +18,7 @@ import { consumeRateLimit } from "@launchbot/shared/server";
 import { isOnCurve } from "@launchbot/solana";
 import type { TxFailure } from "@launchbot/solana";
 import type { BotContext, WithdrawState } from "../../context.js";
+import { newConfirmToken } from "../../navigation/confirm-token.js";
 import type { InputHandler } from "../../navigation/inputs.js";
 import { acknowledge, notify } from "../../navigation/notify.js";
 import { presentScreen, showScreen } from "../../navigation/show-screen.js";
@@ -45,9 +45,6 @@ const hasAddress = (state: WithdrawState | undefined): state is Addressed =>
   state?.toAddress !== undefined;
 
 type Options = Pick<ShowOptions, "mode" | "input"> & { flags?: OptionalLine[]; block?: Block };
-
-/** The Confirm button of one screen: 8 hex characters, well within the 64 bytes of §4.4. */
-const confirmToken = (): string => randomBytes(4).toString("hex");
 
 const requestOf = (amount: string): WithdrawRequest =>
   amount === "max" ? { kind: "max" } : { kind: "exact", lamports: BigInt(amount) };
@@ -173,7 +170,7 @@ export function createWithdraw(nav: WalletNav) {
 
     // A share of the balance is now a number: a Try again sends this amount, not a new share.
     state.amount = amount.kind === "max" ? "max" : result.quote.amountLamports.toString();
-    const token = confirmToken();
+    const token = newConfirmToken();
     state.confirmToken = token;
     const view = await viewOf(state, result.check);
     await present(

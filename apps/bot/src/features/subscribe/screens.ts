@@ -22,13 +22,24 @@ import type {
   Ui,
 } from "@launchbot/shared";
 
-/** Callback data of the `sub` domain (V1-29). The offer travels in the data: no session. */
+/**
+ * Callback data of the `sub` domain. The offer (V1-29) and the invoice (V1-30) travel in the
+ * data, so a button works whatever the session holds; the invoice is read again at each click.
+ */
 export const SUB_CB = {
   /** Also the Subscribe button of the main menu, Cancel of the warning and Back of an offer. */
   open: encodeCallback("sub", "open"),
   buy: (code: OfferCode) => encodeCallback("sub", "buy", code),
   /** Continue on the warning: the move from Classic to Premium is accepted. */
   upgrade: (code: OfferCode) => encodeCallback("sub", "up", code),
+  /** The invoice again, read from the database: Cancel and Back of the screens of V1-31. */
+  invoice: (paymentId: string) => encodeCallback("sub", "inv", paymentId),
+  paid: (paymentId: string) => encodeCallback("sub", "paid", paymentId),
+  cancel: (paymentId: string) => encodeCallback("sub", "cancel", paymentId),
+  /** New invoice for the same offer, from an expired one. */
+  renew: (paymentId: string) => encodeCallback("sub", "new", paymentId),
+  /** Pay from my wallet (V1-31): the entry of the steps `sub:pw:<step>` of `PAY_CB`. */
+  payFromWallet: (paymentId: string) => encodeCallback("sub", "pw", "open", paymentId),
 } as const;
 
 /** `$49`: whole dollars on the offers screen, `$59.00` on the invoice (V1-30). */
@@ -37,7 +48,8 @@ const priceOf = (offer: Offer) => formatUsd(offer.priceUsdCents / 100, { decimal
 const offerText = (offer: Offer) =>
   en.subscribe.offer(en.plans[offer.plan], en.durations[offer.duration], priceOf(offer));
 
-const offerHeader = (ui: Ui, offer: Offer) =>
+/** `⭐ PREMIUM · 2 DAYS`: the warning and every screen of an invoice (V1-30). */
+export const offerHeader = (ui: Ui, offer: Offer) =>
   ui.screenHeader(en.subscribe.offerTitle(en.plans[offer.plan], en.durations[offer.duration]));
 
 const planEmoji = (plan: Plan) => en.subscribe.planEmoji[plan];
@@ -120,16 +132,5 @@ export function buildUpgradeScreen(
     keyboard: [
       [cbBtn(en.btn.continue, SUB_CB.upgrade(offer.code)), cbBtn(en.btn.cancel, SUB_CB.open)],
     ],
-  });
-}
-
-/** Provisional: the invoice of an offer arrives with V1-30. */
-export function buildInvoiceSoonScreen(ui: Ui, offer: Offer): Screen {
-  return renderScreen({
-    header: offerHeader(ui, offer),
-    description: en.subscribe.invoiceSoon.description,
-    info: en.subscribe.invoiceSoon.plan(planEmoji(offer.plan), offerText(offer)),
-    flags: [en.subscribe.invoiceSoon.flag],
-    keyboard: [navRow(SUB_CB.open, { menu: true })],
   });
 }

@@ -79,3 +79,6 @@ export function decodeCallback(data: string): DecodedCallback | null {
 
 /** Back and Menu to the home screen share this callback (V1-08). */
 export const NAV_HOME = encodeCallback("nav", "home");
+
+/** The Launch Coin entry: the main menu (V1-08) and « Payment received » (V1-30, V1-32). */
+export const LAUNCH_COIN = encodeCallback("lc", "open");

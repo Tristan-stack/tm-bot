@@ -1,3 +1,4 @@
+import type { WalletPaymentService } from "@launchbot/db";
 import { decidePurchase, en, isAiModelAvailable, parseOfferCode } from "@launchbot/shared";
 import type { AiProviders, Offer, PlanStatus, Ui } from "@launchbot/shared";
 import type { BotContext } from "../../context.js";
@@ -6,7 +7,10 @@ import { showScreen } from "../../navigation/show-screen.js";
 import type { ShowMode, ShowResult } from "../../navigation/show-screen.js";
 import type { CallbackHandler, CallbackRouter } from "../../router/callback-router.js";
 import type { DataServices } from "../../services/data.js";
-import { buildInvoiceSoonScreen, buildOffersScreen, buildUpgradeScreen } from "./screens.js";
+import { createInvoiceFlow } from "./invoice.js";
+import type { InvoicePayments } from "./invoice.js";
+import { createPayFromWallet } from "./pay.js";
+import { buildOffersScreen, buildUpgradeScreen } from "./screens.js";
 import type { OffersModel } from "./screens.js";
 
 export type SubscribeDeps = {
@@ -14,13 +18,16 @@ export type SubscribeDeps = {
   /** Read on every click, never cached: the screen can be old, the plan has moved since. */
   data: Pick<DataServices, "getPlanStatus">;
   providers: AiProviders;
+  /** The invoices of V1-28 (V1-30) and the payment from a bot wallet (V1-31). */
+  payments: InvoicePayments;
+  walletPayments: WalletPaymentService;
   now?: () => Date;
 };
 
 /** `mode: "new"` for a message of its own (Renew from a reminder, V1-34). */
 export type OffersOptions = Pick<OffersModel, "flags"> & { mode?: ShowMode };
 
-/** What the later tickets call: the invoice (V1-30), Renew (V1-34), Launch Coin (V1-35). */
+/** What the later tickets call: Renew (V1-34), Launch Coin (V1-35). */
 export type Subscribe = {
   showOffersScreen: (ctx: BotContext, options?: OffersOptions) => Promise<ShowResult>;
   /**
@@ -30,12 +37,12 @@ export type Subscribe = {
   chooseOffer: (ctx: BotContext, offer: Offer) => Promise<unknown>;
   /** Continue on the warning: the rules are read again, the warning is not shown twice. */
   continueUpgrade: (ctx: BotContext, offer: Offer) => Promise<unknown>;
-  /** The rules are passed: never shows the warning. Provisional until V1-30. */
-  openInvoiceForOffer: (ctx: BotContext, offer: Offer) => Promise<unknown>;
+  /** The actions of the invoice (V1-30) and of Pay from my wallet (V1-31, `pw`). */
+  handlers: Record<string, CallbackHandler>;
 };
 
 export function createSubscribe(deps: SubscribeDeps): Subscribe {
-  const { ui, data, providers, now = () => new Date() } = deps;
+  const { ui, data, providers, payments, walletPayments, now = () => new Date() } = deps;
 
   const statusOf = (ctx: BotContext) => data.getPlanStatus(ctx.user.id);
 
@@ -49,9 +56,16 @@ export function createSubscribe(deps: SubscribeDeps): Subscribe {
     });
     return showScreen(ctx, screen, { mode });
   };
+  const showOffersScreen: Subscribe["showOffersScreen"] = async (ctx, options) =>
+    showOffers(ctx, await statusOf(ctx), options);
 
-  const openInvoiceForOffer: Subscribe["openInvoiceForOffer"] = (ctx, offer) =>
-    showScreen(ctx, buildInvoiceSoonScreen(ui, offer));
+  const chooseOffer: Subscribe["chooseOffer"] = (ctx, offer) => decide(ctx, offer, true);
+  const invoices = createInvoiceFlow({
+    ui,
+    payments,
+    offers: { show: showOffersScreen, choose: chooseOffer },
+    now,
+  });
 
   /** `warn`: a Classic → Premium shows the warning (a click on an offer), or goes on (Continue). */
   async function decide(ctx: BotContext, offer: Offer, warn: boolean): Promise<unknown> {
@@ -68,18 +82,18 @@ export function createSubscribe(deps: SubscribeDeps): Subscribe {
     }
     // NEW, EXTEND (the same plan again extends it), or an UPGRADE the user accepted. On
     // Continue, a Classic that ended since, or a Premium that started, has nothing to lose.
-    return openInvoiceForOffer(ctx, offer);
+    return invoices.openInvoiceForOffer(ctx, offer);
   }
 
   return {
-    showOffersScreen: async (ctx, options) => showOffers(ctx, await statusOf(ctx), options),
-    chooseOffer: (ctx, offer) => decide(ctx, offer, true),
+    showOffersScreen,
+    chooseOffer,
     continueUpgrade: (ctx, offer) => decide(ctx, offer, false),
-    openInvoiceForOffer,
+    handlers: { ...invoices.handlers, pw: createPayFromWallet({ ui, walletPayments, invoices }) },
   };
 }
 
-/** The `sub` domain: the offers (V1-29). V1-30 and V1-31 add their actions here. */
+/** The `sub` domain: the offers (V1-29), the invoice (V1-30), Pay from my wallet (V1-31). */
 export function registerSubscribe(router: CallbackRouter, subscribe: Subscribe): void {
   // An unknown offer code (an old button, a forged one) lands on the offers.
   const withOffer =
@@ -93,5 +107,6 @@ export function registerSubscribe(router: CallbackRouter, subscribe: Subscribe):
     open: (ctx) => subscribe.showOffersScreen(ctx),
     buy: withOffer(subscribe.chooseOffer),
     up: withOffer(subscribe.continueUpgrade),
+    ...subscribe.handlers,
   });
 }

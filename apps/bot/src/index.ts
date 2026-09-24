@@ -4,8 +4,11 @@ import type { ConversationData, VersionedState } from "@grammyjs/conversations";
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import {
   createAiQuotaStore,
+  createPaymentService,
   createSimulationStore,
+  createSubscriptionService,
   createTokenDraftService,
+  createWalletPaymentService,
   createWalletService,
   createWithdrawalService,
   prisma as defaultPrisma,
@@ -15,6 +18,7 @@ import type {
   PrismaClient,
   SimulationStore,
   TokenDraftService,
+  WalletPaymentService,
   WalletService,
   WithdrawalService,
 } from "@launchbot/db";
@@ -30,7 +34,10 @@ import type { Env, Service, TokenImageService } from "@launchbot/shared/server";
 import {
   assertDevnet,
   createKeyVault,
+  generateKeypair,
   generateMnemonicWallet,
+  getBalancesFresh,
+  getSolanaRpc,
   parsePrivateKey,
   parseSeedPhrase,
   rpcHost,
@@ -45,6 +52,7 @@ import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
 import { registerSimulation } from "./features/simulation/simulation.js";
 import { simTelegram } from "./features/simulation/telegram.js";
+import type { InvoicePayments } from "./features/subscribe/invoice.js";
 import { createSubscribe, registerSubscribe } from "./features/subscribe/subscribe.js";
 import { createTokenStep } from "./features/token-step/token-step.js";
 import { importConsumer } from "./features/wallets/import.js";
@@ -85,6 +93,8 @@ export function createBot(
     data?: DataServices;
     wallets?: WalletService;
     withdrawals?: WithdrawalService;
+    payments?: InvoicePayments;
+    walletPayments?: WalletPaymentService;
     drafts?: TokenDraftService;
     simulations?: SimulationStore;
     aiQuota?: AiQuotaStore;
@@ -115,15 +125,10 @@ export function createBot(
       vault,
       withdrawFeeBudgetLamports,
     });
+  const transfer = createTransferApi(env);
   const withdrawals =
     options.withdrawals ??
-    createWithdrawalService({
-      prisma,
-      balances: data,
-      transfer: createTransferApi(env),
-      vault,
-      withdrawFeeBudgetLamports,
-    });
+    createWithdrawalService({ prisma, balances: data, transfer, vault, withdrawFeeBudgetLamports });
   // Built here, not inside the section: the import input is consumed before the rate limit.
   const walletNav = createWalletNav({ ui, wallets, withdrawals, data });
   const providers = options.aiProviders ?? createAiProviders(env);
@@ -142,8 +147,25 @@ export function createBot(
   const images =
     options.images ??
     createTokenImageService(createTelegramFileClient({ botToken: env.BOT_TOKEN }));
-  // The offers (V1-29): the invoice (V1-30), Renew (V1-34) and Launch Coin (V1-35) open them.
-  const subscribe = createSubscribe({ ui, data, providers });
+  // The invoices (V1-28): the price of V1-07, a deposit read at `confirmed` on the connection
+  // the devnet guard verified, a new key per invoice encrypted by the one vault.
+  const rpc = getSolanaRpc(env.SOLANA_RPC_URL);
+  const payments =
+    options.payments ??
+    createPaymentService({
+      prisma,
+      subscriptions: createSubscriptionService({ prisma }),
+      getSolUsdPrice: data.getSolUsdPrice,
+      readLamports: (addresses) => getBalancesFresh(rpc, addresses),
+      generateKeypair,
+      vault,
+    });
+  const walletPayments =
+    options.walletPayments ??
+    createWalletPaymentService({ prisma, payments, balances: data, transfer, vault });
+  // The offers (V1-29) and the invoice (V1-30, V1-31): Renew (V1-34) and Launch Coin (V1-35)
+  // open the offers.
+  const subscribe = createSubscribe({ ui, data, providers, payments, walletPayments });
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
   // unlimited retry would stall every user, and would hang the startup instead of failing it.

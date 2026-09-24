@@ -31,6 +31,7 @@ export { createAiQuotaStore, nextUtcMidnight, startOfUtcDay } from "./services/a
 export type { AiQuotaDeps, AiQuotaReservation, AiQuotaStore } from "./services/ai-generations.js";
 export { createPaymentService } from "./services/payments.js";
 export type {
+  AwaitingCheck,
   CancelResult,
   CreateInvoiceResult,
   InvoiceCheck,
@@ -80,6 +81,21 @@ export type {
   WalletSummary,
   WalletVault,
 } from "./services/wallets.js";
+export { createWalletPaymentService } from "./services/wallet-payments.js";
+export type {
+  PayChoice,
+  PayChoices,
+  PayChoicesResult,
+  PayInFlight,
+  PayOptions,
+  PayOutcome,
+  PayQuote,
+  PayQuoteResult,
+  PayRefusal,
+  PayRequest,
+  WalletPaymentsDeps,
+  WalletPaymentService,
+} from "./services/wallet-payments.js";
 export { createWithdrawalService, resolveWithdrawAmount } from "./services/withdrawals.js";
 export type {
   TransferApi,

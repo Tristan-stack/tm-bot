@@ -12,12 +12,7 @@ import type { PlanStatus, SubscriptionPeriod } from "@launchbot/shared";
 import { describe, expect, it } from "vitest";
 import { botHarness, callbackUpdate, feed, telegramError } from "../../test-harness.js";
 import { MENU } from "../home/screen.js";
-import {
-  buildInvoiceSoonScreen,
-  buildOffersScreen,
-  buildUpgradeScreen,
-  SUB_CB,
-} from "./screens.js";
+import { buildOffersScreen, buildUpgradeScreen, SUB_CB } from "./screens.js";
 
 const ui = createUi("devnet");
 const NOW = new Date("2026-09-24T12:00:00Z");
@@ -128,7 +123,7 @@ describe("offers screen (§8.2)", () => {
   });
 });
 
-describe("warning Classic → Premium and provisional invoice", () => {
+describe("warning Classic → Premium", () => {
   it("says the Classic time is lost, then asks", () => {
     const screen = buildUpgradeScreen(ui, {
       offer: getOffer("PREMIUM", "ONE_MONTH"),
@@ -148,25 +143,6 @@ describe("warning Classic → Premium and provisional invoice", () => {
       [
         { text: "➡️ Continue", callback_data: "sub:up:P1M" },
         { text: "❌ Cancel", callback_data: "sub:open" },
-      ],
-    ]);
-  });
-
-  it("stands in for the invoice until V1-30", () => {
-    const screen = buildInvoiceSoonScreen(ui, getOffer("PREMIUM", "TWO_DAYS"));
-
-    expect(screen.text).toBe(
-      [
-        "<b>⭐ PREMIUM · 2 DAYS</b> · 🧪 Devnet",
-        "Invoices are not available yet.",
-        "💎 Plan: Premium · 2 days · $59",
-        "🚧 Payment in SOL arrives in the next update.",
-      ].join("\n\n"),
-    );
-    expect(screen.reply_markup.inline_keyboard).toEqual([
-      [
-        { text: "⬅️ Back", callback_data: "sub:open" },
-        { text: "🏠 Menu", callback_data: "nav:home" },
       ],
     ]);
   });
@@ -227,7 +203,7 @@ describe("offer clicks (§8.4)", () => {
 
     await feed(h.bot, callbackUpdate(SUB_CB.upgrade("P1M")));
     expect(h.screen()).toContain("<b>⭐ PREMIUM · 1 MONTH</b>");
-    expect(h.screen()).toContain("Invoices are not available yet.");
+    expect(h.screen()).toContain("Send exactly");
   });
 
   it.each([
@@ -239,7 +215,7 @@ describe("offer clicks (§8.4)", () => {
 
     await feed(h.bot, callbackUpdate(SUB_CB.buy(code)));
 
-    expect(h.screen()).toContain("Invoices are not available yet.");
+    expect(h.screen()).toContain("Send exactly");
     expect(h.api.of("answerCallbackQuery").at(-1)?.payload["show_alert"]).not.toBe(true);
   });
 
@@ -248,7 +224,8 @@ describe("offer clicks (§8.4)", () => {
 
     await feed(h.bot, callbackUpdate(SUB_CB.upgrade("P2D")));
 
-    expect(h.screen()).toContain("💎 Plan: Premium · 2 days · $59");
+    expect(h.screen()).toContain("<b>⭐ PREMIUM · 2 DAYS</b>");
+    expect(h.screen()).toContain("Send exactly");
   });
 
   it("shows the offers for an unknown offer code", async () => {

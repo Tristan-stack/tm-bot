@@ -86,9 +86,9 @@ export type TransferApi = {
   send: (
     request: TransferRequest,
     signer: SignerSource,
-    options: {
-      onPrepared: (quote: TransferQuote) => Promise<void>;
-      onSubmitted: (signature: string) => Promise<void>;
+    options?: {
+      onPrepared?: (quote: TransferQuote) => Promise<void>;
+      onSubmitted?: (signature: string) => Promise<void>;
     },
   ) => Promise<TxSuccess | TxFailure>;
   lookup: (signature: string) => Promise<SignatureOutcome>;
@@ -147,13 +147,26 @@ const failed = (value: TransferQuote | TxSuccess | TxFailure): value is TxFailur
 const errorText = (code: string, detail?: string): string =>
   `${code}${detail === undefined ? "" : `: ${detail}`}`.slice(0, WITHDRAWAL_ERROR_MAX_CHARS);
 
-/** The key columns leave the database into `send` only, which decrypts them to sign (§9.6). */
-const WALLET_SIGNER_SELECT = {
+/**
+ * The key columns leave the database into `send` only, which decrypts them to sign (§9.6): the
+ * withdrawal and the payment of an invoice from a wallet (V1-31).
+ */
+export const WALLET_SIGNER_SELECT = {
   ...WALLET_SUMMARY_SELECT,
   encSecretKey: true,
   iv: true,
   authTag: true,
 } as const;
+
+/**
+ * A send whose outcome was unknown can still land while it sits in a block, while the RPC does
+ * not answer, or while it is younger than the in-flight window: a blockhash lives about a
+ * minute, so past the window it never will. Nothing is signed over it until then.
+ */
+export const mayStillLand = (outcome: SignatureOutcome, ageMs: number): boolean =>
+  outcome.status === "processed" ||
+  outcome.status === "unavailable" ||
+  (outcome.status === "not_found" && ageMs < WITHDRAWAL_IN_FLIGHT_MS);
 
 export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalService {
   const { prisma, balances, transfer, vault, withdrawFeeBudgetLamports, now = Date.now } = deps;
@@ -186,15 +199,10 @@ export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalServic
         balances.invalidateUserBalances(userId);
         return withdrawal;
       }
-      case "not_found":
-        // A blockhash lives about a minute: past the in-flight window, it will never land.
-        return isStale(row)
-          ? update(row.id, { status: "FAILED", error: "BLOCKHASH_EXPIRED" })
-          : row;
-      case "processed":
-      case "unavailable":
-        // Still in a block, or no answer: nothing is decided, nothing is signed over it.
-        return row;
+      default:
+        return mayStillLand(outcome, now() - row.createdAt.getTime())
+          ? row
+          : update(row.id, { status: "FAILED", error: "BLOCKHASH_EXPIRED" });
     }
   }
 

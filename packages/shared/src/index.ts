@@ -32,4 +32,5 @@ export {
   isWalletReady,
   priorityFeeLamports,
   transferFeeLamports,
+  transferShortfall,
 } from "./wallets.js";
