@@ -45,6 +45,7 @@ import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
 import { registerSimulation } from "./features/simulation/simulation.js";
 import { simTelegram } from "./features/simulation/telegram.js";
+import { createSubscribe, registerSubscribe } from "./features/subscribe/subscribe.js";
 import { createTokenStep } from "./features/token-step/token-step.js";
 import { importConsumer } from "./features/wallets/import.js";
 import { createWalletNav } from "./features/wallets/nav.js";
@@ -141,6 +142,8 @@ export function createBot(
   const images =
     options.images ??
     createTokenImageService(createTelegramFileClient({ botToken: env.BOT_TOKEN }));
+  // The offers (V1-29): the invoice (V1-30), Renew (V1-34) and Launch Coin (V1-35) open them.
+  const subscribe = createSubscribe({ ui, data, providers });
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
   // unlimited retry would stall every user, and would hang the startup instead of failing it.
@@ -187,6 +190,7 @@ export function createBot(
     images,
   });
   tokenStep.mount(router, inputs);
+  registerSubscribe(router, subscribe);
   // Until the ticket of a section registers its domain.
   registerComingSoon(router, ui);
   // The message that answers an input a screen waits for: a name, an address, an amount.

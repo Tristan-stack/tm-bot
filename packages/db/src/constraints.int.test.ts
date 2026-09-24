@@ -3,7 +3,7 @@ import { createPrismaClient } from "./client.js";
 import { isUniqueViolation } from "./errors.js";
 import { Prisma } from "./generated/prisma/client.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
-import { resetTestDatabase, testWalletData } from "./test-db.js";
+import { resetTestDatabase, testPaymentData, testWalletData } from "./test-db.js";
 
 // Needs PostgreSQL (`pnpm db:up`). The launchbot_test database is dropped and rebuilt with
 // `prisma migrate deploy`, which also proves that the migrations apply to an empty database.
@@ -21,20 +21,16 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
 
   const createUser = () => prisma.user.create({ data: { telegramId: nextTelegramId++ } });
 
-  const paymentData = (userId: string, depositAddress: string) => ({
-    userId,
-    plan: "PREMIUM" as const,
-    duration: "TWO_DAYS" as const,
-    priceUsd: "59.00",
-    solUsdRate: "103.36000000",
-    expectedLamports: 570_820_434n,
-    depositAddress,
-    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-  });
+  const paymentData = testPaymentData;
 
-  const subscriptionData = (userId: string, paymentId: string | null) => ({
+  const subscriptionData = (
+    userId: string,
+    paymentId: string | null,
+    status: "ACTIVE" | "EXPIRED" = "ACTIVE",
+  ) => ({
     userId,
     paymentId,
+    status,
     plan: "PREMIUM" as const,
     duration: "TWO_DAYS" as const,
     startsAt: new Date(),
@@ -76,6 +72,7 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
         "Wallet_userId_name_key",
         "Wallet_userId_publicKey_key",
         "Subscription_paymentId_key",
+        "Subscription_userId_key",
         "Payment_depositAddress_key",
       ]),
     );
@@ -132,9 +129,10 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
     const user = await createUser();
     const payment = await prisma.payment.create({ data: paymentData(user.id, "DEPOSIT_RACE") });
 
+    // EXPIRED rows: only the paymentId index is under test here, not the one-active index.
     const results = await Promise.allSettled([
-      prisma.subscription.create({ data: subscriptionData(user.id, payment.id) }),
-      prisma.subscription.create({ data: subscriptionData(user.id, payment.id) }),
+      prisma.subscription.create({ data: subscriptionData(user.id, payment.id, "EXPIRED") }),
+      prisma.subscription.create({ data: subscriptionData(user.id, payment.id, "EXPIRED") }),
     ]);
 
     const rejected = results.filter((result) => result.status === "rejected");
@@ -142,8 +140,20 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
     expect(rejected).toHaveLength(1);
     expect(isUniqueViolation(rejected[0]?.reason, ["paymentId"])).toBe(true);
     // A manual /grant has no invoice: several rows without paymentId are fine.
-    await prisma.subscription.create({ data: subscriptionData(user.id, null) });
-    await prisma.subscription.create({ data: subscriptionData(user.id, null) });
+    await prisma.subscription.create({ data: subscriptionData(user.id, null, "EXPIRED") });
+    await prisma.subscription.create({ data: subscriptionData(user.id, null, "EXPIRED") });
+  });
+
+  it("keeps at most one ACTIVE subscription per user (V1-27)", async () => {
+    const [alice, bob] = [await createUser(), await createUser()];
+    await prisma.subscription.create({ data: subscriptionData(alice.id, null) });
+
+    await expect(
+      prisma.subscription.create({ data: subscriptionData(alice.id, null) }),
+    ).rejects.toSatisfy((error) => isUniqueViolation(error, ["userId"]));
+    // Expired rows do not count, and another user is free.
+    await prisma.subscription.create({ data: subscriptionData(alice.id, null, "EXPIRED") });
+    await prisma.subscription.create({ data: subscriptionData(bob.id, null) });
   });
 
   it("gives every invoice its own deposit address", async () => {

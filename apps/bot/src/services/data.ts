@@ -1,10 +1,11 @@
 import {
   createActiveSubscriberCounter,
   createBalancesService,
-  getSubscriptionSummary,
+  getPlanStatus,
   hasActivePremium,
 } from "@launchbot/db";
-import type { BalancesService, PrismaClient, SubscriptionSummary } from "@launchbot/db";
+import type { BalancesService, PrismaClient } from "@launchbot/db";
+import type { PlanStatus } from "@launchbot/shared";
 import type { Env } from "@launchbot/shared/server";
 import {
   createCoinGeckoProvider,
@@ -31,7 +32,8 @@ export type DataServicesDeps = {
 export type DataServices = BalancesService &
   SolUsdPrice &
   CurveParamsService & {
-    getSubscriptionSummary: (userId: string) => Promise<SubscriptionSummary>;
+    /** Never cached: an activation shows at once (home screen, offers screen). */
+    getPlanStatus: (userId: string) => Promise<PlanStatus>;
     /** AI Generate is Premium only (§5): the label of its button, and the click (V1-17). */
     hasActivePremium: (userId: string) => Promise<boolean>;
     countActiveSubscribers: () => Promise<number>;
@@ -54,7 +56,7 @@ export function createDataServices({ prisma, api, env }: DataServicesDeps): Data
       readLamports: (addresses) => getBalancesFresh(rpc, addresses),
     }),
     ...createSolUsdPrice({ provider: createCoinGeckoProvider(env.SOL_PRICE_API_URL) }),
-    getSubscriptionSummary: (userId) => getSubscriptionSummary(prisma, userId),
+    getPlanStatus: (userId) => getPlanStatus(prisma, userId),
     hasActivePremium: (userId) => hasActivePremium(prisma, userId),
     countActiveSubscribers: createActiveSubscriberCounter({ prisma }),
     getBotChannelMemberCount: createChannelMemberCounter({ api, channelId: env.CHANNEL_BOT_ID }),

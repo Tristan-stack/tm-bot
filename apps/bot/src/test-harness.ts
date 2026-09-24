@@ -495,7 +495,7 @@ export function fakeData(overrides: Partial<DataServices> = {}): DataServices {
         source: "global",
         fetchedAt: BALANCES_READ_AT,
       }),
-    getSubscriptionSummary: () => Promise.resolve({ active: null, lastExpired: null }),
+    getPlanStatus: () => Promise.resolve({ kind: "NONE" }),
     hasActivePremium: () => Promise.resolve(false),
     countActiveSubscribers: () => Promise.resolve(767),
     getBotChannelMemberCount: () => Promise.resolve(1248),

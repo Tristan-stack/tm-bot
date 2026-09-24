@@ -105,9 +105,8 @@ export const en = {
     /** `id` is already wrapped in <code> by the caller. */
     id: (id: string) => `${E.id} ${id}`,
     noSubscription: `${E.plan} No subscription`,
-    /** `remaining` comes from `formatRemaining`: `1d 4h left`, `until 12 Oct`. */
-    subscription: (plan: string, remaining: string) => `${E.plan} ${plan} · ${remaining}`,
-    subscriptionExpired: (plan: string) => `${E.plan} ${plan} ${E.warning} expired`,
+    /** `plan` comes from `planLabel`: `Premium · 1d 4h left`, `Classic ⚠️ expired`. */
+    subscription: (plan: string) => `${E.plan} ${plan}`,
     noWallet: `${E.wallets} No wallet yet`,
     // proposed text (D19): the singular
     wallets: (count: number, balance: string) =>
@@ -159,11 +158,6 @@ export const en = {
         title: `${E.simulate} SIMULATE A LAUNCH`,
         // proposed text (D19)
         description: "Simulate a live launch of your token. Free, no subscription needed.",
-      },
-      subscribe: {
-        title: `${E.subscribe} SUBSCRIBE`,
-        // proposed text (D19)
-        description: "Choose a plan to unlock Launch Coin.",
       },
       wallets: {
         title: `${E.wallets} WALLETS`,
@@ -601,6 +595,58 @@ export const en = {
     },
   },
 
+  // Subscribe (§8.2, §8.4, V1-29): the offers and the move from Classic to Premium. Plans,
+  // durations, prices and remaining times arrive formatted.
+  subscribe: {
+    title: `${E.subscribe} SUBSCRIBE`,
+    /** `⭐ PREMIUM · 2 DAYS`: the header of the screens of one offer (warning, invoice). */
+    offerTitle: (plan: string, duration: string) =>
+      `${E.subscribe} ${plan.toUpperCase()} · ${duration.toUpperCase()}`,
+    // proposed text (D19): §8.2 has no description, §4.5 wants one
+    description: "Choose a pass to unlock Launch Coin. Prices are in USD, paid in SOL.",
+    /** `plan` comes from `planLabel`, like on the home screen (§4.3). */
+    currentPlan: (plan: string) => `${E.currentPlan} Current plan: ${plan}`,
+    noPlan: "None",
+    classic: `${E.classic} CLASSIC`,
+    premium: `${E.premium} PREMIUM · Best value`,
+    planEmoji: { CLASSIC: E.classic, PREMIUM: E.premium } satisfies Record<Plan, string>,
+    /** `price` in whole dollars: `2 days · $49`. */
+    pass: (duration: string, price: string) => `${duration} · ${price}`,
+    /** `Premium · 2 days · $59` */
+    offer: (plan: string, duration: string, price: string) => `${plan} · ${duration} · ${price}`,
+    /** `🔹 Classic · 2 days`: the buttons of the offers. */
+    offerButton: (emoji: string, plan: string, duration: string) =>
+      `${emoji} ${plan} · ${duration}`,
+    premiumAdds: "Premium adds:",
+    /** The mention goes once an AI model is plugged in (§8.1, V1-17). */
+    aiGenerator: (modelAvailable: boolean) =>
+      modelAvailable
+        ? `${E.ok} AI token generator`
+        : `${E.ok} AI token generator (AI model coming soon)`,
+    upToWallets: (count: number) => `${E.ok} Up to ${formatInt(count)} wallets`,
+    prioritySupport: `${E.ok} Priority support`,
+    /** §8.4: the flag stays on the offers screen for as long as Premium is active. */
+    classicDuringPremium: {
+      alert: "You can switch to Classic when Premium expires.",
+      flag: "Classic: available when your Premium ends",
+    },
+    /** The note of the Launch Coin entry without a plan (§10.1, V1-35). */
+    launchCoinNeedsPlan: `${E.subscribe} Launch Coin needs an active subscription.`,
+    upgrade: {
+      warning: `${E.warning} Your remaining Classic time will be lost.`,
+      // proposed text (D19)
+      description: "Premium starts right away when your payment is received.",
+      // proposed text (D19)
+      newPlan: (emoji: string, offer: string) => `${emoji} New plan: ${offer}`,
+    },
+    // Provisional invoice screen, until V1-30. proposed texts (D19)
+    invoiceSoon: {
+      description: "Invoices are not available yet.",
+      plan: (emoji: string, offer: string) => `${emoji} Plan: ${offer}`,
+      flag: `${E.construction} Payment in SOL arrives in the next update.`,
+    },
+  },
+
   // Sending a transaction (§10.2, V1-13): one text per `TxFailure` code, for the withdrawal
   // (V1-14), Pay from my wallet (V1-31) and the V2. Amounts arrive formatted, and the screen
   // adds its own emoji: the same failure is a flag on one screen and a result line on another.
@@ -640,6 +686,13 @@ export const en = {
     TWO_DAYS: "2 days",
     ONE_MONTH: "1 month",
   } satisfies Record<Duration, string>,
+
+  /** A plan and its time left (§4.3): the home screen and the offers screen (`planLabel`). */
+  planStatus: {
+    /** `remaining` comes from `formatRemaining`: `1d 4h left`, `until 12 Oct`. */
+    active: (plan: string, remaining: string) => `${plan} · ${remaining}`,
+    expired: (plan: string) => `${plan} ${E.warning} expired`,
+  },
 
   remaining: {
     until: (dayMonth: string) => `until ${dayMonth}`,

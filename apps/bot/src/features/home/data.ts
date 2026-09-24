@@ -1,19 +1,14 @@
 import type { User } from "@launchbot/db";
 import { isWalletReady } from "@launchbot/shared";
-import type { Plan } from "@launchbot/shared";
+import type { PlanStatus } from "@launchbot/shared";
 import type { DataServices } from "../../services/data.js";
-
-export type HomeSubscription =
-  | { kind: "none" }
-  | { kind: "active"; plan: Plan; expiresAt: Date }
-  | { kind: "expired"; plan: Plan };
 
 /** Everything the home screen shows (§4.3): `buildHomeScreen` reads nothing else. */
 export type HomeData = {
   username: string | null;
   firstName: string | null;
   telegramId: bigint;
-  subscription: HomeSubscription;
+  subscription: PlanStatus;
   wallets: {
     count: number;
     /** `null`: the RPC is down and no balance of these wallets was ever read. */
@@ -33,7 +28,7 @@ export type HomeData = {
 export type HomeSources = Pick<
   DataServices,
   | "getUserBalances"
-  | "getSubscriptionSummary"
+  | "getPlanStatus"
   | "getBotChannelMemberCount"
   | "countActiveSubscribers"
   | "getSolUsdPrice"
@@ -44,7 +39,7 @@ export type NextStep = "create_wallet" | "subscribe" | "fund_wallet" | "all_set"
 /** §4.3: the first case that holds, in this order. Unknown balances are not ready. */
 export function computeNextStep(data: Pick<HomeData, "wallets" | "subscription">): NextStep {
   if (data.wallets.count === 0) return "create_wallet";
-  if (data.subscription.kind !== "active") return "subscribe";
+  if (data.subscription.kind !== "ACTIVE") return "subscribe";
   if (!data.wallets.hasReadyWallet) return "fund_wallet";
   return "all_set";
 }
@@ -58,22 +53,14 @@ export async function loadHomeData(
   user: User,
   options: { skipBalanceCache: boolean; now?: Date },
 ): Promise<HomeData> {
-  const [balances, summary, botChannelMembers, activeSubscribers, solUsd] = await Promise.all([
+  const [balances, subscription, botChannelMembers, activeSubscribers, solUsd] = await Promise.all([
     sources.getUserBalances(user.id, { skipCache: options.skipBalanceCache }),
-    sources.getSubscriptionSummary(user.id),
+    sources.getPlanStatus(user.id),
     sources.getBotChannelMemberCount(),
     sources.countActiveSubscribers(),
     // Never forced, even by a Refresh: the price stays cached 60 s for everyone (§4.4).
     sources.getSolUsdPrice(),
   ]);
-
-  // An active subscription always wins over an older one that expired.
-  const subscription: HomeSubscription =
-    summary.active !== null
-      ? { kind: "active", plan: summary.active.plan, expiresAt: summary.active.expiresAt }
-      : summary.lastExpired !== null
-        ? { kind: "expired", plan: summary.lastExpired.plan }
-        : { kind: "none" };
 
   return {
     username: user.username,

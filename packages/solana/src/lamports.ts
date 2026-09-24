@@ -1,8 +1,6 @@
+import { chunk, MAX_ACCOUNTS_PER_READ } from "@launchbot/shared";
 import { PublicKey } from "@solana/web3.js";
 import type { Commitment, Connection } from "@solana/web3.js";
-
-/** Limit of `getMultipleAccountsInfo`. */
-const ACCOUNTS_PER_CALL = 100;
 
 export type BalancesReader = Pick<Connection, "getMultipleAccountsInfo">;
 
@@ -16,15 +14,11 @@ export async function getBalancesFresh(
   addresses: readonly string[],
   commitment?: Commitment,
 ): Promise<Map<string, bigint>> {
-  const chunks: string[][] = [];
-  for (let start = 0; start < addresses.length; start += ACCOUNTS_PER_CALL) {
-    chunks.push(addresses.slice(start, start + ACCOUNTS_PER_CALL));
-  }
   const accounts = (
     await Promise.all(
-      chunks.map((chunk) =>
+      chunk(addresses, MAX_ACCOUNTS_PER_READ).map((slice) =>
         rpc.getMultipleAccountsInfo(
-          chunk.map((address) => new PublicKey(address)),
+          slice.map((address) => new PublicKey(address)),
           commitment,
         ),
       ),

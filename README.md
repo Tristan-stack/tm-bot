@@ -117,14 +117,14 @@ Schéma Prisma : [packages/db/prisma/schema.prisma](packages/db/prisma/schema.pr
 §13, plus la table `Session` que grammY utilise). Le client généré (`packages/db/src/generated/`) n'est pas commité : `pnpm install` lance
 `prisma generate`, qui ne demande ni base ni `.env`.
 
-| Script             | Rôle                                                                     |
-| ------------------ | ------------------------------------------------------------------------ |
-| `pnpm db:generate` | régénère le client après une modification du schéma                      |
-| `pnpm db:migrate`  | `prisma migrate dev` : crée et applique une migration (dev)              |
-| `pnpm db:deploy`   | `prisma migrate deploy` : applique les migrations commitées              |
-| `pnpm db:reset`    | vide la base de dev et rejoue tout (confirmation dans un terminal)       |
-| `pnpm db:seed`     | seed de dev idempotent : un utilisateur Premium et un brouillon de token |
-| `pnpm db:studio`   | Prisma Studio                                                            |
+| Script             | Rôle                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `pnpm db:generate` | régénère le client après une modification du schéma                                            |
+| `pnpm db:migrate`  | `prisma migrate dev` : crée et applique une migration (dev)                                    |
+| `pnpm db:deploy`   | `prisma migrate deploy` : applique les migrations commitées                                    |
+| `pnpm db:reset`    | vide la base de dev et rejoue tout (confirmation dans un terminal)                             |
+| `pnpm db:seed`     | seed de dev idempotent : un utilisateur Premium et un brouillon de token (voir « Abonnement ») |
+| `pnpm db:studio`   | Prisma Studio                                                                                  |
 
 Ces scripts lisent `DATABASE_URL` dans le `.env` racine. Chaque ticket ajoute sa propre migration.
 Prisma ne sait pas exprimer une contrainte CHECK : elle s'écrit à la main dans une migration SQL
@@ -902,14 +902,14 @@ Les lectures derrière l'accueil et les écrans suivants, sans aucun affichage. 
 ([apps/bot/src/services/data.ts](apps/bot/src/services/data.ts)) les assemble, une instance par
 process : les caches (§4.3) vivent dedans, en mémoire.
 
-| Service                                                             | Où                  | Cache                                        |
-| ------------------------------------------------------------------- | ------------------- | -------------------------------------------- |
-| `getSolUsdPrice`, `getSolUsdQuote`                                  | `@launchbot/solana` | 60 s, échecs compris ; repli 10 min          |
-| `getUserBalances(userId, { skipCache? })`                           | `@launchbot/db`     | 30 s par utilisateur                         |
-| `countActiveSubscribers`                                            | `@launchbot/db`     | 60 s                                         |
-| `getBotChannelMemberCount`                                          | `apps/bot`          | 10 min ; en erreur, dernière valeur connue   |
-| `getActiveSubscription`, `getSubscriptionSummary`, `getWalletQuota` | `@launchbot/db`     | aucun : une activation se voit tout de suite |
-| `getBalancesFresh(rpc, addresses)`                                  | `@launchbot/solana` | aucun : contrôles internes, un appel groupé  |
+| Service                                                    | Où                  | Cache                                        |
+| ---------------------------------------------------------- | ------------------- | -------------------------------------------- |
+| `getSolUsdPrice`, `getSolUsdQuote`                         | `@launchbot/solana` | 60 s, échecs compris ; repli 10 min          |
+| `getUserBalances(userId, { skipCache? })`                  | `@launchbot/db`     | 30 s par utilisateur                         |
+| `countActiveSubscribers`                                   | `@launchbot/db`     | 60 s                                         |
+| `getBotChannelMemberCount`                                 | `apps/bot`          | 10 min ; en erreur, dernière valeur connue   |
+| `getActiveSubscription`, `getPlanStatus`, `getWalletQuota` | `@launchbot/db`     | aucun : une activation se voit tout de suite |
+| `getBalancesFresh(rpc, addresses)`                         | `@launchbot/solana` | aucun : contrôles internes, un appel groupé  |
 
 - **Prix SOL/USD (D11)** : CoinGecko Simple Price, sans clé, un appel par minute au plus — y compris
   quand l'API est en panne. En échec, le dernier prix connu sert pendant 10 min (âge recalculé à
@@ -969,6 +969,90 @@ le canal du bot, `getChatMember` échoue et **personne ne passe l'écran 2**.
 Rejouer le premier accès avec son propre compte : remettre `termsVersion` et `channelCheckedAt` à
 `NULL` sur sa ligne `User` (`pnpm db:studio`), ou passer `TERMS_VERSION=2` après avoir ajouté la date
 de la version 2 dans [packages/shared/src/legal.ts](packages/shared/src/legal.ts).
+
+## Abonnement
+
+Règles pures dans `packages/shared/src/subscription/` (sans Prisma : bot, worker et builders
+d'écrans les lisent), partie base dans `packages/db/src/services/` (`subscriptions.ts`,
+`payments.ts`), écrans dans `apps/bot/src/features/subscribe/`.
+
+Seed de dev pour les variantes de l'écran des offres : `pnpm db:seed` donne un Premium qui finit
+dans 28 h ; `SEED_PLAN=CLASSIC` un Classic, `SEED_HOURS=200` une fin au-delà de 72 h
+(« until 12 Oct »), `SEED_HOURS=-1` un abonnement expiré. Sous PowerShell :
+`$env:SEED_PLAN="CLASSIC"; pnpm db:seed`. L'utilisateur est le premier id de `ADMIN_TELEGRAM_IDS`.
+
+### Écran des offres (V1-29)
+
+`createSubscribe({ ui, data, providers })` + `registerSubscribe(router, subscribe)`
+([subscribe.ts](apps/bot/src/features/subscribe/subscribe.ts)), écrans purs dans
+[screens.ts](apps/bot/src/features/subscribe/screens.ts). Remplace l'écran provisoire `sub` de V1-08.
+
+- **Offres (§8.2)** : `📋 Current plan: None`, `Premium · 1d 4h left` (sous 72 h),
+  `Classic · until 12 Oct`, `Classic ⚠️ expired` : `planLabel` (`@launchbot/shared`), le même
+  libellé que l'accueil, sur le même `PlanStatus` (`data.getPlanStatus`) ; blocs `🔹 CLASSIC` et
+  `💎 PREMIUM · Best value` en arbre, prix entiers (`$49`) ; « Premium adds: » avec `(AI model
+coming soon)` tant que `isAiModelAvailable(providers)` est faux et « Up to 10 wallets » lu dans
+  `getPlanFeatures`. Flags au-dessus du clavier : `Classic: available when your Premium ends`
+  quand `decidePurchase` refuserait Classic, puis ceux des appelants (prix indisponible en V1-30,
+  `en.subscribe.launchCoinNeedsPlan` en V1-35). Description proposée (D19).
+- **Clic sur une offre** (`sub:buy:<code>`) : l'abonnement est relu en base puis `decidePurchase` :
+  Classic pendant Premium → alerte « You can switch to Classic when Premium expires. » et l'écran
+  des offres (une édition identique est ignorée) ; Classic → Premium → écran d'avertissement
+  `⚠️ Your remaining Classic time will be lost.` avec `➡️ Continue` (`sub:up:<code>`, règles
+  relues, pas de second avertissement) et `❌ Cancel` (`sub:open`) ; sinon (nouveau plan,
+  prolongation) → `openInvoiceForOffer`, écran provisoire jusqu'à V1-30.
+- Aucune session : l'offre voyage dans la callback data (`C2D`, `C1M`, `P2D`, `P1M`, lus par
+  `parseOfferCode` ; un code inconnu ramène aux offres).
+- Fournit : `showOffersScreen(ctx, { mode?, flags? })`, `chooseOffer` (le « New invoice » de
+  V1-30), `continueUpgrade`, `openInvoiceForOffer`.
+
+### Factures (V1-28)
+
+`createPaymentService({ prisma, subscriptions, getSolUsdPrice, readLamports, generateKeypair,
+vault })` : `createInvoice`, `getInvoice`, `checkInvoice`, `checkInvoiceWithBalance`,
+`checkInvoicesBatch`, `listInvoicesToCheck`, `cancelInvoice`, `expireDueInvoices`. Le service ne
+déchiffre jamais la clé de dépôt et ne la lit pas (`omit`) : `InvoiceRow` et `InvoiceView` n'en
+ont pas.
+
+- **Création** : règles de V1-27 (`PLAN_SWITCH_REFUSED`), facture PENDING de la même offre rendue
+  telle quelle (`reused`), sinon prix V1-07 (`PRICE_UNAVAILABLE` : aucune ligne), taux gardé à
+  8 décimales comme la colonne, `computeExpectedLamports` en entiers (arrondi au lamport
+  supérieur : $59 à 103.36 → 570 820 434), keypair neuve chiffrée par le coffre, 30 minutes.
+  Limite D17 (`RATE_LIMITS.invoice`, 5 par 10 min) comptée en base, sous le verrou advisory par
+  utilisateur (`lockUserScope(tx, "invoice", userId)`, le même helper que wallets et IA) qui
+  sérialise aussi la réutilisation.
+- **Montant affiché** : `formatSol(lamports, { decimals: 4, rounding: "ceil" })`, 4 décimales
+  arrondies vers le haut (« 0.5709 SOL »), jamais sous le montant attendu (DEC-06, validé le
+  24/09/2026).
+- **Vérification** (§8.3) : `decideInvoice`, `effectiveStatus`, `acceptanceDeadline` et `isPaid`
+  (purs, `packages/shared/src/subscription/invoice.ts`) sur le solde du dépôt ; paiement complet
+  jusqu'à 24 h après l'expiration ou l'annulation → activation par V1-27 dans la même transaction
+  que `receivedLamports` (`activatedNow` pour le seul processus qui a activé), au-delà
+  `LATE_FULL_PAYMENT` ; partiel → `PARTIAL` puis `PARTIAL_EXPIRED` ; compte purgé →
+  `ORPHAN_PAYMENT`, sans transaction. Expiration paresseuse d'une facture PENDING échue.
+- **Lecture groupée** : `readLamports` (`getBalancesFresh`, commitment confirmed, sans cache) par
+  paquets de `MAX_ACCOUNTS_PER_READ` (100, `chunk` de `@launchbot/shared`) ; un paquet en erreur
+  n'emporte que ses factures. Pour V1-32 : `listInvoicesToCheck` borne aussi les factures
+  annulées par `expiresAt`, ce qui garde l'index `(status, expiresAt)` utile.
+
+### Domaine abonnement (V1-27)
+
+- `packages/shared/src/subscription/` : catalogue (`listOffers`, `getOffer`, `parseOfferCode`),
+  `decidePurchase(current, plan)` → `NEW` / `EXTEND` / `UPGRADE` / `REFUSED`,
+  `computeActivation` (mode PAYMENT ou GRANT), `getPlanFeatures` (3 / 5 / 10 wallets, AI et
+  support prioritaire en Premium, Launch Coin avec un plan), `PlanStatus` + `planLabel`.
+- `createSubscriptionService({ prisma })` : `activateFromPayment(paymentId, now, tx?)`, **seul
+  code qui passe une facture en PAID** — verrou de la facture puis de l'utilisateur, réclamation
+  conditionnelle, lignes échues expirées, règle réévaluée à l'instant ; `ALREADY_ACTIVATED`
+  n'écrit ni ne relit rien ; `grantSubscription` et `previewGrant` (V1-42) ;
+  `expireDueSubscriptions` (V1-34). Lectures : `getPlanStatus` (une requête : la ligne qui finit
+  en dernier), `hasActiveSubscription` et `hasActivePremium` (tous deux par `getPlanFeatures`).
+- Une ligne par période continue d'une offre : une prolongation déplace `expiresAt` et met
+  `duration` au dernier pass (préavis de V1-34). Classic → Premium : le Classic finit à l'instant
+  (EXPIRED). Classic payé pendant un Premium : le Premium est prolongé (`EXTEND_PREMIUM`, validé le
+  24/09/2026). Index unique partiel `Subscription_userId_key` : au plus une ligne ACTIVE par
+  utilisateur. Le client Prisma accepte `userId` comme clé unique (`findUnique`, `update`,
+  `upsert`, `delete`) mais ignore la condition : ne jamais s'en servir.
 
 ## Mini App
 
@@ -1384,3 +1468,6 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 24/09/2026 | **PNL card animée sur un clip, composée par `ffmpeg-static`** (V1-25, demande de Tristan après son premier test). La carte suit sa maquette (ticker, pastille verte ou rouge avec le glyphe Solana, PNL / Invested / Position) et se pose sur un clip d'animation qu'il a fourni ; Telegram reçoit un MP4 muet en `editMessageMedia` `animation`, joué en boucle. Le clip (1,8 MB, prétraité une fois : sans son, 30 fps, 1280 × 944) vit dans `packages/sim-render/assets/`. `ffmpeg-static` (GPL, binaire par plateforme téléchargé à l'installation, ≈ 80 MB) lance ffmpeg en sous-processus une fois par simulation, ≈ 1,7 s ; l'image de déploiement devra le laisser s'installer (`pnpm install` sans `--ignore-scripts`). Avant la carte, le dernier graphique (la bougie de la vente de clôture) reste 2 s (`SIM_END_HOLD_MS`). |
 | 24/09/2026 | **Images de simulation : SVG écrit en TypeScript, rasterisé par `@resvg/resvg-js` 2.6.2 avec la police Inter embarquée** (V1-25, `packages/sim-render`). Le SVG se teste comme du texte (classes, libellés, géométrie), resvg est un binaire précompilé par plateforme sans dépendance système, et la police du dépôt rend les PNG identiques partout (`loadSystemFonts: false`). Écartés : `@napi-rs/canvas` (API impérative, tests sur des pixels) et `sharp` (rendu SVG via librsvg et fontconfig, police selon la machine). `fontBuffers` n'existe pas en 2.6.2 : les fichiers sont relus à chaque rendu, ≈ 52 ms par image de 36 bougies au total. |
 | 23/09/2026 | **`@pump-fun/pump-sdk` 2.0.0 (version figée) chargé en CommonJS** via `createRequire` (V1-21) : son build ESM importe `BN` en export nommé de `@coral-xyz/anchor`, que Node et `tsx` refusent. `@types/bn.js` en devDependency. Le `Global` du devnet (1 SOL de réserves virtuelles, 30 sur mainnet) est rejeté par le service de curve : les simulations suivent le tableau §7.1 tant que le compte lu n'est pas cohérent avec le produit (un dev buy de 20 SOL ne doit pas compléter la curve à t = 0). |
+| 24/09/2026 | **Index unique partiel déclaré dans le schéma avec la preview Prisma `partialIndexes`** (V1-27) : `@@unique([userId], where: raw("status = 'ACTIVE'"))`, au plus un abonnement actif par utilisateur. Écrit à la main dans une migration, l'index aurait été vu comme une dérive et supprimé au prochain `migrate dev` ; déclaré, `migrate diff` reste vide. Revers : le client généré accepte `userId` dans un `findUnique` sans la condition, à ne jamais utiliser. |
+| 24/09/2026 | **Montants de facture en entiers, sans decimal.js** (V1-28) : le taux SOL/USD est d'abord arrondi à 8 décimales, celles de la colonne, puis `lamports = ceil(cents × 10^15 / taux × 10^8)` en `bigint`. Le montant attendu se recalcule donc à l'identique depuis la ligne. L'écran l'arrondit vers le haut à 4 décimales (`formatSol(x, { decimals: 4, rounding: "ceil" })`) : qui envoie le montant affiché n'est jamais en paiement partiel (DEC-06, validé le 24/09/2026). |
+| 24/09/2026 | **Limite de création de factures comptée en base** (V1-28), pas dans le compteur mémoire du bot : les factures créées par l'utilisateur depuis 10 minutes, sous un verrou advisory par utilisateur qui sérialise aussi la réutilisation d'une facture ouverte. La limite tient aux redémarrages et le service reste utilisable hors du bot. |

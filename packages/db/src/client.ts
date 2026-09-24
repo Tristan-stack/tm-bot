@@ -7,6 +7,14 @@ import type { Prisma } from "./generated/prisma/client.js";
 export type Db = Prisma.TransactionClient;
 
 /**
+ * One transaction at a time per user and scope (`wallet`, `ai`, `invoice`): an advisory lock
+ * held until the transaction ends. `$queryRaw` fails on the void column: `$executeRaw` it is.
+ */
+export async function lockUserScope(tx: Db, scope: string, userId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${scope}:${userId}`}))`;
+}
+
+/**
  * Query logging is never enabled: query parameters hold encSecretKey, iv, authTag and
  * encMnemonic.
  */

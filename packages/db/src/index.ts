@@ -8,7 +8,7 @@
  */
 export const PACKAGE_NAME = "@launchbot/db";
 
-export { createPrismaClient, disconnectPrisma, prisma } from "./client.js";
+export { createPrismaClient, disconnectPrisma, lockUserScope, prisma } from "./client.js";
 export { isUniqueViolation } from "./errors.js";
 export { createBalancesService, readFreshWallet } from "./services/balances.js";
 export type {
@@ -20,13 +20,25 @@ export type {
 } from "./services/balances.js";
 export {
   createActiveSubscriberCounter,
+  createSubscriptionService,
   getActiveSubscription,
-  getSubscriptionSummary,
+  getPlanStatus,
   getWalletQuota,
   hasActivePremium,
+  hasActiveSubscription,
 } from "./services/subscriptions.js";
 export { createAiQuotaStore, nextUtcMidnight, startOfUtcDay } from "./services/ai-generations.js";
 export type { AiQuotaDeps, AiQuotaReservation, AiQuotaStore } from "./services/ai-generations.js";
+export { createPaymentService } from "./services/payments.js";
+export type {
+  CancelResult,
+  CreateInvoiceResult,
+  InvoiceCheck,
+  InvoiceRow,
+  InvoiceView,
+  PaymentsDeps,
+  PaymentService,
+} from "./services/payments.js";
 export { createSimulationStore } from "./services/simulations.js";
 export type {
   NewSimulation,
@@ -42,8 +54,11 @@ export type {
   TokenDraftService,
 } from "./services/token-drafts.js";
 export type {
+  ActivationResult,
+  ExpiredSubscription,
+  GrantResult,
   SubscriptionInfo,
-  SubscriptionSummary,
+  SubscriptionService,
   WalletQuota,
 } from "./services/subscriptions.js";
 export { acceptTerms, setChannelCheckedAt, touchUser } from "./services/user.js";

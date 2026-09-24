@@ -5,10 +5,10 @@ import {
   en,
   encodeCallback,
   escapeHtml,
-  formatRemaining,
   formatSolPrice,
   formatSolWithUsd,
   formatTimeUtc,
+  planLabel,
   renderScreen,
   tree,
 } from "@launchbot/shared";
@@ -37,13 +37,8 @@ export type HomeEnv = Pick<
 >;
 
 function subscriptionLine({ subscription, now }: HomeData): string {
-  if (subscription.kind === "none") return en.home.noSubscription;
-  const plan = en.plans[subscription.plan];
-  const remaining =
-    subscription.kind === "active" ? formatRemaining(subscription.expiresAt, now) : null;
-  return remaining === null
-    ? en.home.subscriptionExpired(plan)
-    : en.home.subscription(plan, remaining);
+  const label = planLabel(subscription, now);
+  return label === null ? en.home.noSubscription : en.home.subscription(label);
 }
 
 function walletsLine({ wallets, solUsd }: HomeData): string {

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { loadDotenvOnce } from "@launchbot/shared/server";
 import type { TransferQuote } from "@launchbot/solana";
 import { createPrismaClient } from "./client.js";
-import type { PrismaClient } from "./generated/prisma/client.js";
+import type { Prisma, PrismaClient } from "./generated/prisma/client.js";
 
 /** Matches docker-compose.yml: used when no .env exists yet. */
 const DEFAULT_DATABASE_URL = "postgresql://launchbot:launchbot@localhost:5440/launchbot";
@@ -72,6 +72,26 @@ export const testWalletData = (userId: string, name: string, publicKey: string) 
   encSecretKey: new Uint8Array([1, 2, 3]),
   iv: new Uint8Array([4, 5]),
   authTag: new Uint8Array([6]),
+});
+
+/**
+ * A `Payment` row without key material: $59 at $103.36 (570 820 434 lamports, §8.3), pending
+ * for 30 minutes from the real clock. `overrides` sets what the test is about.
+ */
+export const testPaymentData = (
+  userId: string | null,
+  depositAddress: string,
+  overrides: Partial<Prisma.PaymentUncheckedCreateInput> = {},
+) => ({
+  userId,
+  plan: "PREMIUM" as const,
+  duration: "TWO_DAYS" as const,
+  priceUsd: "59.00",
+  solUsdRate: "103.36",
+  expectedLamports: 570_820_434n,
+  depositAddress,
+  expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+  ...overrides,
 });
 
 /** A quote of V1-13 as the withdrawal tests need one: 540 units at 1 000 µL, 5 001 lamports. */

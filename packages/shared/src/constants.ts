@@ -19,6 +19,8 @@ export const PLAN_DURATION_MS = {
   ONE_MONTH: 30 * DAY_MS,
 } as const satisfies Record<Duration, number>;
 export const INVOICE_TTL_MS = 30 * MINUTE_MS;
+/** `Payment.solUsdRate` is a `Decimal(18, 8)`: the rate of an invoice is kept to 8 decimals. */
+export const SOL_USD_RATE_DECIMALS = 8;
 export const LATE_PAYMENT_TOLERANCE_MS = 24 * HOUR_MS;
 export const PAYMENT_CHECK_INTERVAL_MS = 15 * SECOND_MS;
 export const DEPOSIT_WATCH_MS = 30 * DAY_MS;
@@ -70,6 +72,8 @@ export const BASE_FEE_LAMPORTS = 5_000n;
 /** A transfer with compute budget instructions uses a few hundred units: a deliberate ceiling. */
 export const TRANSFER_COMPUTE_UNIT_LIMIT = 1_000;
 export const MICROLAMPORTS_PER_LAMPORT = 1_000_000;
+/** Limit of `getMultipleAccountsInfo`: the grouped balance reads (V1-07, V1-28) go by this. */
+export const MAX_ACCOUNTS_PER_READ = 100;
 
 // Sending transactions (§12, V1-13). Every amount is in lamports.
 /** Ceiling of one transaction, imposed by the Compute Budget program. */

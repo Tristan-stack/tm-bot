@@ -1,4 +1,5 @@
 import type { UserBalances } from "@launchbot/db";
+import type { PlanStatus } from "@launchbot/shared";
 import {
   createUi,
   en,
@@ -31,12 +32,22 @@ import { buildHomeScreen, MENU } from "./screen.js";
 const ui = createUi("devnet");
 const NOW = new Date("2026-09-21T14:40:00Z");
 
+const plan = (
+  kind: "ACTIVE" | "EXPIRED",
+  name: "CLASSIC" | "PREMIUM",
+  expiresAt: Date,
+): PlanStatus => ({
+  kind,
+  subscription: { plan: name, duration: "ONE_MONTH", startsAt: NOW, expiresAt },
+});
+const EXPIRED_CLASSIC = plan("EXPIRED", "CLASSIC", NOW);
+
 /** The user of §4.3: two wallets, no subscription. */
 const home = (overrides: Partial<HomeData> = {}): HomeData => ({
   username: "username",
   firstName: "Tristan",
   telegramId: 123456789n,
-  subscription: { kind: "none" },
+  subscription: { kind: "NONE" },
   wallets: { count: 2, totalLamports: 4_250_000_000n, hasReadyWallet: true },
   botChannelMembers: 1248,
   activeSubscribers: 767,
@@ -94,15 +105,7 @@ describe("buildHomeScreen", () => {
 
   it("shows the time left under 72 h, and the end date from 72 h", () => {
     const active = (msLeft: number) =>
-      textOf(
-        home({
-          subscription: {
-            kind: "active",
-            plan: "PREMIUM",
-            expiresAt: new Date(NOW.getTime() + msLeft),
-          },
-        }),
-      );
+      textOf(home({ subscription: plan("ACTIVE", "PREMIUM", new Date(NOW.getTime() + msLeft)) }));
 
     expect(active(72 * HOUR_MS - 60_000)).toContain("├ ⭐ Premium · 2d 23h left");
     expect(active(28 * HOUR_MS)).toContain("├ ⭐ Premium · 1d 4h left");
@@ -110,7 +113,7 @@ describe("buildHomeScreen", () => {
   });
 
   it("flags an expired subscription", () => {
-    const text = textOf(home({ subscription: { kind: "expired", plan: "CLASSIC" } }));
+    const text = textOf(home({ subscription: EXPIRED_CLASSIC }));
 
     expect(text).toContain("├ ⭐ Classic ⚠️ expired");
   });
@@ -180,7 +183,7 @@ describe("buildHomeScreen", () => {
 
 describe("computeNextStep", () => {
   const step = (overrides: Partial<HomeData>) => computeNextStep(home(overrides));
-  const active = { kind: "active", plan: "CLASSIC", expiresAt: NOW } as const;
+  const active = plan("ACTIVE", "CLASSIC", NOW);
   const noWallet = { count: 0, totalLamports: 0n, hasReadyWallet: false };
   const unfunded = { count: 1, totalLamports: 0n, hasReadyWallet: false };
   const funded = { count: 1, totalLamports: LAMPORTS_PER_SOL * 2n, hasReadyWallet: true };
@@ -192,9 +195,7 @@ describe("computeNextStep", () => {
 
   it("then for a subscription, an expired one included", () => {
     expect(step({ wallets: funded })).toBe("subscribe");
-    expect(step({ wallets: funded, subscription: { kind: "expired", plan: "CLASSIC" } })).toBe(
-      "subscribe",
-    );
+    expect(step({ wallets: funded, subscription: EXPIRED_CLASSIC })).toBe("subscribe");
   });
 
   it("then for funds, unknown balances counting as not ready", () => {
@@ -247,33 +248,11 @@ describe("loadHomeData", () => {
     expect(data.wallets).toEqual({ count: 1, totalLamports: null, hasReadyWallet: false });
   });
 
-  it("prefers the active subscription to an older one that expired", async () => {
-    const expiresAt = new Date(NOW.getTime() + HOUR_MS);
-    const subscription = { id: "s1", duration: "ONE_MONTH", startsAt: NOW, expiresAt } as const;
-    const data = await load({
-      getSubscriptionSummary: () =>
-        Promise.resolve({
-          active: { ...subscription, plan: "PREMIUM" },
-          lastExpired: { ...subscription, plan: "CLASSIC" },
-        }),
-    });
+  it("shows the plan status as the database reads it (V1-27)", async () => {
+    const premium = plan("ACTIVE", "PREMIUM", new Date(NOW.getTime() + HOUR_MS));
+    const data = await load({ getPlanStatus: () => Promise.resolve(premium) });
 
-    expect(data.subscription).toEqual({ kind: "active", plan: "PREMIUM", expiresAt });
-  });
-
-  it("reports the last expired subscription when none is active", async () => {
-    const expired = {
-      id: "s1",
-      plan: "CLASSIC",
-      duration: "TWO_DAYS",
-      startsAt: NOW,
-      expiresAt: NOW,
-    } as const;
-    const data = await load({
-      getSubscriptionSummary: () => Promise.resolve({ active: null, lastExpired: expired }),
-    });
-
-    expect(data.subscription).toEqual({ kind: "expired", plan: "CLASSIC" });
+    expect(data.subscription).toBe(premium);
   });
 });
 
@@ -387,7 +366,7 @@ describe("provisional screens", () => {
   const SECTIONS: [ComingSoonSection, string, string][] = [
     ["launch", "<b>🚀 LAUNCH COIN</b> · 🧪 Devnet", MENU.launchCoin],
     // simulate: the Token step since V1-16, tested in features/token-step.
-    ["subscribe", "<b>⭐ SUBSCRIBE</b> · 🧪 Devnet", MENU.subscribe],
+    // subscribe: the offers screen since V1-29, tested in features/subscribe.
     // wallets: delivered by V1-10, tested in features/wallets.
     ["support", "<b>🆘 SUPPORT</b> · 🧪 Devnet", MENU.support],
   ];

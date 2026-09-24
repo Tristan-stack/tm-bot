@@ -9,6 +9,8 @@ generator client {
   moduleFormat           = "esm"
   generatedFileExtension = "ts"
   importFileExtension    = "js"
+  // Partial unique index of Subscription (V1-27): one ACTIVE subscription per user.
+  previewFeatures        = ["partialIndexes"]
 }
 
 datasource db {
@@ -105,6 +107,10 @@ model Subscription {
   @@index([status, expiresAt])
   // Active subscription of a user (V1-07)
   @@index([userId, status])
+  // At most one ACTIVE subscription per user (V1-27): the safety net of the activation, which
+  // expires the rows that ended before it inserts. The generated client accepts `userId` as a
+  // unique key (findUnique, update, upsert, delete) but ignores the condition: never use it.
+  @@unique([userId], where: raw("status = 'ACTIVE'"))
 }
 
 // Accounting record: kept and detached from the account (userId -> null) after a purge.

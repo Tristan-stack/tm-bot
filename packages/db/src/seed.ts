@@ -1,8 +1,9 @@
 import { createLogger, loadDotenvOnce } from "@launchbot/shared/server";
 import { disconnectPrisma, prisma } from "./client.js";
 
-// Optional dev seed, idempotent: one user with an active Premium pass and a token draft.
-// No wallet: encryption arrives in V1-09.
+// Optional dev seed, idempotent: one user with a pass and a token draft. No wallet.
+// The pass is Premium ending in 28 h by default; for the variants of the offers screen (V1-29):
+// SEED_PLAN=CLASSIC|PREMIUM, SEED_HOURS=<hours left> (200 → "until 12 Oct", -1 → expired).
 
 const FALLBACK_TELEGRAM_ID = 123456789n;
 const SEED_DRAFT_ID = "seed_token_draft_moon_otter";
@@ -25,16 +26,24 @@ async function seed(): Promise<void> {
     update: {},
   });
 
-  // Expires in 28 h: the home screen shows "Premium · 1d 4h left".
+  // 28 h by default: the home screen shows "Premium · 1d 4h left".
+  const plan = process.env["SEED_PLAN"] === "CLASSIC" ? "CLASSIC" : "PREMIUM";
+  const asked = Number(process.env["SEED_HOURS"] ?? 28);
+  const hours = Number.isFinite(asked) ? asked : 28;
   const now = new Date();
   const subscription = {
     userId: user.id,
-    plan: "PREMIUM",
+    plan,
     duration: "TWO_DAYS",
-    status: "ACTIVE",
+    status: hours > 0 ? "ACTIVE" : "EXPIRED",
     startsAt: now,
-    expiresAt: new Date(now.getTime() + 28 * HOUR_MS),
+    expiresAt: new Date(now.getTime() + hours * HOUR_MS),
   } as const;
+  // One ACTIVE subscription per user (V1-27): any other one ends first.
+  await prisma.subscription.updateMany({
+    where: { userId: user.id, status: "ACTIVE", id: { not: SEED_SUBSCRIPTION_ID } },
+    data: { status: "EXPIRED", expiresAt: now },
+  });
   await prisma.subscription.upsert({
     where: { id: SEED_SUBSCRIPTION_ID },
     create: { id: SEED_SUBSCRIPTION_ID, ...subscription },

@@ -1,4 +1,5 @@
 import { AI_GENERATIONS_PER_DAY, DAY_MS } from "@launchbot/shared";
+import { lockUserScope } from "../client.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
 
 /** The window of the quota (D9): the UTC calendar day. */
@@ -39,8 +40,7 @@ export function createAiQuotaStore({ prisma, limit = AI_GENERATIONS_PER_DAY }: A
 
     reserveText: (userId, now) =>
       prisma.$transaction(async (tx) => {
-        // $queryRaw fails on a void column: $executeRaw it is.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ai:${userId}`}))`;
+        await lockUserScope(tx, "ai", userId);
         const used = await tx.aiGeneration.count({ where: today(userId, now) });
         if (used >= limit) return { ok: false, used };
         await tx.aiGeneration.create({ data: { userId, kind: "TEXT" } });

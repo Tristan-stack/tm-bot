@@ -6,7 +6,7 @@ import { createTestUser, resetTestDatabase, testWalletData } from "../test-db.js
 import {
   createActiveSubscriberCounter,
   getActiveSubscription,
-  getSubscriptionSummary,
+  getPlanStatus,
   getWalletQuota,
 } from "./subscriptions.js";
 
@@ -74,46 +74,42 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("subscription reads (db)", () => {
       expect(await getActiveSubscription(prisma, user.id, NOW)).toBeNull();
     });
 
-    it("prefers Premium, then the subscription that ends last", async () => {
+    it("reads the ACTIVE row among the expired ones", async () => {
       const user = await createUser();
-      await subscribe(user.id, "CLASSIC", at(20 * DAY_MS));
-      await subscribe(user.id, "PREMIUM", at(DAY_MS));
-      const best = await subscribe(user.id, "PREMIUM", at(2 * DAY_MS));
+      await subscribe(user.id, "PREMIUM", at(20 * DAY_MS), "EXPIRED");
+      const active = await subscribe(user.id, "CLASSIC", at(DAY_MS));
 
-      expect((await getActiveSubscription(prisma, user.id, NOW))?.id).toBe(best.id);
+      expect((await getActiveSubscription(prisma, user.id, NOW))?.id).toBe(active.id);
     });
   });
 
-  describe("getSubscriptionSummary", () => {
+  describe("getPlanStatus", () => {
     it("reports the subscription that ended last, whatever its status says", async () => {
       const user = await createUser();
       await subscribe(user.id, "PREMIUM", at(-10 * DAY_MS), "EXPIRED");
       const late = await subscribe(user.id, "CLASSIC", at(-HOUR_MS));
 
-      const summary = await getSubscriptionSummary(prisma, user.id, NOW);
-
-      expect(summary.active).toBeNull();
-      expect(summary.lastExpired).toMatchObject({ id: late.id, plan: "CLASSIC" });
+      expect(await getPlanStatus(prisma, user.id, NOW)).toMatchObject({
+        kind: "EXPIRED",
+        subscription: { id: late.id, plan: "CLASSIC" },
+      });
     });
 
-    it("reports both for a user who subscribed again", async () => {
+    it("reports the active plan of a user who subscribed again", async () => {
       const user = await createUser();
       await subscribe(user.id, "CLASSIC", at(-DAY_MS), "EXPIRED");
       await subscribe(user.id, "PREMIUM", at(DAY_MS));
 
-      const summary = await getSubscriptionSummary(prisma, user.id, NOW);
-
-      expect(summary.active?.plan).toBe("PREMIUM");
-      expect(summary.lastExpired?.plan).toBe("CLASSIC");
+      expect(await getPlanStatus(prisma, user.id, NOW)).toMatchObject({
+        kind: "ACTIVE",
+        subscription: { plan: "PREMIUM", expiresAt: at(DAY_MS) },
+      });
     });
 
     it("reports nothing for a user who never subscribed", async () => {
       const user = await createUser();
 
-      expect(await getSubscriptionSummary(prisma, user.id, NOW)).toEqual({
-        active: null,
-        lastExpired: null,
-      });
+      expect(await getPlanStatus(prisma, user.id, NOW)).toEqual({ kind: "NONE" });
     });
   });
 
@@ -162,9 +158,9 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("subscription reads (db)", () => {
   });
 
   describe("countActiveSubscribers", () => {
-    it("counts users, not subscriptions, and ignores the ones whose date has passed", async () => {
+    it("counts users with an active plan, not the ones whose date has passed", async () => {
       const [twice, late] = [await createUser(), await createUser()];
-      await subscribe(twice.id, "CLASSIC", at(DAY_MS));
+      await subscribe(twice.id, "CLASSIC", at(-DAY_MS), "EXPIRED");
       await subscribe(twice.id, "PREMIUM", at(2 * DAY_MS));
       await subscribe(late.id, "PREMIUM", at(-HOUR_MS));
 
