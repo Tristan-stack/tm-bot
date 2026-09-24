@@ -1,4 +1,10 @@
-import { HOUR_MS, RATE_LIMITS, SIM_DURATION_SEC, simConfigSchema } from "@launchbot/shared";
+import {
+  HOUR_MS,
+  RATE_LIMITS,
+  SIM_DURATION_SEC,
+  SIM_SEED_MAX,
+  simConfigSchema,
+} from "@launchbot/shared";
 import { resetRateLimits } from "@launchbot/shared/server";
 import {
   assertSimConfig,
@@ -9,7 +15,7 @@ import {
 } from "@launchbot/sim-engine";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSimulations, TEST_USER } from "../test-harness.js";
-import { buildSimConfig, createSimulationService, drawSeed, MAX_SEED } from "./simulation.js";
+import { buildSimConfig, createSimulationService, drawSeed } from "./simulation.js";
 
 const T0 = Date.parse("2026-09-23T12:00:00Z");
 
@@ -42,9 +48,9 @@ describe("drawSeed", () => {
     for (let i = 0; i < 1_000; i += 1) {
       const seed = drawSeed();
       expect(isValidSeed(seed)).toBe(true);
-      expect(seed).toBeLessThanOrEqual(MAX_SEED);
+      expect(seed).toBeLessThanOrEqual(SIM_SEED_MAX);
     }
-    expect(MAX_SEED).toBe(2_147_483_647);
+    expect(SIM_SEED_MAX).toBe(2_147_483_647);
   });
 });
 

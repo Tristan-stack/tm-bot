@@ -9,6 +9,9 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Sample pictures of `pnpm --filter @launchbot/sim-render render:sample` (V1-25)
+packages/sim-render/out/
+
 # Prisma generated client (V1-02)
 packages/db/src/generated/
 

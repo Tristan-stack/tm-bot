@@ -1,0 +1,11 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "../node_modules/.cache/tsc/scripts",
+    "tsBuildInfoFile": "../node_modules/.cache/tsc/scripts/.tsbuildinfo"
+  },
+  "include": ["."],
+  "references": [{ "path": ".." }]
+}

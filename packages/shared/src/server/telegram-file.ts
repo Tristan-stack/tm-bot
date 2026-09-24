@@ -36,7 +36,7 @@ const startsWith = (bytes: Uint8Array, prefix: number[], offset = 0): boolean =>
 
 /**
  * The type of an image from its first bytes, never from what Telegram says: JPEG, PNG and
- * WEBP only, so that no SVG (a script carrier) ever reaches the Mini App as an image.
+ * WEBP only, so that no SVG (a script carrier) is ever served or drawn as an image.
  */
 export function detectImageType(bytes: Uint8Array): TelegramImageType | null {
   if (startsWith(bytes, [0xff, 0xd8, 0xff])) return "image/jpeg";

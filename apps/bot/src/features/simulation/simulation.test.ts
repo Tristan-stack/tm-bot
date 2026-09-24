@@ -55,7 +55,7 @@ describe("Simulate a Launch (V1-22)", () => {
     expect(h.screen()).toContain("┌ Name: Moon Otter");
   });
 
-  it("a preset creates the Simulation and shows the recap with its web_app button", async () => {
+  it("a preset creates the Simulation and shows the recap with its Start button", async () => {
     const h = harness();
 
     await feed(h.bot, callbackUpdate(SIM_CB.preset(5)));
@@ -64,7 +64,7 @@ describe("Simulate a Launch (V1-22)", () => {
     expect(h.screen()).toContain("💰 Dev buy: 5 SOL (≈ 15.2% of supply)");
     expect(h.screen()).toContain(en.sim.demoBanner);
     expect(h.api.keyboard("editMessageText", -1)[0]).toEqual([
-      { text: "▶️ Start simulation", web_app: { url: "https://launchbot.example.com/sim/s1" } },
+      { text: "▶️ Start simulation", callback_data: "sim:go:s1" },
     ]);
     expect(h.simulations.rows).toHaveLength(1);
     expect(h.simulations.rows[0]).toMatchObject({ tokenDraftId: "d1", devBuySol: "5" });
@@ -80,7 +80,7 @@ describe("Simulate a Launch (V1-22)", () => {
 
     await feed(h.bot, callbackUpdate(SIM_CB.preset(5)));
     expect(h.api.keyboard("editMessageText", -1)[0]?.[0]).toMatchObject({
-      web_app: { url: "https://launchbot.example.com/sim/s1" },
+      callback_data: "sim:go:s1",
     });
     expect(h.simulations.rows).toHaveLength(1);
 
@@ -156,7 +156,7 @@ describe("Simulate a Launch (V1-22)", () => {
         rows: [],
         findLatest: () => Promise.reject(new Error("db down")),
         create: () => Promise.reject(new Error("db down")),
-        findForViewer: () => Promise.reject(new Error("db down")),
+        findOwnedWithDraft: () => Promise.reject(new Error("db down")),
       },
     });
 

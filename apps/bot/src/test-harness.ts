@@ -20,12 +20,13 @@ import type { AiProviders } from "@launchbot/shared";
 import { FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import type { Simulation, SimulationStore } from "@launchbot/db";
 import type { TransferQuote } from "@launchbot/solana";
-import type { Env } from "@launchbot/shared/server";
+import type { Env, TelegramFile, TokenImageService } from "@launchbot/shared/server";
 import { BotError, GrammyError } from "grammy";
 import type { Bot } from "grammy";
 import type { ApiResponse, ChatMember, InlineKeyboardMarkup, Update } from "grammy/types";
 import type { BotContext, SessionData } from "./context.js";
 import { createBot } from "./index.js";
+import type { Scheduler, SimRender, SimRunnerDeps } from "./services/sim-runner.js";
 import type { DataServices } from "./services/data.js";
 
 /** Every Telegram call a test made, in order. Never asserted against a real API. */
@@ -87,6 +88,86 @@ export function interceptApi(bot: Bot<BotContext>, replies: ApiReplies = {}) {
 /** First id the fake gives to a sent message. */
 export const FIRST_MESSAGE_ID = 100;
 
+/** A virtual clock (V1-26): timers fire in order when the test advances the time. */
+export function fakeScheduler() {
+  let now = 1_000_000;
+  let nextId = 1;
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  const scheduler: Scheduler = {
+    now: () => now,
+    setTimeout: (fn, ms) => {
+      const id = nextId++;
+      timers.set(id, { at: now + Math.max(0, ms), fn });
+      return id;
+    },
+    clearTimeout: (timer) => {
+      timers.delete(timer as number);
+    },
+  };
+  const flush = async () => {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  };
+  return {
+    scheduler,
+    /** Runs every timer due until `ms` from now, letting the promises settle in between. */
+    async advance(ms: number) {
+      const target = now + ms;
+      for (;;) {
+        await flush();
+        const due = [...timers.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (due === undefined) break;
+        const [id, timer] = due;
+        timers.delete(id);
+        now = Math.max(now, timer.at);
+        timer.fn();
+      }
+      now = target;
+      await flush();
+    },
+    pending: () => timers.size,
+  };
+}
+
+/** A renderer that never touches resvg: a few bytes instead of a picture. */
+export const fakeRender: SimRender = {
+  chart: (frame) => Promise.resolve(new TextEncoder().encode(`chart@${frame.clock.nowSec}`)),
+  card: (card) => Promise.resolve(new TextEncoder().encode(`card:${card.pnlPctText}`)),
+  logo: (image) => Promise.resolve({ href: `data:${image.type};base64,fake` }),
+};
+
+/** The buttons of a keyboard as their texts, row by row. */
+export const buttonTexts = (keyboard: InlineKeyboardMarkup): string[][] =>
+  keyboard.inline_keyboard.map((row) => row.map((button) => button.text));
+
+/** A 1 × 1 PNG: the logo of the drafts of the tests. */
+const PNG_PIXEL = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
+
+/** Token images by `file_id` (V1-26): `file-1` is a PNG, anything else fails like Telegram. */
+export function fakeImages(
+  files: Record<string, TelegramFile> = {
+    "file-1": { bytes: PNG_PIXEL, contentType: "image/png" },
+  },
+) {
+  const requested: string[] = [];
+  const service: TokenImageService = {
+    get: (fileId) => {
+      requested.push(fileId);
+      const file = files[fileId];
+      return file === undefined
+        ? Promise.reject(new Error(`No file ${fileId}`))
+        : Promise.resolve(file);
+    },
+  };
+  return { ...service, requested };
+}
+
 /** The keyboard of a screen a builder returned, for the tests that assert on its buttons. */
 export const keyboardOf = (screen: {
   reply_markup: { inline_keyboard: unknown[][] };
@@ -103,6 +184,16 @@ function defaultResult(
       date: 0,
       chat: { id: payload["chat_id"], type: "private" },
       text: payload["text"],
+    };
+  }
+  // The photo message of a simulation (V1-26): sent once, then its media is edited.
+  if (method === "sendPhoto" || method === "editMessageMedia") {
+    return {
+      message_id: method === "sendPhoto" ? takeMessageId() : payload["message_id"],
+      date: 0,
+      chat: { id: payload["chat_id"], type: "private" },
+      photo: [],
+      caption: payload["caption"],
     };
   }
   // By default the user is in every channel, and the bot administers them.
@@ -183,9 +274,10 @@ export const textUpdate = (text: string, overrides: MessageOverrides = {}): Upda
 export const photoUpdate = (caption?: string): Update =>
   messageUpdate({ photo: [], ...(caption === undefined ? {} : { caption }) });
 
+/** A click on a button of a screen, or of a picture (`photo`, the simulation of V1-26). */
 export const callbackUpdate = (
   data: string,
-  overrides: { chat?: Record<string, unknown>; messageId?: number } = {},
+  overrides: { chat?: Record<string, unknown>; messageId?: number; photo?: boolean } = {},
 ): Update => ({
   update_id: nextUpdateId++,
   callback_query: {
@@ -198,7 +290,7 @@ export const callbackUpdate = (
       date: 0,
       chat: { ...CHAT, ...overrides.chat },
       from: BOT_INFO,
-      text: "previous screen",
+      ...(overrides.photo === true ? { photo: [] } : { text: "previous screen" }),
     },
   },
 });
@@ -554,9 +646,12 @@ export function fakeDrafts(options: { rows?: TokenDraft[]; referenced?: string[]
 }
 
 /** The Simulation table in memory (V1-22): rows in creation order, ids `s1`, `s2`… */
-export function fakeSimulations(options: { now?: () => number } = {}) {
+export function fakeSimulations(
+  options: { now?: () => number; draftOf?: (draftId: string) => TokenDraft | undefined } = {},
+) {
   const rows: Simulation[] = [];
   const now = options.now ?? Date.now;
+  const draftOf = options.draftOf ?? (() => undefined);
   const store: SimulationStore = {
     findLatest: ({ userId, tokenDraftId, devBuySol }, since) =>
       Promise.resolve(
@@ -583,8 +678,16 @@ export function fakeSimulations(options: { now?: () => number } = {}) {
       rows.push(row);
       return Promise.resolve(row);
     },
-    // The read of the API (V1-23): not exercised by the bot.
-    findForViewer: () => Promise.resolve(null),
+    findOwnedWithDraft: (userId, simId) => {
+      const row = rows.find((candidate) => candidate.id === simId && candidate.userId === userId);
+      const draft = row === undefined ? undefined : draftOf(row.tokenDraftId);
+      if (row === undefined || draft === undefined) return Promise.resolve(null);
+      const { name, symbol, description, imageFileId, website, twitter, telegram } = draft;
+      return Promise.resolve({
+        ...row,
+        tokenDraft: { name, symbol, description, imageFileId, website, twitter, telegram },
+      });
+    },
   };
   return { ...store, rows };
 }
@@ -628,6 +731,9 @@ export function botHarness(
     aiQuota?: ReturnType<typeof fakeAiQuota>;
     /** No provider by default, as in V1: the local generator answers AI Generate. */
     aiProviders?: AiProviders;
+    /** The virtual clock and the cap of the simulation runner (V1-26). */
+    simRunner?: Partial<Pick<SimRunnerDeps, "scheduler" | "maxActive">>;
+    images?: ReturnType<typeof fakeImages>;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });
@@ -635,9 +741,11 @@ export function botHarness(
   const wallets = fakeWallets(options.wallets);
   const withdrawals = fakeWithdrawals(options.withdrawals);
   const drafts = options.drafts ?? fakeDrafts();
-  const simulations = options.simulations ?? fakeSimulations();
+  const simulations =
+    options.simulations ?? fakeSimulations({ draftOf: (draftId) => drafts.rows.get(draftId) });
   const aiQuota = options.aiQuota ?? fakeAiQuota();
-  const bot = createBot({ ...TEST_ENV, ...options.env }, prisma, {
+  const images = options.images ?? fakeImages();
+  const { bot, simRunner } = createBot({ ...TEST_ENV, ...options.env }, prisma, {
     data,
     wallets,
     withdrawals,
@@ -645,9 +753,13 @@ export function botHarness(
     simulations,
     aiQuota,
     aiProviders: options.aiProviders ?? { text: null, logo: null },
+    simRunner: { render: fakeRender, ...options.simRunner },
+    images,
   });
   return {
     bot,
+    simRunner,
+    images,
     api: interceptApi(bot, options.replies),
     prisma,
     data,

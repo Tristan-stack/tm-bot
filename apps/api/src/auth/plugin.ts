@@ -8,8 +8,8 @@ import type { TelegramWebAppUser } from "./init-data.js";
 export type TelegramAuthOptions = {
   botToken: string;
   /**
-   * Called once a request is authenticated. V1-23 records the activity here: using the Mini
-   * App counts as activity for the 48 h purge (§11.3).
+   * Called once a request is authenticated: a hook for what a request should count as, such
+   * as an activity of the account (§11.3), without a route knowing about it.
    */
   onAuthenticated?: (user: TelegramWebAppUser) => Promise<void> | void;
 };

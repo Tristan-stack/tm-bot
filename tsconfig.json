@@ -4,6 +4,8 @@
     { "path": "./packages/shared" },
     { "path": "./packages/sim-engine" },
     { "path": "./packages/sim-engine/scripts" },
+    { "path": "./packages/sim-render" },
+    { "path": "./packages/sim-render/scripts" },
     { "path": "./packages/db" },
     { "path": "./packages/solana" },
     { "path": "./apps/api" },

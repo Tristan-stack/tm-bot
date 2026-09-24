@@ -32,6 +32,16 @@ describe("createSimulation", () => {
     const wholeEvents = whole.step(180);
     expect(wholeEvents.length).toBeGreaterThan(50);
 
+    // Absolute instants, as the runner of the chat calls it: the same events, an exact clock.
+    const byInstant = createSimulation(config());
+    const events: TradeEvent[] = [];
+    for (let ms = 3007; byInstant.endReason() === null; ms += 3007) {
+      events.push(...byInstant.advanceTo(Math.min(180, ms / 1000)));
+    }
+    expect(events).toEqual(wholeEvents);
+    expect(byInstant.time()).toBe(180);
+    expect(() => byInstant.advanceTo(179)).toThrow(RangeError);
+
     const bySecond = createSimulation(config());
     expect(run(bySecond, 1)).toEqual(wholeEvents);
     expect(bySecond.state()).toEqual(whole.state());

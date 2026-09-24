@@ -5,7 +5,8 @@
   "description": "Seeded launch simulation engine. Pure TypeScript, no network, no Node API",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./test-helpers": "./src/test-helpers.ts"
   },
   "scripts": {
     "dev": "tsc -b --watch --preserveWatchOutput",

@@ -15,16 +15,19 @@ import {
   renderScreen,
   SIM_DURATION_SEC,
   tree,
-  webAppBtn,
 } from "@launchbot/shared";
-import type { OptionalLine, Screen, Ui } from "@launchbot/shared";
-import { buildWebAppUrl } from "@launchbot/shared/server";
+import type { OptionalLine, Screen, SimSpeed, Ui } from "@launchbot/shared";
 import { devBuySupplyShare } from "@launchbot/sim-engine";
 import type { CurveParams } from "@launchbot/sim-engine";
 
+/** The three sales of §6.1, in percent of the tokens still held. */
+export const SELL_PCTS = [25, 50, 100] as const;
+export type SellPct = (typeof SELL_PCTS)[number];
+
 /**
- * Callback data of the flow (§4.4): `sim:<op>[:<arg>]`, no id since the state is in the
- * session. `open` is the button of the menu (V1-08).
+ * Callback data of the domain (§4.4): `sim:<op>[:<simId>][:<arg>]`. The flow needs no id, its
+ * state is in the session; the buttons of a running simulation name their row (V1-26).
+ * `open` is the button of the menu (V1-08).
  */
 export const SIM_CB = {
   open: encodeCallback("sim", "open"),
@@ -33,6 +36,13 @@ export const SIM_CB = {
   cancelCustom: encodeCallback("sim", "cc"),
   backToToken: encodeCallback("sim", "bk", "tok"),
   backToDevBuy: encodeCallback("sim", "bk", "dev"),
+  /** ▶️ Start simulation: the click runs the row the recap was built on (D14, D21). */
+  go: (simId: string) => encodeCallback("sim", "go", simId),
+  sell: (simId: string, pct: SellPct) => encodeCallback("sim", "sell", simId, pct),
+  pause: (simId: string) => encodeCallback("sim", "pause", simId),
+  resume: (simId: string) => encodeCallback("sim", "resume", simId),
+  speed: (simId: string, speed: SimSpeed) => encodeCallback("sim", "speed", simId, speed),
+  again: (simId: string) => encodeCallback("sim", "again", simId),
 } as const;
 
 /** What the screens after the Token step need of the draft: Continue accepted it (§5). */
@@ -40,8 +50,9 @@ export type ReadyToken = { name: string; symbol: string };
 
 const { sim } = en;
 
-const tokenLine = (draft: ReadyToken): string =>
-  sim.token(escapeHtml(draft.name), formatTicker(draft.symbol));
+/** `🪙 Moon Otter · $OTTR`: the token on the flow screens and under the pictures (V1-26). */
+export const tokenLine = (name: string, ticker: string): string =>
+  sim.token(escapeHtml(name), formatTicker(ticker));
 
 const devBuyLine = (devBuySol: number | undefined): string =>
   devBuySol === undefined
@@ -57,7 +68,7 @@ export function buildDevBuyScreen(
   return renderScreen({
     header: ui.flowHeader({ flow: "SIMULATION", step: 2 }),
     description: sim.devBuy.description,
-    info: [tokenLine(view.draft), devBuyLine(view.devBuySol)],
+    info: [tokenLine(view.draft.name, view.draft.symbol), devBuyLine(view.devBuySol)],
     flags: options.flags,
     keyboard: [
       DEV_BUY_PRESETS_SOL.map((sol) => cbBtn(sim.devBuy.btnPreset(sol), SIM_CB.preset(sol))),
@@ -76,7 +87,11 @@ export function buildCustomAmountScreen(
   return renderInputScreen({
     header: ui.flowHeader({ flow: "SIMULATION", step: 2 }),
     prompt: sim.custom.prompt,
-    rules: [tokenLine(view.draft), devBuyLine(view.devBuySol), sim.custom.rules],
+    rules: [
+      tokenLine(view.draft.name, view.draft.symbol),
+      devBuyLine(view.devBuySol),
+      sim.custom.rules,
+    ],
     flags: options.flags,
     keyboard: [[cancelBtn(SIM_CB.cancelCustom)]],
   });
@@ -116,14 +131,17 @@ export function renderTokenRecapBlock(draft: TokenDraftFields & ReadyToken): str
 export type RecapView = {
   draft: TokenDraftFields & ReadyToken;
   devBuySol: number;
-  /** The curve stored in the Simulation: the Mini App computes the position on the same one. */
+  /** The curve stored in the Simulation: the run computes the position on the same one. */
   curve: CurveParams;
   simId: string;
-  webAppUrl: string;
 };
 
-/** Step 3/3 (§6): the recap, the DEMO mention, and the `web_app` button of the Mini App. */
-export function buildRecapScreen(ui: Ui, view: RecapView): Screen {
+/** Step 3/3 (§6): the recap, the DEMO mention, and the Start button that runs the row (V1-26). */
+export function buildRecapScreen(
+  ui: Ui,
+  view: RecapView,
+  options: { flags?: OptionalLine[] } = {},
+): Screen {
   return renderScreen({
     header: ui.flowHeader({ flow: "SIMULATION", step: 3 }),
     description: sim.recap.description,
@@ -134,9 +152,9 @@ export function buildRecapScreen(ui: Ui, view: RecapView): Screen {
         sim.recap.duration(SIM_DURATION_SEC / 60),
       ].join("\n"),
     ].join("\n\n"),
-    flags: [sim.demoBanner],
+    flags: [sim.demoBanner, ...(options.flags ?? [])],
     keyboard: [
-      [webAppBtn(sim.recap.btnStart, buildWebAppUrl(`/sim/${view.simId}`, view.webAppUrl))],
+      [cbBtn(sim.recap.btnStart, SIM_CB.go(view.simId))],
       navRow(SIM_CB.backToDevBuy, { menu: true }),
     ],
   });

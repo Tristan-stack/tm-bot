@@ -100,9 +100,9 @@ export const presetParamsSchema = z
 export const seedSchema = z.int().min(0).max(0xffffffff);
 
 /**
- * `SimConfig` of the engine (§7.4), as stored in `Simulation.params` (V1-22), answered by
- * the API (V1-23) and checked by the Mini App (V1-24). `assertSimConfig` of the engine is the
- * other half: this schema is what crosses a JSON boundary.
+ * `SimConfig` of the engine (§7.4), as stored in `Simulation.params` (V1-22) and read back by
+ * the bot to run the simulation (V1-26). `assertSimConfig` of the engine is the other half:
+ * this schema is what crosses the JSON boundary of the database.
  */
 export const simConfigSchema = z.object({
   seed: seedSchema,
@@ -113,46 +113,17 @@ export const simConfigSchema = z.object({
   solUsdPrice: z.number().finite().positive().nullable(),
 });
 
-/** The `:id` of `/api/simulations/:id`: a Prisma cuid, anything else is a 404 (V1-23). */
-export const simIdParamSchema = z.object({ id: idSchema });
-
-/** The words of the error bodies of the API (V1-05, V1-23): `{ "error": "<code>" }`. */
+/** The words of the error bodies of the API (V1-05): `{ "error": "<code>" }`. */
 export const API_ERROR_CODES = [
   "bad_request",
   "unauthorized",
   "forbidden",
   "not_found",
-  "image_too_large",
-  "unsupported_image",
   "rate_limited",
-  "image_unavailable",
   "internal",
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 export const apiErrorSchema = z.object({ error: z.enum(API_ERROR_CODES) });
-
-/** A stored link, or null: anything but https falls to null before it reaches the Mini App. */
-const httpsOrNull = httpsUrlSchema.nullable().catch(null);
-
-/** The token of a simulation as the Mini App shows it (V1-23): the ticker without its `$`. */
-export const simulationTokenSchema = z.object({
-  name: z.string(),
-  ticker: z.string(),
-  description: z.string().nullable(),
-  hasImage: z.boolean(),
-  /** Relative to API_URL: `/api/simulations/<id>/image`, null without an image. */
-  imagePath: z.string().nullable(),
-  links: z.object({ website: httpsOrNull, x: httpsOrNull, telegram: httpsOrNull }),
-});
-
-/** `GET /api/simulations/:id` (V1-23): the config frozen at creation, and the token. */
-export const simulationResponseSchema = z.object({
-  id: idSchema,
-  createdAt: z.iso.datetime(),
-  config: simConfigSchema,
-  token: simulationTokenSchema,
-});
-export type SimulationResponse = z.infer<typeof simulationResponseSchema>;
 
 /** Trim, one space between words. Line breaks are not spaces here: they are refused below. */
 export const normalizeWalletName = collapseSpaces;

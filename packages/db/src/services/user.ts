@@ -26,22 +26,6 @@ export function touchUser(
   });
 }
 
-/**
- * A request of the Mini App is an activity too (§11.3, V1-23): `lastActiveAt` of the account
- * of this Telegram id, when it exists. Never creates an account: `true` when one was touched.
- */
-export async function touchUserActivity(
-  prisma: PrismaClient,
-  telegramId: number,
-  now: Date = new Date(),
-): Promise<boolean> {
-  const { count } = await prisma.user.updateMany({
-    where: { telegramId: BigInt(telegramId) },
-    data: { lastActiveAt: now },
-  });
-  return count > 0;
-}
-
 /** Records the version of the Terms the user accepted, and when (§4.2, §11.2). */
 export function acceptTerms(
   prisma: PrismaClient,

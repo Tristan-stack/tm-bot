@@ -2,8 +2,8 @@ import type { ApiErrorCode } from "@launchbot/shared";
 
 /**
  * Every error body of the API: a fixed word per status, never the message of an error. The
- * words are those of `API_ERROR_CODES` (packages/shared), which the Mini App reads (V1-24).
- * A status that is not listed answers the word of its class, unless the route names one.
+ * words are those of `API_ERROR_CODES` (packages/shared). A status that is not listed answers
+ * the word of its class, unless the route names one.
  */
 const ERROR_WORDS: Readonly<Record<number, ApiErrorCode>> = {
   400: "bad_request",
@@ -13,7 +13,7 @@ const ERROR_WORDS: Readonly<Record<number, ApiErrorCode>> = {
   429: "rate_limited",
 };
 
-/** `code` names a failure of one route (the image, V1-23) that the status alone does not. */
+/** `code` names a failure of one route that the status alone does not. */
 export const errorBody = (
   status: number,
   code: ApiErrorCode = ERROR_WORDS[status] ?? (status >= 500 ? "internal" : "bad_request"),
@@ -21,7 +21,7 @@ export const errorBody = (
 
 /**
  * The status the client gets for an error. A 4xx set on purpose (by Fastify, or by a route
- * that throws an error carrying `statusCode`: 403, 404, 429 in V1-23) is the fault of the
+ * that throws an error carrying `statusCode`, see `httpError`) is the fault of the
  * request and goes through. Anything else is ours: 500, and nothing about it leaves the server.
  */
 export function clientStatus(error: unknown): number {

@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       strictPort: true,
       // Telegram only opens a Mini App over HTTPS: hosts of the local tunnels.
-      allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.app"],
+      allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.app", ".loca.lt"],
       // One tunnel is enough: the Mini App and its API share the origin of the tunnel.
       // 3001 is the default of API_PORT in packages/shared/src/server/env.ts.
       proxy: { "/api": `http://127.0.0.1:${env["API_PORT"] || 3001}` },

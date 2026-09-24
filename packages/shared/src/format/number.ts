@@ -38,6 +38,12 @@ export function formatTokenAmount(amount: number): string {
 export const formatPct = (ratio: number, decimals = 2): string =>
   `${(ratio * 100).toFixed(decimals)}%`;
 
+/** A share of the supply already in percent (`Holder.pctSupply`): `9.67%`, `<0.01%` under 0.01. */
+export function formatPctSupply(pct: number): string {
+  if (pct > 0 && pct < 0.01) return "<0.01%";
+  return `${pct.toFixed(2)}%`;
+}
+
 /** `1:32`, `3:00`, `30:00`: m:ss, rounded down. */
 export function formatClock(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));

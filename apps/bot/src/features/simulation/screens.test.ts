@@ -147,7 +147,6 @@ describe("buildRecapScreen", () => {
     devBuySol: 5,
     curve: FALLBACK_CURVE_PARAMS,
     simId: "clsim123",
-    webAppUrl: "https://launchbot.example.com",
   });
 
   it("renders the mockup of §6 with the DEMO mention", () => {
@@ -162,14 +161,9 @@ describe("buildRecapScreen", () => {
     );
   });
 
-  it("opens the Mini App on the Simulation with a web_app button, then Back and Menu", () => {
+  it("starts the Simulation of the recap with a callback button, then Back and Menu", () => {
     expect(keyboardOf(screen)).toEqual([
-      [
-        {
-          text: "▶️ Start simulation",
-          web_app: { url: "https://launchbot.example.com/sim/clsim123" },
-        },
-      ],
+      [{ text: "▶️ Start simulation", callback_data: "sim:go:clsim123" }],
       [
         { text: "⬅️ Back", callback_data: "sim:bk:dev" },
         { text: "🏠 Menu", callback_data: NAV_HOME },
@@ -199,5 +193,17 @@ describe("SIM_CB", () => {
       "sim:bk:tok",
       "sim:bk:dev",
     ]);
+    // The buttons of a running simulation carry a cuid (V1-26).
+    const simId = "cmfz1abcd0000abcdefghijk1";
+    const live = [
+      SIM_CB.go(simId),
+      SIM_CB.sell(simId, 100),
+      SIM_CB.pause(simId),
+      SIM_CB.resume(simId),
+      SIM_CB.speed(simId, 5),
+      SIM_CB.again(simId),
+    ];
+    for (const data of live) expect(isCallbackDataSize(data)).toBe(true);
+    expect(SIM_CB.sell(simId, 25)).toBe(`sim:sell:${simId}:25`);
   });
 });

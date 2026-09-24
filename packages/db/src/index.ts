@@ -30,9 +30,9 @@ export type { AiQuotaDeps, AiQuotaReservation, AiQuotaStore } from "./services/a
 export { createSimulationStore } from "./services/simulations.js";
 export type {
   NewSimulation,
-  SimulationForViewer,
   SimulationKey,
   SimulationStore,
+  SimulationWithDraft,
 } from "./services/simulations.js";
 export { createTokenDraftService } from "./services/token-drafts.js";
 export type {
@@ -46,7 +46,7 @@ export type {
   SubscriptionSummary,
   WalletQuota,
 } from "./services/subscriptions.js";
-export { acceptTerms, setChannelCheckedAt, touchUser, touchUserActivity } from "./services/user.js";
+export { acceptTerms, setChannelCheckedAt, touchUser } from "./services/user.js";
 export type { TelegramIdentity } from "./services/user.js";
 export { createWalletService } from "./services/wallets.js";
 export type {

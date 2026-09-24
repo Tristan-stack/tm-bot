@@ -35,6 +35,9 @@ export const warn = (text: string): { alert: string; flag: string } => ({
   flag: `${E.warning} ${text}`,
 });
 
+/** §6: the exact mention, with its emoji on Telegram, without it on the pictures (V1-25). */
+const DEMO_MENTION = "DEMO — Bullish scenario. Not a prediction or a real result.";
+
 export const en = {
   btn: {
     back: `${E.back} Back`,
@@ -540,8 +543,63 @@ export const en = {
       btnStart: `${E.startSim} Start simulation`,
     },
     rateLimited: warn("Too many simulations. Wait a minute, then try again."),
-    /** The mention of §6, on the recap and at the top of the Mini App (V1-24). */
-    demoBanner: `${E.warning} DEMO — Bullish scenario. Not a prediction or a real result.`,
+    /** The mention of §6, on the recap and at the top of every caption of the simulation. */
+    demoBanner: `${E.warning} ${DEMO_MENTION}`,
+    // The pictures of the simulation (§6.1, §6.3, V1-25): no emoji, resvg has no color font.
+    // PNL, Invested, Position are the rows of the mock-up of 24/09/2026; "Not a real result" and
+    // SIMULATION are the words of §6.3; the rest is proposed (D19).
+    image: {
+      demo: DEMO_MENTION,
+      /** `Market cap (USD)`, or `(SOL)` without a SOL price. */
+      marketCap: (unit: "USD" | "SOL") => `Market cap (${unit})`,
+      pnl: "PNL",
+      invested: "Invested",
+      position: "Position",
+      notReal: "Not a real result",
+      watermark: "SIMULATION",
+    },
+    // The simulation in the chat (§6.1, §6.2, V1-26). Sell 25% / 50% / 100%, Pause, x1 / x2 / x5,
+    // Run again, Menu and the mention are the words of the context; the rest is proposed (D19).
+    live: {
+      /** `⏱ 1:32 / 3:00`: both sides already `formatClock`. */
+      clock: (elapsed: string, total: string) => `${E.duration} ${elapsed} / ${total}`,
+      speed: (speed: number) => `Speed x${speed}`,
+      paused: `${E.pause} Paused`,
+      /** `📈 Market cap: $5,175.82 (50.08 SOL)`, the amount already formatted. */
+      marketCap: (amount: string) => `${E.marketCap} Market cap: ${amount}`,
+      /** `Bonding curve: 34.2% ▰▰▰▱▱▱▱▱▱▱` */
+      bondingCurve: (pct: string, bar: string) => `Bonding curve: ${pct} ${bar}`,
+      volume: (volume: string, buys: string, sells: string) =>
+        `Volume: ${volume} · Buys / Sells: ${buys} / ${sells}`,
+      hold: (text: string) => `${E.position} You hold: ${text}`,
+      value: (text: string) => `Value if sold now: ${text}`,
+      pnl: (text: string) => `PnL: ${text}`,
+      soldSoFar: (text: string) => `Sold so far: ${text}`,
+      btnSell: (pct: number) => `Sell ${pct}%`,
+      btnPause: `${E.pause} Pause`,
+      btnResume: `${E.startSim} Resume`,
+      /** `x2`, or `✓ x2` for the current speed. */
+      btnSpeed: (speed: number, current: boolean) => `${current ? `${E.ok} ` : ""}x${speed}`,
+      btnRunAgain: `${E.runAgain} Run again`,
+      alreadyRunning: warn("A simulation is already running."),
+      busy: warn("The simulator is busy. Try again in a minute."),
+      over: "This simulation is over. Start a new one from the menu.",
+      /** `Sold 25%: 24.17M OTTR for 0.912 SOL.` */
+      sold: (pct: number, tokens: string, ticker: string, amount: string) =>
+        `Sold ${pct}%: ${tokens} ${ticker} for ${amount}.`,
+      oneAtATime: "One sale at a time.",
+      nothingToSell: "Nothing left to sell.",
+    },
+    // The caption of the PNL card (§6.3, the Axiom-style text of 24/09/2026): the ticker and
+    // the PnL, then Invested / Sell / Profit with the whole dollars when there is a price.
+    card: {
+      title: `${E.simulate} SIMULATION ENDED`,
+      /** `🪙 <b>$OTTR</b> | +42.7%` */
+      headline: (ticker: string, pct: string) => `${E.token} <b>${ticker}</b> | ${pct}`,
+      invested: (amount: string) => `${E.invested} Invested: ${amount}`,
+      sell: (amount: string) => `${E.sell} Sell: ${amount}`,
+      profit: (amount: string) => `${E.profit} Profit: ${amount}`,
+    },
   },
 
   // Sending a transaction (§10.2, V1-13): one text per `TxFailure` code, for the withdrawal

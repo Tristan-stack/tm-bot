@@ -3,7 +3,7 @@ import type { SolanaCluster } from "../cluster.js";
 import { flowHeader, screenHeader } from "./header.js";
 import type { FlowName } from "./header.js";
 
-export { FLOWS } from "./header.js";
+export { FLOWS, progressBar } from "./header.js";
 export type { FlowName } from "./header.js";
 export { a, b, code, escapeHtml } from "./html.js";
 export {

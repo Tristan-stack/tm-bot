@@ -1,6 +1,6 @@
 import { en, NAV_HOME, parseDevBuyAmount } from "@launchbot/shared";
+import type { Ui } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
-import type { Env } from "@launchbot/shared/server";
 import type { BotContext, SimFlowState } from "../../context.js";
 import type { InputHandler, InputRouter } from "../../navigation/inputs.js";
 import { notify } from "../../navigation/notify.js";
@@ -9,18 +9,17 @@ import type { PresentOptions, ShowMode } from "../../navigation/show-screen.js";
 import type { CallbackRouter } from "../../router/callback-router.js";
 import type { SimulationService } from "../../services/simulation.js";
 import type { ReadyTokenDraft, TokenStep } from "../token-step/token-step.js";
+import { createLiveHandlers } from "./live.js";
+import type { LiveDeps } from "./live.js";
 import { buildCustomAmountScreen, buildDevBuyScreen, buildRecapScreen } from "./screens.js";
 
 const log = createLogger("bot:simulation");
 
-export type SimulationFlowDeps = {
+export type SimulationFlowDeps = LiveDeps & {
   ui: Ui;
-  env: Pick<Env, "WEBAPP_URL">;
   tokenStep: TokenStep;
   simulations: SimulationService;
 };
-
-type Ui = Parameters<typeof buildDevBuyScreen>[0];
 
 /** The draft in hand spares the read; without it the step reads it, or shows the Missing flag. */
 type Options = Omit<PresentOptions, "input" | "withdraw"> & { draft?: ReadyTokenDraft };
@@ -28,14 +27,15 @@ type Options = Omit<PresentOptions, "input" | "withdraw"> & { draft?: ReadyToken
 /**
  * Simulate a Launch (§6, V1-22): the menu opens the Token step (V1-16, Back is the menu),
  * Continue leads to the Dev buy, a preset or a Custom amount to the recap, whose Start
- * simulation is a `web_app` button on the Simulation created for it (D14). The dev buy lives
- * in the session, the draft in the state of the Token step.
+ * simulation runs the Simulation created for it in the chat (D14, D21, V1-26). The dev buy
+ * lives in the session, the draft in the state of the Token step.
  */
 export function registerSimulation(
   router: CallbackRouter,
   inputs: InputRouter,
-  { ui, env, tokenStep, simulations }: SimulationFlowDeps,
+  deps: SimulationFlowDeps,
 ): void {
+  const { ui, tokenStep, simulations } = deps;
   const stateOf = (ctx: BotContext): SimFlowState => (ctx.session.sim ??= {});
 
   const draftOf = (ctx: BotContext, options: Options): Promise<ReadyTokenDraft | null> =>
@@ -61,8 +61,8 @@ export function registerSimulation(
   }
 
   /**
-   * A dev buy chosen (§6): the Simulation is created or found again while the recap is built,
-   * not when Start simulation is tapped (D14: a `web_app` button never reaches the bot).
+   * A dev buy chosen (§6): the Simulation is created or found again while the recap is built
+   * (D14); Start simulation runs that row (V1-26).
    */
   async function chooseDevBuy(ctx: BotContext, devBuySol: number, mode?: ShowMode): Promise<void> {
     const draft = await draftOf(ctx, { mode });
@@ -92,7 +92,6 @@ export function registerSimulation(
         devBuySol,
         curve: result.config.curve,
         simId: result.simId,
-        webAppUrl: env.WEBAPP_URL,
       }),
       { mode },
     );
@@ -112,6 +111,7 @@ export function registerSimulation(
   });
   inputs.register("sim_amount", amountInput);
   router.register("sim", {
+    ...createLiveHandlers(deps),
     open: (ctx) => tokenStep.showTokenStep(ctx, "SIMULATION"),
     dev: (ctx, [arg]) => {
       if (arg === "c") return showCustom(ctx);

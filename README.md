@@ -1,7 +1,9 @@
 # Launch Bot
 
-Bot Telegram pour créer et simuler des launchs de memecoins Solana via pump.fun, avec une Mini App
-pour la simulation en direct. Projet perso, **devnet uniquement**.
+Bot Telegram pour créer et simuler des launchs de memecoins Solana via pump.fun. La simulation se
+joue dans le chat : le bot édite l'image du graphique en direct, avec les boutons de vente dessous
+(décision du 24/09/2026, §6.5 du contexte). Une Mini App ne sert qu'aux pages Terms et Privacy.
+Projet perso, **devnet uniquement**.
 
 - Spécification produit : [context_bot.md](context_bot.md)
 - Tickets, décisions (D1–D20) et suivi : [board Trello « Launch Bot »](https://trello.com/b/Rx4KkRAj/launch-bot)
@@ -11,11 +13,12 @@ pour la simulation en direct. Projet perso, **devnet uniquement**.
 ```
 apps/
   bot/         grammY : menus, parcours, commandes admin
-  api/         Fastify : API de la Mini App, validation initData (rejoint le process du bot)
+  api/         Fastify : validation initData (rejoint le process du bot) ; plus de route métier
   worker/      jobs pg-boss : paiements, transferts, rappels, nettoyage
-  webapp/      Vite + React + Lightweight Charts (Mini App)
+  webapp/      Vite + React : pages Terms et Privacy (Mini App)
 packages/
   sim-engine/  moteur de simulation, TypeScript pur, sans réseau
+  sim-render/  images de la simulation : graphique en PNG (resvg), PNL card animée sur un clip (ffmpeg)
   solana/      wallets, soldes, retraits, chiffrement ; pump.fun et PumpSwap en V2
   db/          schéma Prisma, client et services métier partagés
   shared/      types, constantes, schémas zod, textes du bot ; env et logger côté serveur
@@ -28,11 +31,12 @@ Dépendances internes autorisées. pnpm n'expose à un package que les dépendan
 | -------------- | --------------------------------------------------------------------- |
 | `shared`       | aucun package interne                                                 |
 | `sim-engine`   | rien : ni package interne, ni API Node                                |
+| `sim-render`   | `shared`, `sim-engine` ; Node autorisé (police embarquée, resvg)      |
 | `db`, `solana` | `shared`                                                              |
 | `api`          | `shared`, `db` — jamais `solana` : elle démarre sans garde-fou devnet |
 | `worker`       | `shared`, `db`, `solana`                                              |
 | `bot`          | `shared`, `db`, `solana`, `sim-engine`, `api`                         |
-| `webapp`       | `shared` (entrée universelle, sans `en` ni `E`) et `sim-engine`       |
+| `webapp`       | `shared` (entrée universelle, sans `en` ni `E`)                       |
 
 `@launchbot/shared` a deux entrées : `.` (navigateur + Node) et `./server` (Node uniquement :
 `loadEnv`, `parseEnv`, `createLogger`, `scrubSecrets`). La Mini App n'importe jamais `./server`,
@@ -85,18 +89,19 @@ machine. Pour en changer : `POSTGRES_PORT` dans `.env`, et adapter `DATABASE_URL
 
 ## Scripts
 
-| Script                   | Rôle                                                                                 |
-| ------------------------ | ------------------------------------------------------------------------------------ |
-| `pnpm dev`               | bot, worker et webapp en mode watch (`tsx watch`, `vite`)                            |
-| `pnpm build`             | `tsc -b` sur tout le graphe, puis `vite build` pour la webapp                        |
-| `pnpm typecheck`         | `tsc -b` sur les 8 projets (références de projets)                                   |
-| `pnpm lint`              | ESLint (typescript-eslint avec types, `no-console`)                                  |
-| `pnpm format`            | Prettier (`pnpm format:check` pour vérifier)                                         |
-| `pnpm test`              | Vitest, un projet par app/package (`pnpm test:watch` en continu)                     |
-| `pnpm test:db`           | avec `RUN_DB_TESTS=1` : tests d'intégration sur `launchbot_test`                     |
-| `pnpm test:devnet`       | avec `RUN_DEVNET_TESTS=1` : tests qui appellent le RPC devnet                        |
-| `sim:report`             | `pnpm --filter @launchbot/sim-engine sim:report [seeds]` : réglage du moteur (V1-19) |
-| `pnpm db:up` / `db:down` | démarre / arrête PostgreSQL                                                          |
+| Script                   | Rôle                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`               | bot, worker et webapp en mode watch (`tsx watch`, `vite`)                                                                       |
+| `pnpm build`             | `tsc -b` sur tout le graphe, puis `vite build` pour la webapp                                                                   |
+| `pnpm typecheck`         | `tsc -b` sur les 8 projets (références de projets)                                                                              |
+| `pnpm lint`              | ESLint (typescript-eslint avec types, `no-console`)                                                                             |
+| `pnpm format`            | Prettier (`pnpm format:check` pour vérifier)                                                                                    |
+| `pnpm test`              | Vitest, un projet par app/package (`pnpm test:watch` en continu)                                                                |
+| `pnpm test:db`           | avec `RUN_DB_TESTS=1` : tests d'intégration sur `launchbot_test`                                                                |
+| `pnpm test:devnet`       | avec `RUN_DEVNET_TESTS=1` : tests qui appellent le RPC devnet                                                                   |
+| `sim:report`             | `pnpm --filter @launchbot/sim-engine sim:report [seeds]` : réglage du moteur (V1-19)                                            |
+| `render:sample`          | `pnpm --filter @launchbot/sim-render render:sample [seed] [dossier]` : images d'exemple dans `packages/sim-render/out/` (V1-25) |
+| `pnpm db:up` / `db:down` | démarre / arrête PostgreSQL                                                                                                     |
 
 Un seul package : `pnpm --filter @launchbot/shared test`.
 
@@ -217,12 +222,17 @@ cloudflared tunnel --url http://localhost:5173
 ngrok http 5173
 ```
 
-Copier l'URL https obtenue dans `WEBAPP_URL` **et** dans `API_URL`, puis relancer le bot et Vite. Les
-hôtes `.trycloudflare.com`, `.ngrok-free.app` et `.ngrok.app` sont déjà autorisés dans
+Copier l'URL https obtenue dans `WEBAPP_URL` **et** dans `API_URL`, puis relancer **le bot et
+Vite** : tous les deux lisent `.env` au démarrage seulement (Vite injecte `API_URL` dans le bundle
+à ce moment-là). Les
+hôtes `.trycloudflare.com`, `.ngrok-free.app`, `.ngrok.app` et `.loca.lt` sont déjà autorisés dans
 `server.allowedHosts` de [apps/webapp/vite.config.ts](apps/webapp/vite.config.ts) : pour un autre
 fournisseur de tunnel, y ajouter son hôte, sinon Vite refuse la requête. L'URL d'un quick tunnel
-change à chaque lancement. Variante : deux tunnels (Mini App et API), avec `API_URL` sur le second ;
-le CORS de l'API n'autorise que l'origine de `WEBAPP_URL`.
+change à chaque lancement. Sans `winget`, le binaire se télécharge depuis les releases GitHub de
+cloudflared (`cloudflared-windows-amd64.exe`). localtunnel (`npx localtunnel --port 5173`) marche
+aussi mais impose une page d'avertissement par IP, instable dans Telegram. Variante : deux tunnels
+(Mini App et API), avec `API_URL` sur le second ; le CORS de l'API n'autorise que l'origine de
+`WEBAPP_URL`.
 
 Tester une page : les boutons de l'écran Terms (voir « Premier accès ») ouvrent `/terms` et
 `/privacy`. Pour une autre page, s'envoyer un bouton `web_app`, depuis le chat privé avec le bot,
@@ -235,8 +245,8 @@ curl "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
        [[{"text": "Open", "web_app": {"url": "https://<tunnel>/terms"}}]]}}'
 ```
 
-Les pages : `/terms` et `/privacy` (« Version N · Updated … », N = `TERMS_VERSION`), `/sim/:id`
-(provisoire jusqu'à V1-24), et « Page not found. » ailleurs. Hors de Telegram, dans un navigateur,
+Les pages : `/terms` et `/privacy` (« Version N · Updated … », N = `TERMS_VERSION`), et « Page not
+found. » ailleurs. Hors de Telegram, dans un navigateur,
 elles s'affichent aussi ; seuls les appels à l'API sont refusés, faute d'`initData`.
 
 `TERMS_VERSION` et `API_URL` sont les **deux seules** variables du `.env` injectées dans le bundle
@@ -250,8 +260,9 @@ nginx, `try_files $uri /index.html`), et ne doit envoyer ni `X-Frame-Options: DE
 
 `GET /health` est public et répond `{"status":"ok"}`, sans rien dire de l'environnement.
 
-**Tout ce qui est sous `/api` est protégé par défaut.** Les routes de la Mini App se déclarent dans
-l'option `routes` de `buildApiServer`, sans `preHandler` : le périmètre `/api` applique
+**Tout ce qui est sous `/api` est protégé par défaut.** Aucune route n'y est montée depuis le
+24/09/2026 (D21) ; une route de la Mini App se déclarerait dans l'option `routes` de
+`buildApiServer`, sans `preHandler` : le périmètre `/api` applique
 `app.requireTelegramUser` à chacune, donc une route ne peut pas devenir publique par oubli. Ce
 preHandler valide l'en-tête `X-Telegram-Init-Data` comme le décrit la doc Telegram (HMAC avec la clé
 `WebAppData`, champs triés, comparaison en temps constant, `auth_date` d'une heure au plus). Tout
@@ -262,7 +273,7 @@ sans filtre de propriétaire.
 
 Erreurs : un seul chemin de sortie, avec un mot fixe par statut et jamais le message de l'erreur. Un
 4xx voulu passe tel quel — une route lève une erreur portant `statusCode` 403, 404 ou 429 — et tout
-le reste répond `500 {"error":"internal"}` (mots de `API_ERROR_CODES`, V1-23). Une URL mal formée
+le reste répond `500 {"error":"internal"}` (mots de `API_ERROR_CODES`, V1-05). Une URL mal formée
 suit le même chemin.
 
 L'API seule : `pnpm --filter @launchbot/api start`. Elle ne parle jamais à Solana, et ESLint lui
@@ -330,8 +341,10 @@ provisoire de V1-16 est remplacé.
   `💰 Dev buy: 5 SOL (≈ 15.2% of supply)` (`formatDevBuyWithShare` sur `devBuySupplyShare` du
   moteur, calculé sur la courbe **stockée** dans la Simulation, jamais sur une relecture),
   `⏱ Duration: 3 min max`, mention `⚠️ DEMO — Bullish scenario…` (`en.sim.demoBanner`, reprise
-  par la web app V1-24). Clavier : `▶️ Start simulation` en bouton `web_app` vers
-  `WEBAPP_URL/sim/<simId>`, puis `⬅️ Back` / `🏠 Menu`.
+  par le message de simulation). Clavier : `▶️ Start simulation` en callback `sim:go:<simId>`
+  (V1-26, D21 : il démarre la simulation dans le chat ; jusqu'au 24/09/2026 c'était un bouton
+  `web_app` vers la Mini App), puis `⬅️ Back` / `🏠 Menu`. La création de la Simulation à
+  l'affichage du récap (D14) est conservée : le clic lit la ligne et la joue.
 - **Création de la Simulation (D14)** : à l'affichage du récap, pas au clic (un bouton `web_app`
   ne passe pas par le bot). La plus récente du même utilisateur, brouillon et dev buy est reprise
   si elle a moins d'1 h (`SIMULATION_REUSE_MS`, proposition) ; sinon contrôle de la limite
@@ -957,11 +970,170 @@ Rejouer le premier accès avec son propre compte : remettre `termsVersion` et `c
 `NULL` sur sa ligne `User` (`pnpm db:studio`), ou passer `TERMS_VERSION=2` après avoir ajouté la date
 de la version 2 dans [packages/shared/src/legal.ts](packages/shared/src/legal.ts).
 
+## Mini App
+
+La Mini App (`apps/webapp`, V1-05) sert les pages Terms et Privacy, rien d'autre. L'écran de
+simulation (tickets V1-24 à V1-26 d'origine : contrôleur et horloge simulée, Lightweight Charts,
+stats, top holders, position, ventes et PNL card) a été construit, testé une fois sur téléphone le
+24/09/2026 et abandonné le jour même, sans être commité : la simulation se joue dans le chat (§6 du
+contexte, tickets V1-24 à V1-26 réécrits, décision ci-dessous). Ce qui en reste dans le dépôt, parce
+que le rendu dans le chat en a besoin : les formateurs `formatPctSupply`, `solToLamports` et
+l'option `signed` de `formatSol` (`@launchbot/shared`), la borne `SIM_SEED_MAX` partagée avec
+`drawSeed` du bot, et l'entrée `@launchbot/sim-engine/test-helpers` (`simConfig`).
+
+## Simulation dans le chat
+
+### Runner, message photo édité, ventes, contrôles, PNL card et Run again (V1-26)
+
+`▶️ Start simulation` envoie un **message photo protégé** (`protect_content`, ni transfert ni
+enregistrement) et l'édite toutes les 3 s jusqu'à la fin ; la PNL card remplace alors l'image du
+même message. Tout vit en mémoire dans le process du bot (§6.4) : rien n'est persisté, un
+redémarrage fige les messages en cours et leurs boutons répondent « This simulation is over ».
+
+- **Runner** (`createSimRunner`, [apps/bot/src/services/sim-runner.ts](apps/bot/src/services/sim-runner.ts)) :
+  une entrée par simulation active (`SimulationRun` du moteur, agrégateur de bougies de V1-20,
+  horloge, vitesse, logo miniature), avancée par un minuteur toutes les `SIM_FRAME_MS` (3 s).
+  L'horloge simulée est un **compteur entier de millisecondes** (temps réel écoulé × vitesse,
+  borné à la durée) et chaque tick fait un seul `run.advanceTo(simMs / 1000)` : le
+  moteur applique les trades tirés d'avance jusqu'à cet instant, quelle que soit la cadence, et
+  `run.time()` est exact (`12.0`, jamais `11.9999`). Volume, achats et ventes se lisent sur les
+  bougies de l'agrégateur ; `endReason` décide la fin, puis l'image est rendue (sim-render, V1-25)
+  et éditée (`editMessageMedia`). À la fin, le dernier état est dessiné (la bougie de la vente de
+  clôture), reste `SIM_END_HOLD_MS` (2 s), puis la carte remplace l'image en **animation**
+  (`editAnimation`, un MP4 muet). `start` **réserve la place immédiatement** (une simulation
+  active par utilisateur → `already_running`, `SIM_MAX_ACTIVE` (20) au total → `full`) et rend
+  `{ kind: "ok", ready }`, `ready` étant la lecture du logo, sa miniature et le premier envoi :
+  un second clic pendant l'upload est refusé sans course. Toute écriture d'un message passe par
+  une **chaîne par entrée** : le premier envoi, un tick, une vente et la carte ne se chevauchent
+  jamais, et deux éditions restent espacées de `SIM_MIN_EDIT_GAP_MS` (1 s) ; une vente, une pause
+  ou un changement de vitesse demandent une édition immédiate, différée si la dernière a moins
+  d'une seconde, jamais perdue. Pause qui expire après `SIM_PAUSE_TIMEOUT_MS` (10 min) en fin
+  `timeout`. Telegram : message supprimé (`gone`) → simulation retirée sans bruit, toute autre
+  erreur → log `error` avec le seul `simId` et simulation retirée. `stop()` du service annule les
+  minuteurs avant l'arrêt du bot. Dépendances injectables (`scheduler`, `render`, `telegram`,
+  `maxActive`) : les tests pilotent une horloge virtuelle (`fakeScheduler` du harnais) et un faux
+  rendu de quelques octets.
+- **Telegram** ([features/simulation/telegram.ts](apps/bot/src/features/simulation/telegram.ts)) :
+  `sendPhoto` avec `InputFile`, légende HTML, clavier et `protect_content: true` ; `editMessageMedia`
+  en `{ type: "photo" }` avec la légende dans le média, `{ type: "animation" }` pour la carte ;
+  `isNotModified` de V1-04 vaut `edited`, `isUneditable` vaut `gone`.
+- **Légende et boutons** ([caption.ts](apps/bot/src/features/simulation/caption.ts), purs) : l'en-tête
+  `📊 SIMULATION · 🧪 Devnet`, la mention DEMO (`en.sim.demoBanner`, même constante que l'image),
+  `🪙 Moon Otter · $OTTR`, `⏱ 1:32 / 3:00 · Speed x2` (ou `⏸ Paused`), `📈 Market cap: $5,176.27
+(50.08 SOL)` (SOL seul sans prix), `Bonding curve: 34.2% ▰▰▰▱▱▱▱▱▱▱`, `Volume · Buys / Sells`
+  (dev inclus, proposition), puis la position par `buildPositionView` (V1-25) et `Sold so far` après
+  une vente. Clavier `[ Sell 25% ][ Sell 50% ][ Sell 100% ]` / `[ ⏸ Pause ][ x1 ][ ✅ x2 ][ x5 ]`
+  (`▶️ Resume` en pause, la vitesse courante cochée), carte : `[ 🔁 Run again ][ 🏠 Menu ]`.
+  Callback data `SIM_CB.go|sell|pause|resume|speed|again(simId, …)` de `screens.ts` (une seule
+  table pour le domaine `sim`, ≤ 64 octets avec un cuid) ; Menu = `nav:home` : `showScreen`
+  n'édite que le message texte qui porte le bouton, sous une photo il envoie l'accueil dans un
+  nouveau message, sans appel raté.
+- **Handlers** ([live.ts](apps/bot/src/features/simulation/live.ts), enregistrés dans le domaine
+  `sim` de V1-22) : `go` lit la ligne (`SimulationStore.findOwnedWithDraft(userId, simId)`, la
+  propriété fait partie de la requête comme pour les brouillons ; `hasNameAndTicker` sinon « stale »)
+  puis `launch`, commun à `go` et `again` : `runner.start` réserve ou refuse (`already_running` /
+  `full` → alerte + flag sur le récap pour `go`, alerte pour `again`), le clic est acquitté, puis
+  `ready` lit le logo (`createTokenImageService`, `contentType` PNG / JPEG, WEBP ou échec →
+  pastille) et envoie la première image ; `go` retire ensuite le clavier du récap (`dropKeyboard`
+  de la navigation). `sell` → alerte `Sold 25%: 24.17M OTTR for 0.912 SOL.` (le ticker vient du
+  runner, aucune lecture en base), `One sale at a time.` sous la seconde, `Nothing left to sell.`,
+  « over » pour une simulation inconnue. `pause` / `resume` / `speed` silencieux. `again` (D21
+  remplace D12) : `SimulationService.restart` crée une **nouvelle ligne** (même brouillon, dev buy
+  et config, seed `drawSeed` ≠ ancienne, `RATE_LIMITS.simulation` comptée) puis repart **sur le
+  même message** ; un message supprimé entre-temps reçoit un nouvel envoi.
+- **Shared** : `SIM_DEFAULT_SPEED` (x2), `SIM_FRAME_MS`, `SIM_MIN_EDIT_GAP_MS`, `SIM_MAX_ACTIVE`,
+  `SIM_PAUSE_TIMEOUT_MS`, emojis `pause`, `runAgain`, `marketCap`, `position`, textes
+  `en.sim.live.*` et `en.sim.card.*`, `progressBar(done, total)` partagé avec l'en-tête de flux.
+  `@launchbot/sim-engine` : `SimulationRun.advanceTo(tSec)`. `@launchbot/db` :
+  `findOwnedWithDraft`. `createBot` rend `{ bot, simRunner }` et prend `images` comme les autres
+  services (le harnais passe `fakeImages`). Aucune migration, aucune variable d'env.
+- **Tests** (bot : 380) : `services/sim-runner.test.ts` (horloge virtuelle : première image et
+  boutons, **même carte finale que `step(180)` en x1 et x5**, vente dans la seconde et second tap
+  refusé, Sell 100 % → carte et boutons de fin, pause sans pas ni image et pause oubliée, vitesse,
+  cap et doublon d'utilisateur refusé pendant l'upload, message disparu, Run again sur un message
+  donné, `stop()`, erreur d'édition absorbée, premier envoi en échec remonté), `caption.test.ts`
+  (maquette §6.1 exacte, Paused, sans USD, échappement et limite de 1 024), `live.test.ts`
+  (harnais complet : photo protégée, logo lu une fois et récap désarmé, stale, flag « already
+  running », runner plein sans lire de logo, pastille sur logo illisible, vente et double tap,
+  Sell 100 % puis Menu dans un nouveau message et
+  Run again avec une seed différente sur le même message, pause / vitesse / reprise, limite de
+  fréquence du Run again). Manuel (téléphone, bot relancé) : voir la recette R5 de V1-46.
+
+## Images de la simulation
+
+### Graphique en PNG et PNL card animée (V1-25)
+
+`packages/sim-render` produit les deux images du message de simulation (§6.1, §6.3) : un SVG
+construit en TypeScript, testable comme du texte, rasterisé en PNG par `@resvg/resvg-js` (2.6.2,
+figé) avec la police **Inter** embarquée dans `fonts/` (SIL OFL 1.1, licence à côté,
+`loadSystemFonts: false`) : la même entrée donne les mêmes octets sur toutes les machines. Node
+seulement : le bot rend, Telegram affiche. Aucun Telegram ici, V1-26 branche les images sur le
+message. Mesure : ≈ 52 ms par image de 36 bougies sur le portable de dev, 40 à 100 kB de PNG.
+
+- **Graphique** (`buildChartSvg(frame)`, [packages/sim-render/src/chart.ts](packages/sim-render/src/chart.ts)) :
+  canevas 1280 × 720, thème sombre fixe (proposition : l'image ne connaît pas le thème
+  Telegram), bandeau DEMO ambre en tête (`en.sim.image.demo`, la mention de §6 sans son emoji :
+  resvg n'a pas de police couleur), avatar (logo PNG / JPEG embarqué en `data:` et rogné en
+  cercle, ou pastille colorée par le ticker avec sa première lettre), `Moon Otter · $OTTR`, chrono
+  `1:32 / 3:00`, libellé `Market cap (USD)` ou `(SOL)` (`chartUnit`), bougies vertes / rouges
+  sur un **axe du temps fixé sur toute la durée** (36 emplacements pour 180 s, graduation toutes
+  les 30 s : le graphique se remplit de gauche à droite sans changer d'échelle, proposition), axe
+  des valeurs en market cap (`axisScale` = supply × prix SOL ou × 1, 5 graduations, `$5,176` /
+  `$52.10` / `52.1 SOL` par `formatAxisValue`), histogramme de volume en bas, même couleur à 40 %.
+  `ChartFrame` = `{ token, clock, candles, config, logo }` : le runner passe les bougies de
+  `createCandleAggregator` (V1-20) et la config, dont le graphique tire l'unité et l'échelle.
+- **PNL card** (`buildPnlCardSvg(card, logo)`, [card.ts](packages/sim-render/src/card.ts), la
+  maquette du 24/09/2026) : un **overlay transparent** de 1280 × 944 pour le clip
+  [assets/pnl-card.mp4](packages/sim-render/assets/pnl-card.mp4) (5,8 s, 30 fps, muet, tiré de
+  l'enregistrement fourni par Tristan) : voile sombre dégradé à gauche pour la lisibilité sur
+  l'encre noir et blanc, pas de bandeau DEMO (la légende porte la mention), ticker `$OTTR` en
+  72 px, pastille verte (rouge en perte)
+  avec le glyphe Solana (`solanaGlyph`, le tracé officiel) et `+1.283` en 76 px, logo du token en
+  haut à droite (ou pastille), lignes `PNL +42.7%` / `Invested ≡ 3.000` / `Position ≡ 4.283`,
+  `SIMULATION · Not a real result` en bas. Le filigrane en bandes de la carte fixe est parti avec
+  elle. [video.ts](packages/sim-render/src/video.ts) : `renderPnlCardVideo(card, logo)` rend
+  l'overlay en PNG puis lance `ffmpeg` (**`ffmpeg-static` 5.2.0**, binaire téléchargé à
+  l'installation, chargé en CommonJS comme le SDK pump) : fondu de l'overlay à 0,5 s, H.264
+  `veryfast` CRF 23, `yuv420p`, `faststart`, sans son → ≈ 1,5 MB en ≈ 1,7 s, une fois par
+  simulation, dans un dossier temporaire supprimé quoi qu'il arrive. `preview:card` rend deux
+  images (gain, perte) et la vidéo dans `out/`.
+- **Modèles purs** ([model.ts](packages/sim-render/src/model.ts), repris de l'ancienne Mini App) :
+  `buildPositionView(position, config, ticker)` (`96.66M OTTR (9.67%)`, `≈ 3.412 SOL ($352.66)`,
+  `+0.412 SOL (+13.7%)`, `1.234 SOL` vendus ou null, ton) pour la légende de V1-26 ;
+  `buildPnlCardModel({ position, config, token, endTimeSec, initialDevTokens })` : Dev buy et
+  Sold for **arrondis à 2 décimales d'abord**, PnL = leur différence (la carte s'additionne),
+  `Sold for` = `solOut + valueIfSoldNow`, `Position` = `Closed` / `62% held` (part de la position
+  de départ) / `<1% held`, USD par le prix figé ou omis, `-0.540 SOL · -$55.81` en perte ; pour
+  la carte : `tickerText` `$OTTR`, `pnlSolBig` `+1.283`, `investedText` `3.000`,
+  `positionSolText` `4.283`, en **millièmes de SOL** (Invested + PnL = Position à l'écran) ;
+  `formatSignedSol`, `formatSignedPct` (signe après arrondi, jamais sur un zéro).
+- **Rasterisation** ([png.ts](packages/sim-render/src/png.ts)) : `renderPng(svg)` par
+  `renderAsync` de resvg (le tramage sur son propre thread ; l'encodage PNG `asPng`, ≈ 15 ms,
+  reste synchrone), `renderChartPng(frame)` → `Uint8Array`, et `renderLogo(image)` : le logo Telegram (jusqu'à 5 MB) réduit **une fois par run** en PNG de
+  96 px embarqué en `data:` (`Logo = { href }`), au lieu d'être ré-encodé et redécodé à chaque
+  image. Un SVG malformé rejette, jamais une image vide. `@launchbot/sim-render/test-helpers` :
+  `chartFrame`, `pnlCard`, `candle`.
+- **Textes** : `en.sim.image.*` (`packages/shared`, D19 : PNL, Invested, Position, Not a real
+  result, SIMULATION, `Market cap (unit)`) et `en.sim.card.*` pour la légende sous l'animation
+  (style Axiom, demande du 24/09/2026 : `🪙 <b>$OTTR</b> | +42.7%`, `📈 Invested: 3.000 SOL ($310)`,
+  `📉 Sell: 4.283 SOL ($443)`, `💰 Profit: +1.283 SOL ($133)`, dollars entiers par
+  `formatUsd(v, { decimals: 0 })`, sans les parenthèses quand le prix SOL est inconnu) ;
+  `en.sim.demoBanner` est désormais `E.warning + DEMO_MENTION`, la même constante que l'image.
+- **Tests** (24) : `model.test.ts` (exemple de la maquette, `62% held`, `<1% held`, USD omis,
+  additivité, moteur réel : Sell 100 % à 10 s → `Closed`, timeout → `100% held`),
+  `chart.test.ts` (bougies vertes / rouges et volume, graduations `0:00`…`3:00`, axe USD / SOL,
+  échappement XML du nom, logo / pastille, 19 bougies d'un vrai run à 90 s dans le tracé),
+  `card.test.ts` (overlay transparent de la taille du clip, lignes, pastille verte / rouge, trois
+  glyphes Solana, logo / pastille), `png.test.ts` (signature et 1280 × 720, mêmes octets deux
+  fois, logo réduit à 96 px puis embarqué, SVG cassé rejeté), `video.test.ts` (un vrai ffmpeg :
+  MP4 de 0,2 à 5 MB en moins de 15 s). Manuel :
+  `render:sample` puis regarder `out/` sur un téléphone.
+
 ## Moteur de simulation
 
 `packages/sim-engine` est le moteur de « Simulate a Launch » (§7 du contexte) : TypeScript pur,
-**zéro dépendance runtime**, ni API Node ni DOM, donc importable par Vite (web app) comme par Node
-(bot, API). Une même seed rejoue exactement la même simulation, sur tous les moteurs JavaScript.
+**zéro dépendance runtime**, ni API Node ni DOM, donc importable par Node (bot) comme par un
+bundler. Une même seed rejoue exactement la même simulation, sur tous les moteurs JavaScript.
 ESLint y interdit `Math.random`, `Date`, `performance`, `fetch`, l'opérateur `**` et les fonctions
 `Math.log/exp/sin/cos/pow/tan…` (« implementation-approximated » en ECMAScript : V8 et
 JavaScriptCore peuvent différer au dernier bit, puis la simulation diverge). Les tests, eux, peuvent
@@ -970,57 +1142,19 @@ comparer à `Math.*`.
 `SIM_ENGINE_VERSION` (proposition) est incrémentée à chaque changement d'algorithme ou de constante :
 une simulation enregistrée ne se rejoue à l'identique qu'avec la version qui l'a produite.
 
-### API de la simulation : GET /api/simulations/:id et image du token (V1-23)
+### API de la simulation : GET /api/simulations/:id et image du token (V1-23, retirée)
 
-`registerSimulationRoutes` ([apps/api/src/routes/simulations.ts](apps/api/src/routes/simulations.ts))
-monte les deux routes sous `/api`, où `requireTelegramUser` (V1-05) s'applique déjà. C'est la
-seule frontière serveur de la simulation (§6.4) : la web app charge une fois, puis tout tourne
-côté client. Branché dans `createApiService` avec le client Prisma, le client de fichiers Telegram
-et l'activité web app.
-
-- **`GET /api/simulations/:id`**, contrôles dans l'ordre : initData absent ou invalide → 401 avant
-  toute requête en base ; `:id` qui n'est pas un cuid → 404 (pas de 400, contrat 200 / 401 / 403 / 404) ; simulation inconnue ou purgée → 404 ; `Simulation.user.telegramId` ≠ id de l'initData
-  (comparé en BigInt, ligne `User` ou non) → 403 ; sinon 200 `{ id, createdAt, config, token }`,
-  `Cache-Control: no-store`. `config` = `Simulation.params` **tel quel** (jamais recalculé, ni
-  Global ni prix : c'est la garantie du rejeu). `token` : `name`, `ticker` sans `$`,
-  `description`, `hasImage`, `imagePath` relatif (`/api/simulations/<id>/image`, null sans image),
-  `links` (`website`, `x`, `telegram` : URL https ou null, toute autre valeur devient null).
-  Jamais `userId`, `telegramId`, `tokenDraftId` ni `file_id`. Des params ou un brouillon que
-  `simulationResponseSchema` refuse → 500 `internal`, log `error` avec le seul `simId`.
-- **`GET /api/simulations/:id/image`** (ajout D15) : mêmes 401 / 403 / 404, brouillon sans image → 404. Côté serveur `getFile` puis téléchargement avec BOT_TOKEN
-  (`createTelegramFileClient`, [packages/shared/src/server/telegram-file.ts](packages/shared/src/server/telegram-file.ts),
-  réutilisable en V2-02) ; type détecté par les premiers octets, JPEG / PNG / WEBP seulement, un
-  SVG → 415 `unsupported_image` ; plus de 5 Mo (`API_IMAGE_MAX_BYTES`, proposition, contrôlé
-  avant, pendant et après le téléchargement) → 413 `image_too_large` ; échec ou timeout 10 s
-  Telegram → 502 `image_unavailable`. En-têtes `Content-Type` détecté,
-  `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=3600`. **Jamais de
-  redirection** vers l'URL Telegram (elle porte le token) ; les messages d'erreur du client sont
-  fixes, sans URL, token, `file_path` ni `file_id` ; les logs de la route ne gardent que la raison
-  et le `simId`. Cache mémoire par `file_id` (`createTokenImageService` sur `createTtlCache` : 10
-  images de 5 Mo au plus, 1 h, une lecture partagée entre requêtes concurrentes, proposition). Côté client (V1-24) : `fetch` avec l'en-tête puis `URL.createObjectURL`, jamais
-  d'initData en query string.
-- **Codes d'erreur** (`API_ERROR_CODES`, `apiErrorSchema`, `@launchbot/shared`) : `bad_request`,
-  `unauthorized`, `forbidden`, `not_found`, `image_too_large`, `unsupported_image`,
-  `rate_limited`, `image_unavailable`, `internal`. Les mots de V1-05 `internal_error` et
-  `too_many_requests` deviennent `internal` et `rate_limited` (vocabulaire des cartes V1-23 à
-  V1-26).
-- **Limitation de fréquence (D17)** : `consumeRateLimit` de `@launchbot/shared/server`, le module
-  que le bot utilise déjà, en `preHandler` après l'auth, clé = id Telegram : `RATE_LIMITS.api`
-  (60/min) sur la route JSON, `RATE_LIMITS.apiImage` (30/min, proposition) sur l'image. Au-delà :
-  429 `rate_limited` avec `Retry-After`. Pas de `@fastify/rate-limit` ni de limite par IP (les 401
-  ne coûtent qu'un HMAC) : écart avec la carte, choisi pour partager le quota avec le bot.
-- **Activité (§11.3)** : `onAuthenticated` → `createUserActivity` → `touchUserActivity`
-  (`@launchbot/db`, `updateMany` sur le `telegramId` : jamais de `User` créé), au plus une écriture
-  par minute par utilisateur (proposition), échec loggé sans faire échouer la requête, rien sur
-  un 401.
-- **Contrat partagé** : `simIdParamSchema`, `simulationTokenSchema`, `simulationResponseSchema`,
-  type `SimulationResponse` (`@launchbot/shared`) ; `SimulationStore.findForViewer(simId)`
-  (`@launchbot/db`).
-- **Tests** : routes avec `app.inject` sur un store et un client Telegram simulés (200, 401 sans
-  accès base, 403, 404 × 3, 500, 429 + `Retry-After` par utilisateur, préflight CORS, image 200 /
-  401 / 403 / 404 / 413 / 415 / 502 sans fuite du token, de l'URL ni du `file_id`), client de
-  fichiers, activité, store ; test PostgreSQL derrière `RUN_DB_TESTS=1`
-  ([packages/db/src/services/simulations.int.test.ts](packages/db/src/services/simulations.int.test.ts)).
+Livrée le 23/09/2026 (`12a6819`), **retirée par V1-24 le 24/09/2026** (décision D21, §6.5 du
+contexte) : la simulation tourne dans le process du bot, plus aucune page ne lit l'API. Sont
+partis avec elle : les routes `GET /api/simulations/:id` et `/image`, la limitation de fréquence
+côté API (`RATE_LIMITS.api`, `apiImage`), l'activité de la Mini App (`touchUserActivity`), le
+contrat `simulationResponseSchema` / `simIdParamSchema`, `SimulationStore.findForViewer` et les
+codes d'erreur des images. Ce qui reste, parce que l'image de simulation (V1-25) en a besoin :
+`createTelegramFileClient` (`getFile` + téléchargement avec `BOT_TOKEN`, type détecté par les
+premiers octets, JPEG / PNG / WEBP, 5 Mo au plus, timeout 10 s, jamais de redirection vers l'URL
+Telegram) et `createTokenImageService` (cache mémoire par `file_id`, 10 images, 1 h, une lecture
+partagée entre appels concurrents), désormais tous deux dans `@launchbot/shared/server`.
+L'`apps/api` est revenue au squelette de V1-05.
 
 ### Paramètres de curve lus dans le compte Global pump.fun (V1-21)
 
@@ -1070,8 +1204,8 @@ relecture ultérieure ne change jamais une simulation existante.
 
 ### API SimRun et bougies (V1-20)
 
-`createSimulation(config)` est le seul point d'entrée de la web app (V1-24 à V1-26) et du bot
-(V1-22). `assertSimConfig` vérifie chaque champ (seed uint32, dev buy et durée finis > 0, curve et
+`createSimulation(config)` est le seul point d'entrée du bot (V1-22, puis le runner de simulation
+V1-26). `assertSimConfig` vérifie chaque champ (seed uint32, dev buy et durée finis > 0, curve et
 preset par leurs validateurs, `solUsdPrice` `null` ou > 0) avec une `RangeError` qui nomme le champ,
 puis le moteur travaille sur une copie gelée : l'objet reçu n'est jamais modifié, et un config passé
 par `JSON.parse(JSON.stringify())` rejoue le même run.
@@ -1104,7 +1238,8 @@ Bougies : `createCandleAggregator({ initialPrice, durationSec })` agrège les tr
 pousse `devBuy()` en premier. `open` = `close` précédent, `high`/`low` incluent `open`,
 `volumeSol`, `buys` et `sells` sont des sommes. Un intervalle sans trade jusqu'à `nowSec` donne une
 bougie plate (proposition) : le graphique avance même sans trade. `push` renvoie les bougies créées
-ou modifiées, en copies, pour `series.update()` de Lightweight Charts (V1-25).
+ou modifiées, en copies, pour un rendu incrémental (le rendu image V1-25 redessine tout à chaque
+image : il lit `candles()` en entier).
 
 Vecteurs testés (curve de repli, 3 SOL) : `sellDev(1)` à t = 0 rend 2.9403 SOL, `pnlSol` −0.0597,
 `pnlPct` −1.99 ; top holders à t = 0 : bonding curve 90.334 %, dev 9.666 %. Test d'acceptation §15
@@ -1239,5 +1374,10 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 21/09/2026 | **Un seul tunnel en local** : Vite relaie `/api` vers l'API, donc `WEBAPP_URL` = `API_URL`. Le CORS n'autorise que l'origine de `WEBAPP_URL` : une origine étrangère ne reçoit aucun `Access-Control-Allow-Origin`, et le preflight est mis en cache 2 h (`maxAge`), sinon l'en-tête personnalisé coûte un aller-retour de plus à chaque appel. |
 
 | 21/09/2026 | **Pas de `react-router-dom` dans la Mini App**, alors que la carte V1-05 le cite. Chaque page s'ouvre par une URL complète depuis un bouton `web_app` et aucune ne renvoie vers une autre : un aiguillage de dix lignes sur `location.pathname` suffit. Le routeur pesait 39 kB (13 kB gzip), soit 91 % de la croissance du bundle. À réintroduire si une page a un jour besoin de navigation interne. |
-| 21/09/2026 | **Les textes de la Mini App sont dans `i18n/en-webapp.ts`**, exposés aussi comme `en.webapp`. `en` est un seul objet, qu'un bundler ne sait pas élaguer : l'importer embarquerait tous les textes du bot. ESLint interdit `en` et `E` dans `apps/webapp`. À décider avant V1-24 : importer un schéma zod depuis `@launchbot/shared` dans la Mini App coûterait 74 kB (21 kB gzip) ; `apiFetch` accepte tout objet doté d'un `parse`, donc un parseur écrit à la main suffit. |
+| 21/09/2026 | **Les textes de la Mini App sont dans `i18n/en-webapp.ts`**, exposés aussi comme `en.webapp`. `en` est un seul objet, qu'un bundler ne sait pas élaguer : l'importer embarquerait tous les textes du bot. ESLint interdit `en` et `E` dans `apps/webapp`. Le choix zod ou parseur manuel pour la Mini App est tranché le 23/09/2026 (V1-24, ligne ci-dessous). |
+| 23/09/2026 | **zod dans le bundle de la Mini App** (V1-24) : `fetchSimulation` valide la réponse de l'API avec `simulationResponseSchema`, le schéma que l'API applique elle-même, comme la carte l'exige. Un parseur écrit à la main aurait dupliqué les règles de `simConfigSchema` et divergé un jour. Bundle : 221 kB → 330 kB (69 → 103 kB gzip), dont zod ≈ 74 kB (21 kB gzip) et le moteur `sim-engine`, puis 503 kB (159 kB gzip) avec `lightweight-charts` 5.2.1 en V1-25 (≈ 173 kB, 56 kB gzip, la dépendance que §12 impose) et 509 kB (161 kB gzip) avec la position et la PNL card de V1-26 ; les textes de la Mini App (`en-webapp.ts`) importent désormais `E` (la table des emojis, quelques centaines d'octets), toujours pas `en`. **Caduque le 24/09/2026** : l'écran de simulation est abandonné, zod et `lightweight-charts` sortent du bundle avec lui (ligne suivante). |
+| 24/09/2026 | **La simulation se joue dans le chat, plus de Mini App pour la simulation ni pour le launch** (§6.5 du contexte). Après le premier test sur téléphone de l'écran V1-24 à V1-26, Tristan a tranché : un message photo du bot édité toutes les 3 s (`editMessageMedia`), boutons Sell et contrôles en clavier inline, PNL card qui remplace l'image du même message, `protect_content` contre le transfert et l'enregistrement. Rendu : SVG construit en TypeScript, rasterisé en PNG par `@resvg/resvg-js` avec une police embarquée (proposition). Perdu : le graphique fluide et le bloc Top holders. La Mini App ne garde que Terms et Privacy ; l'API n'a plus de route métier. Les cartes V1-24 à V1-26 sont réécrites (nettoyage, rendu image, simulation dans le chat) et le code de la Mini App de simulation n'est jamais commité : V1-24 ramène `apps/webapp` à V1-05 (bundle 509 kB → 221 kB, 69 kB gzip, sans `zod`, `lightweight-charts` ni `sim-engine`), retire l'API de simulation et déplace `createTokenImageService` dans `@launchbot/shared/server`. |
+| 24/09/2026 | **Le runner de simulation vit dans le process du bot, en mémoire, un timer par simulation** (V1-26). Pas de table ni de worker : une simulation dure 3 minutes au plus, une pause 10 minutes, et un redémarrage la fige sans dommage (le message reste, ses boutons répondent « over »). Le temps simulé est un compteur entier de millisecondes que le runner pousse dans le moteur par `advanceTo(tSec)` (ajouté à `SimulationRun` par la passe `/simplify` : les trades sont tirés d'avance, le découpage en pas ne change rien, et `run.time()` devient exact). `createBot` rend désormais `{ bot, simRunner }` pour que le service arrête les minuteurs avant le bot. |
+| 24/09/2026 | **PNL card animée sur un clip, composée par `ffmpeg-static`** (V1-25, demande de Tristan après son premier test). La carte suit sa maquette (ticker, pastille verte ou rouge avec le glyphe Solana, PNL / Invested / Position) et se pose sur un clip d'animation qu'il a fourni ; Telegram reçoit un MP4 muet en `editMessageMedia` `animation`, joué en boucle. Le clip (1,8 MB, prétraité une fois : sans son, 30 fps, 1280 × 944) vit dans `packages/sim-render/assets/`. `ffmpeg-static` (GPL, binaire par plateforme téléchargé à l'installation, ≈ 80 MB) lance ffmpeg en sous-processus une fois par simulation, ≈ 1,7 s ; l'image de déploiement devra le laisser s'installer (`pnpm install` sans `--ignore-scripts`). Avant la carte, le dernier graphique (la bougie de la vente de clôture) reste 2 s (`SIM_END_HOLD_MS`). |
+| 24/09/2026 | **Images de simulation : SVG écrit en TypeScript, rasterisé par `@resvg/resvg-js` 2.6.2 avec la police Inter embarquée** (V1-25, `packages/sim-render`). Le SVG se teste comme du texte (classes, libellés, géométrie), resvg est un binaire précompilé par plateforme sans dépendance système, et la police du dépôt rend les PNG identiques partout (`loadSystemFonts: false`). Écartés : `@napi-rs/canvas` (API impérative, tests sur des pixels) et `sharp` (rendu SVG via librsvg et fontconfig, police selon la machine). `fontBuffers` n'existe pas en 2.6.2 : les fichiers sont relus à chaque rendu, ≈ 52 ms par image de 36 bougies au total. |
 | 23/09/2026 | **`@pump-fun/pump-sdk` 2.0.0 (version figée) chargé en CommonJS** via `createRequire` (V1-21) : son build ESM importe `BN` en export nommé de `@coral-xyz/anchor`, que Node et `tsx` refusent. `@types/bn.js` en devDependency. Le `Global` du devnet (1 SOL de réserves virtuelles, 30 sur mainnet) est rejeté par le service de curve : les simulations suivent le tableau §7.1 tant que le compte lu n'est pas cohérent avec le produit (un dev buy de 20 SOL ne doit pas compléter la curve à t = 0). |

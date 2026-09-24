@@ -3,14 +3,18 @@ import type { TokenDraftFields } from "./token-drafts.js";
 
 export type { Simulation } from "../generated/prisma/client.js";
 
-/** What the API reads of a simulation (V1-23): its config, its owner, and the token it shows. */
-export type SimulationForViewer = {
-  id: string;
-  createdAt: Date;
-  params: unknown;
-  ownerTelegramId: bigint;
-  tokenDraft: TokenDraftFields;
-};
+/** A Simulation with the token it shows: what the chat needs to run it (V1-26). */
+export type SimulationWithDraft = Simulation & { tokenDraft: TokenDraftFields };
+
+const DRAFT_FIELDS = {
+  name: true,
+  symbol: true,
+  description: true,
+  imageFileId: true,
+  website: true,
+  twitter: true,
+  telegram: true,
+} as const satisfies Record<keyof TokenDraftFields, true>;
 
 export type SimulationKey = { userId: string; tokenDraftId: string; devBuySol: number };
 
@@ -25,8 +29,8 @@ export type SimulationStore = {
   /** The latest simulation of this user, draft and dev buy, created after `since`. */
   findLatest: (key: SimulationKey, since: Date) => Promise<Simulation | null>;
   create: (data: NewSimulation) => Promise<Simulation>;
-  /** For the API (V1-23): with the owner and the token, null when purged or unknown. */
-  findForViewer: (simId: string) => Promise<SimulationForViewer | null>;
+  /** This user's simulation by id, with its draft: null when not theirs, unknown or purged. */
+  findOwnedWithDraft: (userId: string, simId: string) => Promise<SimulationWithDraft | null>;
 };
 
 export type SimulationsDeps = { prisma: PrismaClient };
@@ -47,30 +51,10 @@ export function createSimulationStore({ prisma }: SimulationsDeps): SimulationSt
         data: { userId, tokenDraftId, devBuySol: decimalOf(devBuySol), seed, params },
       }),
 
-    async findForViewer(simId) {
-      const row = await prisma.simulation.findUnique({
-        where: { id: simId },
-        select: {
-          id: true,
-          createdAt: true,
-          params: true,
-          user: { select: { telegramId: true } },
-          tokenDraft: {
-            select: {
-              name: true,
-              symbol: true,
-              description: true,
-              imageFileId: true,
-              website: true,
-              twitter: true,
-              telegram: true,
-            },
-          },
-        },
-      });
-      if (row === null) return null;
-      const { user, ...rest } = row;
-      return { ...rest, ownerTelegramId: user.telegramId };
-    },
+    findOwnedWithDraft: (userId, simId) =>
+      prisma.simulation.findFirst({
+        where: { id: simId, userId },
+        include: { tokenDraft: { select: DRAFT_FIELDS } },
+      }),
   };
 }

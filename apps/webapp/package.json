@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@launchbot/shared": "workspace:*",
-    "@launchbot/sim-engine": "workspace:*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

@@ -6,8 +6,8 @@ const WEBAPP_URL = "https://launchbot.example.com";
 describe("buildWebAppUrl", () => {
   it("builds the URL of a page of the Mini App from WEBAPP_URL", () => {
     expect(buildWebAppUrl("/terms", WEBAPP_URL)).toBe("https://launchbot.example.com/terms");
-    expect(buildWebAppUrl("/sim/cjld2cjxh0000qzrmn831i7rn", WEBAPP_URL)).toBe(
-      "https://launchbot.example.com/sim/cjld2cjxh0000qzrmn831i7rn",
+    expect(buildWebAppUrl("/privacy", WEBAPP_URL + "/")).toBe(
+      "https://launchbot.example.com/privacy",
     );
   });
 

@@ -16,9 +16,6 @@
       "path": "../../packages/shared"
     },
     {
-      "path": "../../packages/sim-engine"
-    },
-    {
       "path": "./tsconfig.node.json"
     }
   ]

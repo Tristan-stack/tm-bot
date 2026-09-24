@@ -15,6 +15,11 @@ const BONDING_CURVE = "bonding_curve";
 
 /** The public run (§7.4), plus the clock and the dev buy event the screens need (proposal). */
 export interface SimulationRun extends SimRun {
+  /**
+   * Advances to an absolute simulated instant, never before the current one: what a clock
+   * kept outside the engine calls each frame (V1-26). `step(dt)` is `advanceTo(time() + dt)`.
+   */
+  advanceTo(tSec: number): TradeEvent[];
   /** Simulated seconds; frozen at the end ("Time 2:14" of the PNL card). */
   time(): number;
   /** The buy of the dev at t = 0, never returned by `step`. */
@@ -88,8 +93,15 @@ export function createSimulation(input: SimConfig): SimulationRun {
   return {
     step(dtSec) {
       if (!(Number.isFinite(dtSec) && dtSec >= 0)) throw rangeError("dtSec", "a finite number ≥ 0");
+      return this.advanceTo(time + dtSec);
+    },
+
+    advanceTo(tSec) {
+      if (!(Number.isFinite(tSec) && tSec >= time)) {
+        throw rangeError("tSec", `a finite number ≥ ${time}, the current time`);
+      }
       if (end !== null) return [];
-      let target = time + dtSec;
+      let target = tSec;
       if (config.durationSec - target <= CLOCK_SNAP_SEC) target = config.durationSec;
       const events = flow.advanceTo(target);
       if (curve.isComplete()) {
