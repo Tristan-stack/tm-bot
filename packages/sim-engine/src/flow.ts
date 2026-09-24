@@ -26,6 +26,11 @@ export interface TradeFlow {
   advanceTo(tSec: number): TradeEvent[];
   /** After a sell of the dev: the envelope restarts from the current price. */
   resetEnvelope(tSec: number): void;
+  /**
+   * The dev dumped everything (§6.2, proposal of 24/09/2026): every holder sells `share` of
+   * its tokens at the same instant, the biggest first, and the curve falls back near its launch.
+   */
+  panic(tSec: number, share: number): TradeEvent[];
   /** The instant of the next candidate, drawn ahead of time. */
   nextTradeTime(): number;
   /** The curve is complete, or no candidate is left before durationSec. */
@@ -154,6 +159,22 @@ export function createTradeFlow(options: TradeFlowOptions): TradeFlow {
     resetEnvelope(tSec) {
       envelope.priceRef = curve.price();
       envelope.tRef = tSec;
+    },
+    panic(tSec, share) {
+      const events: TradeEvent[] = [];
+      for (const holder of registry.holders()) {
+        const quote = curve.sell(holder.tokens * share);
+        holder.tokens = settleTokens(holder.tokens - quote.tokensIn);
+        events.push({
+          t: tSec,
+          side: "sell",
+          trader: holder.address,
+          sol: quote.solOut,
+          tokens: quote.tokensIn,
+          price: curve.price(),
+        });
+      }
+      return events;
     },
     nextTradeTime: () => nextAt,
     done: () => curve.isComplete() || nextAt > durationSec,

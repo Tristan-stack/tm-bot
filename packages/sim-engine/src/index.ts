@@ -11,6 +11,7 @@ export const SIM_ENGINE_VERSION = 1;
 export type {
   CurveParams,
   CurveState,
+  DevSale,
   EndReason,
   Holder,
   Position,
@@ -54,7 +55,12 @@ export { DEFAULT_FLOW_PARAMS } from "./schedule.js";
 export type { FlowParams } from "./schedule.js";
 export { createTradeFlow } from "./flow.js";
 export type { TradeFlow, TradeFlowOptions } from "./flow.js";
-export { assertSimConfig, createSimulation, DEV_SELL_FRACTIONS } from "./simulation.js";
+export {
+  assertSimConfig,
+  createSimulation,
+  DEV_DUMP_PANIC_SHARE,
+  DEV_SELL_FRACTIONS,
+} from "./simulation.js";
 export type { SimulationRun } from "./simulation.js";
 export { CANDLE_INTERVAL_SEC, createCandleAggregator } from "./candles.js";
 export type { Candle, CandleAggregator } from "./candles.js";

@@ -46,6 +46,11 @@ export class TraderRegistry {
     return this.#traders;
   }
 
+  /** Whoever holds tokens, the biggest first (creation order on a tie), to be traded on. */
+  holders(): Trader[] {
+    return this.#traders.filter((trader) => trader.tokens > 0).sort((a, b) => b.tokens - a.tokens);
+  }
+
   #drawAddress(): string {
     let chars = "";
     for (let i = 0; i < ADDRESS_HALF * 2; i += 1) {

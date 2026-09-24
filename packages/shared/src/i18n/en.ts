@@ -549,7 +549,6 @@ export const en = {
     // PNL, Invested, Position are the rows of the mock-up of 24/09/2026; "Not a real result" and
     // SIMULATION are the words of §6.3; the rest is proposed (D19).
     image: {
-      demo: DEMO_MENTION,
       /** `Market cap (USD)`, or `(SOL)` without a SOL price. */
       marketCap: (unit: "USD" | "SOL") => `Market cap (${unit})`,
       pnl: "PNL",

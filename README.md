@@ -1018,7 +1018,7 @@ redémarrage fige les messages en cours et leurs boutons répondent « This simu
   en `{ type: "photo" }` avec la légende dans le média, `{ type: "animation" }` pour la carte ;
   `isNotModified` de V1-04 vaut `edited`, `isUneditable` vaut `gone`.
 - **Légende et boutons** ([caption.ts](apps/bot/src/features/simulation/caption.ts), purs) : l'en-tête
-  `📊 SIMULATION · 🧪 Devnet`, la mention DEMO (`en.sim.demoBanner`, même constante que l'image),
+  `📊 SIMULATION · 🧪 Devnet`, la mention DEMO (`en.sim.demoBanner`),
   `🪙 Moon Otter · $OTTR`, `⏱ 1:32 / 3:00 · Speed x2` (ou `⏸ Paused`), `📈 Market cap: $5,176.27
 (50.08 SOL)` (SOL seul sans prix), `Bonding curve: 34.2% ▰▰▰▱▱▱▱▱▱▱`, `Volume · Buys / Sells`
   (dev inclus, proposition), puis la position par `buildPositionView` (V1-25) et `Sold so far` après
@@ -1072,8 +1072,7 @@ message. Mesure : ≈ 52 ms par image de 36 bougies sur le portable de dev, 40 �
 
 - **Graphique** (`buildChartSvg(frame)`, [packages/sim-render/src/chart.ts](packages/sim-render/src/chart.ts)) :
   canevas 1280 × 720, thème sombre fixe (proposition : l'image ne connaît pas le thème
-  Telegram), bandeau DEMO ambre en tête (`en.sim.image.demo`, la mention de §6 sans son emoji :
-  resvg n'a pas de police couleur), avatar (logo PNG / JPEG embarqué en `data:` et rogné en
+  Telegram), pas de bandeau DEMO (retiré le 24/09/2026 : la légende porte la mention), avatar (logo PNG / JPEG embarqué en `data:` et rogné en
   cercle, ou pastille colorée par le ticker avec sa première lettre), `Moon Otter · $OTTR`, chrono
   `1:32 / 3:00`, libellé `Market cap (USD)` ou `(SOL)` (`chartUnit`), bougies vertes / rouges
   sur un **axe du temps fixé sur toute la durée** (36 emplacements pour 180 s, graduation toutes
@@ -1118,7 +1117,7 @@ message. Mesure : ≈ 52 ms par image de 36 bougies sur le portable de dev, 40 �
   (style Axiom, demande du 24/09/2026 : `🪙 <b>$OTTR</b> | +42.7%`, `📈 Invested: 3.000 SOL ($310)`,
   `📉 Sell: 4.283 SOL ($443)`, `💰 Profit: +1.283 SOL ($133)`, dollars entiers par
   `formatUsd(v, { decimals: 0 })`, sans les parenthèses quand le prix SOL est inconnu) ;
-  `en.sim.demoBanner` est désormais `E.warning + DEMO_MENTION`, la même constante que l'image.
+  `en.sim.demoBanner` vaut `E.warning + DEMO_MENTION` ; aucune image ne porte plus la mention.
 - **Tests** (24) : `model.test.ts` (exemple de la maquette, `62% held`, `<1% held`, USD omis,
   additivité, moteur réel : Sell 100 % à 10 s → `Closed`, timeout → `100% held`),
   `chart.test.ts` (bougies vertes / rouges et volume, graduations `0:00`…`3:00`, axe USD / SOL,
@@ -1220,8 +1219,11 @@ par `JSON.parse(JSON.stringify())` rejoue le même run.
   (proposition). Après la fin, `step` renvoie `[]` et l'horloge ne bouge plus.
 - **`sellDev(fraction)`** : 0.25, 0.5 ou 1 (`DEV_SELL_FRACTIONS`) des tokens **encore détenus**
   (proposition, comme « Sell 25% » sur pump.fun), par la formule de la curve, impact et frais
-  inclus. L'événement est renvoyé, l'enveloppe du garde-fou repart du nouveau prix, et tout vendre
-  ferme la position (`position_closed`). Après la fin : `SimulationEndedError`.
+  inclus. Renvoie `{ event, panic }` : l'événement du dev, puis, pour un Sell 100 % seulement,
+  les ventes de panique des détenteurs (`TradeFlow.panic` : chacun revend `DEV_DUMP_PANIC_SHARE`
+  = 90 % de ses tokens au même instant, les plus gros d'abord, la courbe retombe près du
+  lancement ; proposition du 24/09/2026). L'enveloppe du garde-fou repart du nouveau prix, et
+  tout vendre ferme la position (`position_closed`). Après la fin : `SimulationEndedError`.
 - **`position()`** : `valueIfSoldNow` passe par `curve.quoteSell`, jamais prix × tokens (§6.2) ;
   `pnlSol = solOut + valueIfSoldNow − solIn`, `pnlPct` en points (proposition : dev buy 3.00, vendu
   4.28 → +42.7 %).
@@ -1378,6 +1380,7 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 23/09/2026 | **zod dans le bundle de la Mini App** (V1-24) : `fetchSimulation` valide la réponse de l'API avec `simulationResponseSchema`, le schéma que l'API applique elle-même, comme la carte l'exige. Un parseur écrit à la main aurait dupliqué les règles de `simConfigSchema` et divergé un jour. Bundle : 221 kB → 330 kB (69 → 103 kB gzip), dont zod ≈ 74 kB (21 kB gzip) et le moteur `sim-engine`, puis 503 kB (159 kB gzip) avec `lightweight-charts` 5.2.1 en V1-25 (≈ 173 kB, 56 kB gzip, la dépendance que §12 impose) et 509 kB (161 kB gzip) avec la position et la PNL card de V1-26 ; les textes de la Mini App (`en-webapp.ts`) importent désormais `E` (la table des emojis, quelques centaines d'octets), toujours pas `en`. **Caduque le 24/09/2026** : l'écran de simulation est abandonné, zod et `lightweight-charts` sortent du bundle avec lui (ligne suivante). |
 | 24/09/2026 | **La simulation se joue dans le chat, plus de Mini App pour la simulation ni pour le launch** (§6.5 du contexte). Après le premier test sur téléphone de l'écran V1-24 à V1-26, Tristan a tranché : un message photo du bot édité toutes les 3 s (`editMessageMedia`), boutons Sell et contrôles en clavier inline, PNL card qui remplace l'image du même message, `protect_content` contre le transfert et l'enregistrement. Rendu : SVG construit en TypeScript, rasterisé en PNG par `@resvg/resvg-js` avec une police embarquée (proposition). Perdu : le graphique fluide et le bloc Top holders. La Mini App ne garde que Terms et Privacy ; l'API n'a plus de route métier. Les cartes V1-24 à V1-26 sont réécrites (nettoyage, rendu image, simulation dans le chat) et le code de la Mini App de simulation n'est jamais commité : V1-24 ramène `apps/webapp` à V1-05 (bundle 509 kB → 221 kB, 69 kB gzip, sans `zod`, `lightweight-charts` ni `sim-engine`), retire l'API de simulation et déplace `createTokenImageService` dans `@launchbot/shared/server`. |
 | 24/09/2026 | **Le runner de simulation vit dans le process du bot, en mémoire, un timer par simulation** (V1-26). Pas de table ni de worker : une simulation dure 3 minutes au plus, une pause 10 minutes, et un redémarrage la fige sans dommage (le message reste, ses boutons répondent « over »). Le temps simulé est un compteur entier de millisecondes que le runner pousse dans le moteur par `advanceTo(tSec)` (ajouté à `SimulationRun` par la passe `/simplify` : les trades sont tirés d'avance, le découpage en pas ne change rien, et `run.time()` devient exact). `createBot` rend désormais `{ bot, simRunner }` pour que le service arrête les minuteurs avant le bot. |
+| 24/09/2026 | **Un Sell 100 % du dev fait paniquer les détenteurs** (`DEV_DUMP_PANIC_SHARE` 0.9, moteur). Tristan voulait que la bougie de clôture retombe vers 2–3 k$ de market cap ; la courbe à produit constant ne descend jamais sous son niveau de lancement (≈ 28 SOL, 3 200 $ à 116 $ le SOL), et la seule vente du dev laissait 4 500 à 10 000 $. Chaque détenteur revend donc 90 % de ses tokens à l'instant de la vente, les plus gros d'abord : la dernière image montre la chute, la carte suit 2 s après. Réglable en une constante, ou à retirer si le scénario ne plaît pas. |
 | 24/09/2026 | **PNL card animée sur un clip, composée par `ffmpeg-static`** (V1-25, demande de Tristan après son premier test). La carte suit sa maquette (ticker, pastille verte ou rouge avec le glyphe Solana, PNL / Invested / Position) et se pose sur un clip d'animation qu'il a fourni ; Telegram reçoit un MP4 muet en `editMessageMedia` `animation`, joué en boucle. Le clip (1,8 MB, prétraité une fois : sans son, 30 fps, 1280 × 944) vit dans `packages/sim-render/assets/`. `ffmpeg-static` (GPL, binaire par plateforme téléchargé à l'installation, ≈ 80 MB) lance ffmpeg en sous-processus une fois par simulation, ≈ 1,7 s ; l'image de déploiement devra le laisser s'installer (`pnpm install` sans `--ignore-scripts`). Avant la carte, le dernier graphique (la bougie de la vente de clôture) reste 2 s (`SIM_END_HOLD_MS`). |
 | 24/09/2026 | **Images de simulation : SVG écrit en TypeScript, rasterisé par `@resvg/resvg-js` 2.6.2 avec la police Inter embarquée** (V1-25, `packages/sim-render`). Le SVG se teste comme du texte (classes, libellés, géométrie), resvg est un binaire précompilé par plateforme sans dépendance système, et la police du dépôt rend les PNG identiques partout (`loadSystemFonts: false`). Écartés : `@napi-rs/canvas` (API impérative, tests sur des pixels) et `sharp` (rendu SVG via librsvg et fontconfig, police selon la machine). `fontBuffers` n'existe pas en 2.6.2 : les fichiers sont relus à chaque rendu, ≈ 52 ms par image de 36 bougies au total. |
 | 23/09/2026 | **`@pump-fun/pump-sdk` 2.0.0 (version figée) chargé en CommonJS** via `createRequire` (V1-21) : son build ESM importe `BN` en export nommé de `@coral-xyz/anchor`, que Node et `tsx` refusent. `@types/bn.js` en devDependency. Le `Global` du devnet (1 SOL de réserves virtuelles, 30 sur mainnet) est rejeté par le service de curve : les simulations suivent le tableau §7.1 tant que le compte lu n'est pas cohérent avec le produit (un dev buy de 20 SOL ne doit pas compléter la curve à t = 0). |

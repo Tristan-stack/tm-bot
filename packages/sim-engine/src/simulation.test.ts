@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { FALLBACK_CURVE_PARAMS } from "./curve.js";
 import { SimulationEndedError } from "./errors.js";
 import { presetForDevBuy } from "./presets.js";
-import { assertSimConfig, createSimulation } from "./simulation.js";
+import { assertSimConfig, createSimulation, DEV_DUMP_PANIC_SHARE } from "./simulation.js";
 import type { SimulationRun } from "./simulation.js";
 import { expectClose, simConfig as config } from "./test-helpers.js";
 import type { SimConfig, TradeEvent } from "./types.js";
@@ -17,7 +17,8 @@ function run(
   let sold = false;
   while (sim.endReason() === null) {
     if (sell !== undefined && !sold && sim.time() >= sell.at) {
-      events.push(sim.sellDev(sell.fraction));
+      const sale = sim.sellDev(sell.fraction);
+      events.push(sale.event, ...sale.panic);
       sold = true;
       if (sim.endReason() !== null) break;
     }
@@ -84,8 +85,10 @@ describe("createSimulation", () => {
 
   it("sells the dev's tokens through the curve: the vectors of the card", () => {
     const sim = createSimulation(config());
-    const event = sim.sellDev(1);
+    const { event, panic } = sim.sellDev(1);
     expect(event).toMatchObject({ t: 0, side: "sell", trader: "dev" });
+    // Nobody else holds anything at t = 0: no panic to speak of.
+    expect(panic).toEqual([]);
     expectClose(event.sol, 2.9403);
     expectClose(event.tokens, 96_657_870.79);
     const position = sim.position();
@@ -101,8 +104,8 @@ describe("createSimulation", () => {
     expect(sim.time()).toBe(0);
 
     const halves = createSimulation(config());
-    const first = halves.sellDev(0.5);
-    const second = halves.sellDev(1);
+    const first = halves.sellDev(0.5).event;
+    const second = halves.sellDev(1).event;
     expectClose(first.sol + second.sol, 2.9403);
     expect(halves.endReason()).toBe("position_closed");
   });
@@ -149,6 +152,36 @@ describe("createSimulation", () => {
     for (let i = 0; i < 11_250; i += 1) sim.step(0.016);
     expect(sim.endReason()).toBe("timeout");
     expect(sim.time()).toBe(180);
+  });
+
+  it("makes the holders dump 90% of their tokens on a Sell 100%: the market cap falls back near the launch", () => {
+    const sim = createSimulation(config());
+    sim.step(90);
+    const before = sim.state();
+    // The traders only: neither the dev nor the bonding curve itself.
+    const holdersBefore = sim.topHolders(1000).filter((h) => h.label === undefined);
+    const { event, panic } = sim.sellDev(1);
+
+    expect(event.trader).toBe("dev");
+    expect(panic.length).toBe(holdersBefore.length);
+    expect(panic.every((e) => e.t === 90 && e.side === "sell" && e.trader !== "dev")).toBe(true);
+    // The biggest holder first, each selling 90 % of what it held.
+    const tokensSold = panic.map((e) => e.tokens);
+    expect(tokensSold).toEqual([...tokensSold].sort((a, b) => b - a));
+    expectClose(tokensSold[0]!, holdersBefore[0]!.tokens * DEV_DUMP_PANIC_SHARE, 1e-9);
+    // Each event carries the price after it: the curve only falls during the dump.
+    for (let i = 1; i < panic.length; i += 1)
+      expect(panic[i]!.price).toBeLessThan(panic[i - 1]!.price);
+    const after = sim.state();
+    const launchPrice = FALLBACK_CURVE_PARAMS.virtualSol / FALLBACK_CURVE_PARAMS.virtualTokens;
+    expect(after.price).toBeLessThan(before.price * 0.7);
+    expect(after.price).toBeGreaterThan(launchPrice);
+    expect(after.price).toBeLessThan(launchPrice * 1.15);
+    expect(sim.endReason()).toBe("position_closed");
+    // A partial sale never triggers it.
+    const partial = createSimulation(config());
+    partial.step(90);
+    expect(partial.sellDev(0.5).panic).toEqual([]);
   });
 
   it("ends on position_closed when the dev sells everything", () => {

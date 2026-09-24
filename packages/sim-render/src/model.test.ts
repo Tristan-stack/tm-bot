@@ -134,7 +134,7 @@ describe("buildPnlCardModel", () => {
     const sold = createSimulation(config);
     sold.devBuy();
     sold.step(10);
-    const sale = sold.sellDev(1);
+    const sale = sold.sellDev(1).event;
     const closed = buildPnlCardModel({ position: sold.position(), config, token });
     expect(sold.endReason()).toBe("position_closed");
     expect(closed.positionSolText).toBe(sale.sol.toFixed(3));

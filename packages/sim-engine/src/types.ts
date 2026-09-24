@@ -73,10 +73,13 @@ export type Holder = {
 
 export type EndReason = "timeout" | "position_closed" | "curve_complete";
 
+/** The sale of the dev, and the sells of the holders it triggered (empty unless everything went). */
+export type DevSale = { event: TradeEvent; panic: TradeEvent[] };
+
 export interface SimRun {
   step(dtSec: number): TradeEvent[];
-  /** 0.25, 0.5 or 1. */
-  sellDev(fraction: number): TradeEvent;
+  /** 0.25, 0.5 or 1; the whole position sold makes the holders panic (`DEV_DUMP_PANIC_SHARE`). */
+  sellDev(fraction: number): DevSale;
   state(): CurveState;
   position(): Position;
   topHolders(limit: number): Holder[];

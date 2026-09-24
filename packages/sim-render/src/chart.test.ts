@@ -31,14 +31,13 @@ describe("formatAxisValue", () => {
 });
 
 describe("buildChartSvg", () => {
-  it("is a document of the canvas size with the DEMO band, the token and the clock", () => {
+  it("is a document of the canvas size with the token and the clock, no DEMO band", () => {
     const svg = buildChartSvg(frame());
 
     expect(
       svg.startsWith(`<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}"`),
     ).toBe(true);
-    expect(svg).toContain("DEMO — Bullish scenario. Not a prediction or a real result.");
-    expect(svg).toContain('class="demo-band"');
+    expect(svg).not.toContain("DEMO");
     expect(svg).toContain(">Moon Otter · $OTTR</text>");
     expect(svg).toContain(">1:32 / 3:00</text>");
     expect(svg).toContain(">Market cap (USD)</text>");
@@ -111,7 +110,7 @@ describe("buildChartSvg", () => {
       const [, x, y1, y2] = match;
       expect(Number(x)).toBeGreaterThan(32);
       expect(Number(x)).toBeLessThan(1150);
-      expect(Number(y1)).toBeGreaterThanOrEqual(138);
+      expect(Number(y1)).toBeGreaterThanOrEqual(120);
       expect(Number(y2)).toBeLessThanOrEqual(536);
     }
   });

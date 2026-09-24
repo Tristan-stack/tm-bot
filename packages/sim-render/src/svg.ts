@@ -13,8 +13,6 @@ export const COLORS = {
   muted: "#8b93a3",
   up: "#26a69a",
   down: "#ef5350",
-  band: "#f5a524",
-  bandText: "#1b1b1b",
   /** The pill of the PNL card (V1-25, the mock-up of 24/09/2026). */
   gain: "#22c55e",
   loss: "#ef4444",
@@ -82,21 +80,6 @@ export function line(
   width = 1,
 ): string {
   return `<line x1="${num(x1)}" y1="${num(y1)}" x2="${num(x2)}" y2="${num(y2)}" stroke="${stroke}" stroke-width="${num(width)}"/>`;
-}
-
-/** The DEMO band across the top of every picture (§6): always there, never smaller. */
-export const BAND_HEIGHT = 48;
-
-export function demoBand(mention: string, width = WIDTH): string {
-  return [
-    rect(0, 0, width, BAND_HEIGHT, COLORS.band, 'class="demo-band"'),
-    text(width / 2, 32, mention, {
-      size: 20,
-      weight: 700,
-      fill: COLORS.bandText,
-      anchor: "middle",
-    }),
-  ].join("");
 }
 
 /** The image of a token as Telegram gives it; resvg decodes PNG and JPEG, not WEBP. */

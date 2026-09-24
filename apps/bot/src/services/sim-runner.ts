@@ -393,13 +393,14 @@ export function createSimRunner(deps: SimRunnerDeps): SimRunner {
       if (now - entry.lastSellAt < SIM_MIN_EDIT_GAP_MS) return { kind: "busy" };
       if (entry.run.position().tokens <= 0) return { kind: "empty" };
       // Sold at the simulated instant of the click, in a run as in a pause (§6.2).
-      const event = entry.run.sellDev(pct / 100);
+      const sale = entry.run.sellDev(pct / 100);
       entry.lastSellAt = now;
-      ingest(entry, [event]);
+      // A Sell 100% brings the panic of the holders with it: the last candle shows the fall.
+      ingest(entry, [sale.event, ...sale.panic]);
       const reason = entry.run.endReason();
       if (reason !== null) end(entry, reason);
       else requestEdit(entry);
-      return { kind: "ok", event, ticker: entry.token.ticker };
+      return { kind: "ok", event: sale.event, ticker: entry.token.ticker };
     },
 
     pause: (owner) =>

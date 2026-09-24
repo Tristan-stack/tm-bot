@@ -6,6 +6,11 @@ import { isValidSeed } from "./rng.js";
 import type { EndReason, Holder, Position, SimConfig, SimRun, TradeEvent } from "./types.js";
 
 export const DEV_SELL_FRACTIONS = [0.25, 0.5, 1] as const;
+/**
+ * A Sell 100% of the dev makes every holder sell this share of its tokens at once (§6.2,
+ * proposal of 24/09/2026): the market cap falls back near the launch, as after a rug.
+ */
+export const DEV_DUMP_PANIC_SHARE = 0.9;
 
 /** Non-dyadic steps drift: 0.016 × 11 250 = 179.99999999998727. Within this, snap to the end. */
 const CLOCK_SNAP_SEC = 1e-9;
@@ -124,8 +129,7 @@ export function createSimulation(input: SimConfig): SimulationRun {
       devTokens = settleTokens(devTokens - quote.tokensIn);
       solOut += quote.solOut;
       flow.resetEnvelope(time);
-      if (devTokens === 0) end = "position_closed";
-      return {
+      const event: TradeEvent = {
         t: time,
         side: "sell",
         trader: DEV,
@@ -133,6 +137,9 @@ export function createSimulation(input: SimConfig): SimulationRun {
         tokens: quote.tokensIn,
         price: curve.price(),
       };
+      if (devTokens > 0) return { event, panic: [] };
+      end = "position_closed";
+      return { event, panic: flow.panic(time, DEV_DUMP_PANIC_SHARE) };
     },
 
     state: () => curve.state(),

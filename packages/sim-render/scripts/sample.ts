@@ -51,7 +51,8 @@ const save = (name: string, png: Uint8Array): void => {
 save("chart-0s.png", await renderChartPng(frameAt(0)));
 aggregator.push(run.advanceTo(90), 90);
 save("chart-90s.png", await renderChartPng(frameAt(90)));
-aggregator.push([run.sellDev(1)], 90);
+const sale = run.sellDev(1);
+aggregator.push([sale.event, ...sale.panic], 90);
 save("chart-sold.png", await renderChartPng(frameAt(90)));
 const card = buildPnlCardModel({ position: run.position(), config, token });
 save("card.mp4", await renderPnlCardVideo(card, null));

@@ -295,7 +295,7 @@ Token › Dev buy › Recap
 
 Le rendu est une image PNG produite côté serveur (bougies et histogramme de volume), envoyée en photo puis remplacée par `editMessageMedia` à chaque image. Telegram limite la fréquence des éditions : une image toutes les 3 secondes (`SIM_FRAME_MS`, proposition), et jamais deux éditions du même message à moins d'une seconde d'écart. Le rendu n'est pas fluide comme un graphique web : c'est le compromis assumé pour rester dans le chat, comme le font les bots de trading.
 
-**Exigence : mention de démonstration.** La légende du message de simulation commence par `⚠️ DEMO — Bullish scenario. Not a prediction or a real result.` à chaque édition, et l'image porte un bandeau « DEMO » en tête, sur le graphique comme sur la PNL card. Le récap qui précède affiche la même mention.
+**Exigence : mention de démonstration.** La légende du message de simulation commence par `⚠️ DEMO — Bullish scenario. Not a prediction or a real result.` à chaque édition ; les images (graphique et PNL card) n'en portent pas, la légende suffit (décision du 24/09/2026 ; la PNL card garde « SIMULATION · Not a real result » en bas). Le récap qui précède affiche la même mention.
 
 ### 6.1 Message de simulation
 
@@ -329,7 +329,7 @@ PnL: +0.412 SOL (+13.7%)
 
 | Bloc | Contenu |
 |---|---|
-| Image | 1280 × 720 px, PNG. Bandeau DEMO, nom · ticker et chrono en en-tête, bougies et histogramme de volume, axe des valeurs en **market cap en USD** (en SOL si le prix SOL est inconnu), axe du temps en `m:ss` simulé. Logo du token en en-tête s'il existe, sinon pastille avec la première lettre du ticker (proposition). |
+| Image | 1280 × 720 px, PNG. Nom · ticker et chrono en en-tête, bougies et histogramme de volume, axe des valeurs en **market cap en USD** (en SOL si le prix SOL est inconnu), axe du temps en `m:ss` simulé. Logo du token en en-tête s'il existe, sinon pastille avec la première lettre du ticker (proposition). |
 | Légende | 1 024 caractères au plus : en-tête, mention DEMO, token, chrono et vitesse, stats (market cap en USD et en SOL, progression de la bonding curve, volume cumulé, achats et ventes), position (6.2). Sans prix SOL, aucun montant USD. |
 | Boutons | « Sell 25% », « Sell 50% », « Sell 100% » ; « ⏸ Pause » ↔ « ▶️ Resume » ; vitesse x1, x2 ou x5, la vitesse courante cochée. Vitesse par défaut x2 (proposition) : 3 minutes simulées en 90 secondes réelles. |
 
@@ -352,7 +352,7 @@ La position de départ correspond aux tokens achetés au dev buy. Chaque vente p
 
 La valeur « si vendu maintenant » se calcule de la même façon, et non en multipliant le prix affiché par le nombre de tokens. Le PnL vaut : SOL reçus des ventes + valeur si vendu maintenant − SOL dépensés au dev buy (frais inclus).
 
-Un tap sur Sell passe par le bot : la vente s'applique à l'instant simulé courant, en cours comme en pause, puis l'image et la légende sont rééditées dans la seconde. Un second tap dans la même seconde est ignoré avec une alerte (un tap = une vente). « Sell 100% » ferme la position et termine la simulation.
+Un tap sur Sell passe par le bot : la vente s'applique à l'instant simulé courant, en cours comme en pause, puis l'image et la légende sont rééditées dans la seconde. Un second tap dans la même seconde est ignoré avec une alerte (un tap = une vente). « Sell 100% » ferme la position et termine la simulation ; il déclenche aussi la panique des autres détenteurs, qui revendent 90 % de leurs tokens au même instant, les plus gros d'abord (`DEV_DUMP_PANIC_SHARE`, proposition du 24/09/2026) : la dernière bougie retombe près du market cap de lancement, comme après un rug. La courbe ne descend jamais sous ce niveau (≈ 28 SOL de market cap, soit 3 200 $ à 116 $ le SOL).
 
 ### 6.3 Fin de simulation et PNL card
 
@@ -544,7 +544,7 @@ type Holder = {
 type EndReason = "timeout" | "position_closed" | "curve_complete";
 interface SimRun {
   step(dtSec: number): TradeEvent[];
-  sellDev(fraction: number): TradeEvent; // 0.25, 0.5 ou 1
+  sellDev(fraction: number): DevSale; // 0.25, 0.5 ou 1 ; { event, panic: TradeEvent[] }
   state(): CurveState;
   position(): Position;
   topHolders(limit: number): Holder[];

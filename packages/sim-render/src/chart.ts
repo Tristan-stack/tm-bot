@@ -3,7 +3,7 @@ import { CANDLE_INTERVAL_SEC } from "@launchbot/sim-engine";
 import type { Candle, SimConfig } from "@launchbot/sim-engine";
 import { axisScale, chartUnit } from "./model.js";
 import type { ChartUnit, SimToken } from "./model.js";
-import { avatar, BAND_HEIGHT, COLORS, demoBand, document, line, rect, text, WIDTH } from "./svg.js";
+import { avatar, COLORS, document, line, rect, text, WIDTH } from "./svg.js";
 import type { Logo } from "./svg.js";
 
 /** What one picture of the running simulation shows (§6.1): the caller reads it off the run. */
@@ -22,12 +22,12 @@ const MARGIN = 32;
 const PLOT_LEFT = MARGIN;
 const PLOT_RIGHT = 1150;
 const LABEL_X = WIDTH - MARGIN;
-const PRICE_TOP = BAND_HEIGHT + 90;
+const PRICE_TOP = 120;
 const PRICE_BOTTOM = 536;
 const VOLUME_TOP = 556;
 const VOLUME_BOTTOM = 672;
 const TIME_LABEL_Y = 704;
-const HEADER_Y = 88;
+const HEADER_Y = 64;
 const TIME_TICK_SEC = 30;
 const VALUE_TICKS = 5;
 /** Margin above the highest and below the lowest value, as a share of the range. */
@@ -61,7 +61,7 @@ function valueRange(candles: readonly Candle[], scale: number): Range {
 }
 
 /**
- * The picture of the running simulation: DEMO band, token and clock, candles on a time axis
+ * The picture of the running simulation: token and clock, candles on a time axis
  * fixed on the whole duration (the chart fills from left to right, proposal), volume below.
  */
 export function buildChartSvg(frame: ChartFrame): string {
@@ -69,7 +69,7 @@ export function buildChartSvg(frame: ChartFrame): string {
   const unit = chartUnit(config);
   const scale = axisScale(config);
   const { image } = en.sim;
-  const parts: string[] = [demoBand(image.demo)];
+  const parts: string[] = [];
 
   // Header: avatar, name · $TICKER, the clock on the right, the unit of the axis under them.
   parts.push(avatar(MARGIN + 24, HEADER_Y - 8, 24, token.ticker, logo));
