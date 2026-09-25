@@ -15,9 +15,9 @@ Le bot est ouvert à tous, en conversation privée uniquement. Il tourne sur dev
 
 | Fonctionnalité | V1 | V2 |
 |---|:---:|:---:|
-| Premier accès : acceptation des Terms et adhésion au canal du bot | ✅ | |
+| Premier accès : adhésion au canal du bot | ✅ | |
 | Écran d'accueil et menu principal | ✅ | |
-| Support (compte support, priorité Premium), Terms of Service, Privacy Policy, commandes admin | ✅ | |
+| Support (compte support, priorité Premium), commandes admin | ✅ | |
 | Wallets : créer, importer (clé ou seed phrase), renommer, supprimer, retirer des SOL | ✅ | |
 | Subscribe : Classic et Premium, pass 2 jours ou 1 mois, paiement en SOL | ✅ | |
 | Générateur de token | ✅ | |
@@ -55,26 +55,9 @@ Comme le bot est public, chaque utilisateur est limité en fréquence (clics, Ge
 
 ### 4.2 Premier accès
 
-Avant de voir le menu, un nouvel utilisateur passe par deux écrans : l'acceptation des Terms, puis l'adhésion au canal du bot.
+Avant de voir le menu, un nouvel utilisateur rejoint le canal du bot : c'est le seul écran du premier accès. Décision du 25/09/2026 : plus de Terms of Service ni de Privacy Policy, donc plus d'écran d'acceptation avant le canal (voir 11.2).
 
-Écran 1, Terms :
-
-```
-🚀 Welcome to Launch Bot
-
-Create and simulate Solana memecoin launches, right from Telegram.
-
-ℹ️ This bot runs on Solana.
-
-Before you start, please read and accept our Terms of Service and Privacy Policy.
-
-[ 📜 Terms of Service ][ 🔒 Privacy Policy ]
-[ ✅ I accept                             ]
-```
-
-Les deux premiers boutons ouvrent les pages `/terms` et `/privacy` dans Telegram, en web app (boutons `web_app`). « I accept » enregistre la version des Terms (`TERMS_VERSION`) et la date. Si la version change, cet écran revient au prochain passage.
-
-Écran 2, canal :
+Écran canal :
 
 ```
 📢 ONE LAST STEP · 🧪 Devnet
@@ -87,7 +70,7 @@ Join our channel to follow updates and new features.
 
 « Join channel » ouvre le lien du canal. « I've joined » vérifie l'adhésion avec `getChatMember`. Les statuts acceptés sont `member`, `administrator` et `creator`, ainsi que `restricted` si `is_member` est vrai. Sinon, une alerte s'affiche : « You haven't joined the channel yet. » L'écran ajoute aussi la ligne « ℹ️ Not joined yet. Join the channel, then tap I've joined. »
 
-L'adhésion est re-vérifiée à chaque `/start` avec un cache de 10 minutes, et sans cache à l'entrée de Launch Coin, puis juste avant la création en V2. Si l'utilisateur a quitté le canal, l'écran 2 revient. Avant un launch, il affiche en plus la note « 🚀 Join the channel to launch a coin. », et le parcours reprend après « I've joined ».
+L'adhésion est re-vérifiée à chaque `/start` avec un cache de 10 minutes, et sans cache à l'entrée de Launch Coin, puis juste avant la création en V2. Si l'utilisateur a quitté le canal, l'écran canal revient. Avant un launch, il affiche en plus la note « 🚀 Join the channel to launch a coin. », et le parcours reprend après « I've joined ».
 
 ### 4.3 Écran d'accueil
 
@@ -154,13 +137,12 @@ Même disposition que la maquette, sans Stats ni Referrals. Le clavier inline s'
 [ 📊 Simulate a Launch                       ]
 [ ⭐ Subscribe                               ]
 [ 👛 Wallets          ][ 🆘 Support          ]
-[ 📜 Terms of Service ][ 🔒 Privacy Policy   ]
 [ 🔄 Refresh                                 ]
 ```
 
 La navigation édite un seul message « écran » au lieu d'en envoyer un nouveau à chaque clic. Chaque sous-écran a un bouton « ⬅️ Back », et les écrans profonds ont aussi « 🏠 Menu ». Les callback data sont courtes et préfixées par domaine (exemple : `wal:del:<id>`). Telegram les limite à 64 octets.
 
-« Terms of Service » et « Privacy Policy » sont des boutons `web_app` : les pages s'ouvrent dans Telegram. « 🔄 Refresh » recharge les soldes sans passer par leur cache, au plus une fois toutes les 10 s par utilisateur. Le prix garde son cache partagé de 60 s. Si rien n'a changé, Telegram refuse l'édition (« message is not modified ») : le bot affiche alors la notification « Already up to date ».
+« 🔄 Refresh » recharge les soldes sans passer par leur cache, au plus une fois toutes les 10 s par utilisateur. Le prix garde son cache partagé de 60 s. Si rien n'a changé, Telegram refuse l'édition (« message is not modified ») : le bot affiche alors la notification « Already up to date ».
 
 ### 4.5 Règles d'affichage communes
 
@@ -240,7 +222,7 @@ Règle commune à tous les parcours : chaque écran commence par un en-tête ave
 | X (Twitter) | Utilisateur | Optionnel. Handle ou URL, normalisé. |
 | Telegram | Utilisateur | Optionnel. Lien `t.me`, normalisé. |
 
-Les limites de 32 et 10 octets viennent de Metaplex, utilisé par l'ancienne instruction `create`. La V2 utilise `create_v2`, avec des métadonnées Token-2022 : on garde ces limites dans l'interface, et on vérifie celles de `create_v2` dans la doc de création de pump.fun. Telegram ne permet pas de griser un bouton : tant que le nom et le ticker manquent, « Continue » affiche une alerte au lieu d'avancer. Le générateur local (listes de mots et modèles de phrases) sert à tout le monde. Les abonnés Premium ont aussi un générateur IA (voir 8.1).
+Les limites de 32 et 10 octets viennent de Metaplex, utilisé par l'ancienne instruction `create`. La V2 utilise `create_v2`, avec des métadonnées Token-2022 : on garde ces limites dans l'interface, et on vérifie celles de `create_v2` dans la doc de création de pump.fun. Telegram ne permet pas de griser un bouton : tant que le nom et le ticker manquent, « Continue » affiche une alerte au lieu d'avancer. Le générateur local (listes de mots et modèles de phrases) sert à tout le monde. Ses listes ne contiennent ni marque ni personnage protégé, rien de choquant, et aucune promesse de gain ni conseil financier (règle reprise des Terms, retirées le 25/09/2026). Les abonnés Premium ont aussi un générateur IA (voir 8.1).
 
 ## 6. Simulate a Launch (V1, gratuit)
 
@@ -424,7 +406,7 @@ La simulation tourne côté serveur, dans le process du bot. La seed permet de r
 
 La première version (tickets V1-24 à V1-26 d'origine) rendait la simulation dans une Mini App : Vite + React + Lightweight Charts, moteur côté client, API `GET /api/simulations/:id` avec `initData`. Elle a été construite, testée une fois sur téléphone, puis abandonnée le jour même, sans être commitée. La version dans le chat est retenue : expérience 100 % Telegram comme les bots de trading, aucun tunnel HTTPS ni hébergement statique pour la simulation, et `protect_content` répond mieux au non-partage qu'une page web. Ce qui est perdu : le graphique fluide, les contrôles instantanés et le bloc Top holders.
 
-Conséquences : la Mini App ne sert plus qu'aux pages Terms et Privacy (11.2) ; l'API n'a plus de route métier ; le code de la Mini App de simulation et l'API de simulation sont retirés (V1-24 réécrit) ; le tableau de bord live envisagé pour la V2 (8.5, DEC-01) suit le même principe, dans le chat.
+Conséquences : la Mini App ne sert plus qu'aux pages Terms et Privacy (retirées à leur tour le 25/09/2026, voir 11.2) ; l'API n'a plus de route métier ; le code de la Mini App de simulation et l'API de simulation sont retirés (V1-24 réécrit) ; le tableau de bord live envisagé pour la V2 (8.5, DEC-01) suit le même principe, dans le chat.
 
 ## 7. Moteur de simulation
 
@@ -970,11 +952,11 @@ An otter who loves the stars.
 🔗 Explorer · Website · X · Telegram
 ```
 
-Le post n'affiche pas le nom Telegram du créateur. Il ne contient ni chiffres de performance ni promesse de gain. La part du dev dans la supply est toujours affichée. Le récap du launch prévient l'utilisateur que son token sera publié, et les Terms of Service le mentionnent.
+Le post n'affiche pas le nom Telegram du créateur. Il ne contient ni chiffres de performance ni promesse de gain. La part du dev dans la supply est toujours affichée. Le récap du launch prévient l'utilisateur que son token sera publié.
 
 À trancher (25/09/2026) : depuis le bundle (10.1), le dev détient les tokens du dev buy **et** du bundle. Le post ci-dessus montre encore un dev buy seul ; son format (dev buy et bundle séparés, ou total avec la part cumulée) se décide avec le ticket du post Succès (V1-39).
 
-## 11. Support, Terms of Service, Privacy Policy
+## 11. Support, données et commandes admin
 
 ### 11.1 Support
 
@@ -1002,42 +984,19 @@ Paste it at the start of your first message.
 | Message pré-rempli | Le lien peut pré-remplir le code avec `?text=` (à vérifier). Sinon, le code affiché suffit. |
 | Sans abonnement | La ligne Premium devient « ⭐ Premium members are handled first. » |
 
-### 11.2 Terms of Service
+### 11.2 Terms of Service et Privacy Policy : retirées
 
-Les Terms of Service et la Privacy Policy sont des pages statiques en anglais, servies par la web app sur `/terms` et `/privacy`, et ouvertes dans Telegram avec des boutons `web_app`. Une seule version (`TERMS_VERSION`) couvre les deux textes. Chaque page affiche en haut sa version et sa date de mise à jour, par exemple « Version 1 · Updated 15 Sep 2026 ». Leur acceptation est obligatoire au premier accès, puis à chaque nouvelle version (voir 4.2).
+Décision du 25/09/2026 : le bot n'a plus de Terms of Service ni de Privacy Policy. Plus d'écran d'acceptation au premier accès (4.2), plus de boutons dans le menu (4.4), plus de pages `/terms` et `/privacy` dans la web app, plus de `TERMS_VERSION` ni de colonnes `termsVersion` et `termsAcceptedAt`. Le ticket des pages (V1-41) est devenu celui du retrait. La web app et l'API restent en place, sans page, pour un usage futur.
 
-| Partie | Contenu |
-|---|---|
-| Service | Bot de création et de simulation de memecoins, sur Solana devnet uniquement. Les tokens et les SOL devnet n'ont aucune valeur. |
-| Simulation | Scénario de démonstration haussier. Ni une prédiction, ni un résultat réel. |
-| Wallets | Wallets gérés par le bot. Clés privées et seed phrases stockées chiffrées. Aucun export dans le bot : sur demande, après vérification du compte Telegram, le support transmet la clé privée ou la seed phrase pour importer le wallet dans une autre app (Phantom…). L'utilisateur est responsable de la sécurité de son compte Telegram. |
-| Abonnements | Prix en USD, payés en SOL. Durée de 48 h ou 30 jours. Non remboursables, sauf paiements partiels ou tardifs, traités à la main. |
-| Canal Succès | Chaque launch est publié automatiquement dans le canal Succès. |
-| Contenu | L'utilisateur est responsable de son token, de ses liens et de ses images. Interdits : marques et personnages protégés, usurpation d'identité, activités illégales. |
-| Générateur IA | Contenus générés sans garantie, à vérifier par l'utilisateur avant usage |
-| Responsabilité | Aucun conseil financier. Service fourni tel quel, sans garantie de disponibilité. |
-| Changements | Une nouvelle version demande une nouvelle acceptation. |
-| Comptes inactifs | Supprimés automatiquement après 24 h sans activité, sans préavis, y compris avec un abonnement en cours, qui n'est pas remboursé. Les SOL (et en V2 les tokens) restants sont d'abord transférés à la trésorerie du projet et peuvent être réclamés au support. |
-| Contact | Compte support |
+Conséquence : l'utilisateur n'accepte plus rien avant d'utiliser le bot. Aucun accord n'est enregistré pour le transfert de ses SOL à la trésorerie (compte inactif, `/purge`), pour la publication de son token dans le canal Succès, ni pour les durées de conservation ci-dessous. La règle de contenu du générateur de token est reprise en 5.
 
-### 11.3 Privacy Policy
-
-| Partie | Contenu |
-|---|---|
-| Données collectées | ID Telegram, username et prénom. Adresses, clés et seed phrases chiffrées des wallets. Brouillons de token et images. Simulations. Paiements, retraits et ventes. Acceptation des Terms et vérification du canal. |
-| Finalités | Faire fonctionner le bot, gérer les abonnements, sécurité et lutte contre les abus |
-| Services tiers | Telegram, fournisseur RPC Solana, API de prix. Pour le générateur IA (Premium), les infos du token sont envoyées aux fournisseurs IA. |
-| Données publiques | Les launchs publiés dans le canal Succès. Les avis publiés dans le canal du bot, avec l'accord de leur auteur. Tout ce qui passe on-chain est public et ne peut pas être effacé. |
-| Sécurité | Clés privées et seed phrases chiffrées (voir 9.6) |
-| Conservation | Voir le tableau ci-dessous |
-| Droits et contact | Compte support |
-| Vente de données | Aucune |
+### 11.3 Données et conservation
 
 Durées de conservation (propositions de départ, à faire valider par un juriste avant tout usage réel) :
 
 | Données | Durée |
 |---|---|
-| Compte (ID Telegram, username, prénom, acceptation des Terms) | Supprimé après 24 h sans activité (ci-dessous) |
+| Compte (ID Telegram, username, prénom) | Supprimé après 24 h sans activité (ci-dessous) |
 | Wallets (clés et seed phrases chiffrées) | Tant que le wallet existe |
 | Brouillons de token et simulations | 90 jours |
 | Paiements, retraits et ventes | 10 ans s'il s'agit de vrais paiements (obligation comptable), détachés du compte après une suppression. En devnet, supprimés avec le compte. |
@@ -1048,7 +1007,7 @@ Durées de conservation (propositions de départ, à faire valider par un jurist
 
 Comptes inactifs : une activité, c'est toute interaction avec le bot (message ou clic). Après 24 h sans activité (décision du 25/09/2026 ; 48 h auparavant), le worker supprime le compte, même s'il a un abonnement actif, une facture en attente ou des fonds. Le worker vérifie toutes les 15 minutes : un compte part donc entre 24 h et 24 h 15 après sa dernière activité. Seuls les comptes admin (`ADMIN_TELEGRAM_IDS`) sont exemptés. Aucun avertissement n'est envoyé. Avant la suppression, le worker transfère le SOL de chaque wallet vers `TREASURY_WALLET` (en V2, les tokens d'abord, puis le SOL). Chaque transfert est enregistré avec l'ID Telegram, pour qu'un admin puisse rembourser l'utilisateur à la main s'il réclame. Si un transfert échoue, le compte est gardé et retraité au passage suivant.
 
-Suppression à la demande : pas de bouton dans le bot (décision). L'utilisateur écrit au support depuis son compte Telegram ; il peut retirer ses SOL avant. Un admin lance ensuite `/purge` (voir 11.4), et l'utilisateur reçoit une confirmation dans le délai d'un mois prévu par le RGPD. Le bot est public : la Privacy Policy doit indiquer ce contact et ce délai. Effacer les clés rend les fonds irrécupérables : depuis le 25/09/2026, les SOL restants ne bloquent plus la suppression, ils sont d'abord transférés à la trésorerie, comme pour un compte inactif, et chaque transfert est enregistré avec l'ID Telegram pour un remboursement à la main. Une facture encore payable bloque toujours la suppression.
+Suppression à la demande : pas de bouton dans le bot (décision). L'utilisateur écrit au support depuis son compte Telegram ; il peut retirer ses SOL avant. Un admin lance ensuite `/purge` (voir 11.4), et l'utilisateur reçoit une confirmation dans le délai d'un mois prévu par le RGPD. Effacer les clés rend les fonds irrécupérables : depuis le 25/09/2026, les SOL restants ne bloquent plus la suppression, ils sont d'abord transférés à la trésorerie, comme pour un compte inactif, et chaque transfert est enregistré avec l'ID Telegram pour un remboursement à la main. Une facture encore payable bloque toujours la suppression.
 
 ### 11.4 Commandes admin
 
@@ -1088,7 +1047,7 @@ launch-bot/
 │   ├── bot/            # grammY : menus, parcours, commandes admin
 │   ├── api/            # Fastify : validation initData ; plus aucune route métier depuis le 24/09/2026 (6.5)
 │   ├── worker/         # jobs : paiements, transferts, rappels, nettoyage
-│   └── webapp/         # Vite + React : pages Terms et Privacy (Mini App)
+│   └── webapp/         # Vite + React : Mini App, sans page depuis le 25/09/2026 (11.2)
 ├── packages/
 │   ├── sim-engine/     # moteur de simulation, TS pur
 │   ├── solana/         # wallets, soldes, retraits, chiffrement, pump.fun et PumpSwap en V2
@@ -1100,7 +1059,7 @@ launch-bot/
 
 Le projet est un monorepo TypeScript en pnpm workspaces. Le bot utilise grammY avec les plugins sessions, conversations et ratelimiter. La base est PostgreSQL avec Prisma. Côté Solana, la lib suit celle du SDK officiel `@pump-fun/pump-sdk` (`@solana/web3.js` ou `@solana/kit`, à vérifier au démarrage), pour ne pas avoir deux libs en parallèle. Au début, le bot et l'API peuvent tourner dans le même process. Les jobs (détection des paiements, transferts vers la trésorerie, rappels, nettoyage des comptes inactifs et des données expirées) tournent dans `apps/worker`, avec pg-boss : une file de jobs sur PostgreSQL, sans Redis.
 
-Telegram exige une web app servie en HTTPS : en local, il faut un tunnel (cloudflared ou ngrok), pour les pages Terms et Privacy seulement. Les tests utilisent Vitest, en priorité sur le moteur de simulation, le rendu des images et le chiffrement des clés.
+Telegram exige une web app servie en HTTPS : en local, il faut un tunnel (cloudflared ou ngrok). Depuis le retrait des pages Terms et Privacy (11.2), la web app ne sert plus aucune page : le tunnel n'est plus utile. Les tests utilisent Vitest, en priorité sur le moteur de simulation, le rendu des images et le chiffrement des clés.
 
 Rendu des images de simulation (6.1, 6.3) : un SVG construit en TypeScript (testable sans navigateur), rasterisé en PNG par `@resvg/resvg-js` (binaire précompilé, sans dépendance système), avec une police embarquée dans le dépôt pour un rendu identique sur toutes les machines. Le runner de simulation vit dans `apps/bot` : un `SimRun` par simulation active, en mémoire, avancé par un minuteur ; pas de table supplémentaire.
 
@@ -1132,7 +1091,6 @@ PRIORITY_FEE_MIN_MICROLAMPORTS=0
 PRIORITY_FEE_MAX_MICROLAMPORTS=
 ADMIN_TELEGRAM_IDS=
 TREASURY_WALLET=
-TERMS_VERSION=1
 SOL_PRICE_API_URL=              # prix SOL/USD, cache 60 s
 LLM_API_KEY=
 IMAGE_API_KEY=
@@ -1142,7 +1100,7 @@ IMAGE_API_KEY=
 
 | Entité | Champs principaux |
 |---|---|
-| User | id, telegramId (unique), username, firstName, termsVersion, termsAcceptedAt, channelCheckedAt, lastActiveAt, createdAt |
+| User | id, telegramId (unique), username, firstName, channelCheckedAt, lastActiveAt, createdAt |
 | Subscription | id, userId, plan (CLASSIC, PREMIUM), duration (TWO_DAYS, ONE_MONTH), status (ACTIVE, EXPIRED), startsAt, expiresAt, paymentId |
 | Payment | id, userId, plan, duration, priceUsd, solUsdRate, expectedLamports, receivedLamports, depositAddress, encSecretKey, iv, authTag, status (PENDING, PAID, EXPIRED, CANCELED, SWEPT), expiresAt, paidAt, sweepSignature, createdAt |
 | AiGeneration | id, userId, kind (TEXT, LOGO), createdAt |
@@ -1165,8 +1123,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 |---|---|
 | Interface | Aucun écran n'affiche seulement des boutons : description et infos sont toujours au-dessus du clavier. |
 | Interface | Tout blocage (fonds, info manquante, fonction Premium) est écrit à l'écran, pas seulement dans une alerte. |
-| Accès | Un nouvel utilisateur ne voit pas le menu tant qu'il n'a pas accepté les Terms et rejoint le canal du bot. |
-| Accès | Une nouvelle version des Terms redemande l'acceptation. |
+| Accès | Un nouvel utilisateur ne voit pas le menu tant qu'il n'a pas rejoint le canal du bot. |
 | Accès | À l'entrée de Launch Coin, un utilisateur qui a quitté le canal revoit l'écran canal. |
 | Accès | Dans un groupe ou un canal, le bot n'exécute aucune action. |
 | Accueil | Le compteur affiche le nombre réel d'abonnements actifs. |
@@ -1214,7 +1171,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 
 | Étape | Contenu |
 |---|---|
-| 1 | Socle : monorepo, Docker, Prisma, bot grammY, garde-fou devnet, premier accès (Terms, canal), écran d'accueil et menu |
+| 1 | Socle : monorepo, Docker, Prisma, bot grammY, garde-fou devnet, premier accès (canal), écran d'accueil et menu |
 | 2 | Wallets : create, import (clé base58, seed phrase), rename, delete, soldes, refresh, retrait de SOL, chiffrement |
 | 3 | Générateur de token (local, AI Generate branché sur le local en attendant l'IA) et écran Token |
 | 4 | Moteur de simulation, avec tests à seed fixe |
@@ -1222,7 +1179,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 | 6 | Subscribe : offres, factures avec wallet de dépôt, détection, transfert vers la trésorerie, rappels, activation admin |
 | 7 | Launch Coin : conditions, récap, bouton « Available in V2 » |
 | 8 | Canaux : commande admin d'annonce, format des posts Succès |
-| 9 | Support et code support, pages Terms et Privacy, commandes admin (dont /purge), nettoyage des données |
+| 9 | Support et code support, retrait des Terms et de la Privacy Policy, commandes admin (dont /purge), nettoyage des données |
 
 La V2 correspond aux sections 10.2 à 10.4.
 
@@ -1232,6 +1189,6 @@ La V2 correspond aux sections 10.2 à 10.4.
 |---|---|---|
 | Fonctions Premium en V2 | Idées en 8.5, non décidées | V2 |
 | Fournisseurs IA (texte et logo) | À choisir et à brancher. En attendant, AI Generate utilise le générateur local avec la mention « coming soon ». Limite : 50 par jour. | Après la V1 |
-| Textes juridiques (Terms, Privacy) et durées de conservation | Plans et propositions en 11.2 et 11.3. Textes à rédiger, puis à faire valider par un juriste avant tout usage réel. | Étape 9 |
+| Durées de conservation | Propositions en 11.3, à faire valider par un juriste avant tout usage réel. Plus de Terms ni de Privacy Policy depuis le 25/09/2026 (11.2). | Avant tout usage réel |
 | Bundle en V2 | Décidé le 25/09/2026 : dev buy fixe de 1 SOL à la création, puis bundle au bloc suivant, depuis le même wallet (10.1). Reste à fixer : mécanisme d'envoi du bundle, conduite si le bundle échoue après une création réussie, minimum de 4 SOL revu avec les frais mesurés. | V2 |
 | Post Succès et bundle | Afficher le bundle dans le post (10.4) : dev buy et bundle séparés, ou total avec la part cumulée. | V1-39, V2 |
