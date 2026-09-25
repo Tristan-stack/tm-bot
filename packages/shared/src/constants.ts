@@ -267,6 +267,11 @@ export const GETALL_SUBSCRIPTIONS = 5;
 export const GETALL_WITHDRAWALS = 10;
 /** The error of a failed withdrawal, cut on /getall. */
 export const GETALL_ERROR_MAX_CHARS = 80;
+/**
+ * /announce (V1-38): a post Telegram rate-limits is sent again once, after its `retry_after`, when
+ * that wait is this long at most; otherwise the channel fails. The bot waits meanwhile.
+ */
+export const ANNOUNCE_RETRY_MAX_WAIT_MS = 30 * SECOND_MS;
 
 // Mini App requests (§12, V1-05). Proposals: a page calls the API when it opens, so one hour
 // is plenty, and a minute absorbs the clock drift between Telegram and the server.

@@ -1,8 +1,9 @@
 import type { PayInFlight, User } from "@launchbot/db";
-import { ACTIVATION_KINDS, OFFER_CODES, TOKEN_FIELDS } from "@launchbot/shared";
+import { ACTIVATION_KINDS, en, OFFER_CODES, TOKEN_FIELDS } from "@launchbot/shared";
 import type { ComputedActivation, ImportFormat, OfferCode, TokenField } from "@launchbot/shared";
 import type { ConversationFlavor } from "@grammyjs/conversations";
 import type { Context, SessionFlavor } from "grammy";
+import type { LinkPreviewOptions, MessageEntity } from "grammy/types";
 
 /**
  * Session (D16). Each ticket adds its own optional fields. Never a secret: the rows live in
@@ -29,7 +30,9 @@ export type PendingInput =
   /** The Custom bundle of a simulation (V1-22). */
   | { kind: "sim_amount" }
   /** The Custom bundle of a launch (V1-36): its wallet is in `launch`. */
-  | { kind: "launch_amount" };
+  | { kind: "launch_amount" }
+  /** The message of an /announce (V1-38): its draft is in `announce`. */
+  | { kind: "announce" };
 
 /** The two flows the Token step serves (§5): step 1 of a simulation, step 3 of a launch. */
 export const TOKEN_FLOWS = ["SIMULATION", "LAUNCH"] as const;
@@ -130,6 +133,36 @@ export type GetAllRevealState = {
   createdAt: number;
 };
 
+/** The channels of an /announce, in the order of publication (§3, V1-38). */
+export const ANNOUNCE_CHANNELS = ["announcements", "botChannel"] as const;
+export type AnnounceChannel = (typeof ANNOUNCE_CHANNELS)[number];
+
+/** The message of the admin as Telegram gave it: the preview and the posts are made of it. */
+export type AnnounceContent =
+  | { kind: "text"; text: string; entities?: MessageEntity[]; linkPreview?: LinkPreviewOptions }
+  | { kind: "photo"; fileId: string; caption: string; captionEntities?: MessageEntity[] };
+
+/** Why a channel has no post: a Telegram refusal, or `unknown` after a restart mid-publish. */
+export type AnnounceFailure = keyof typeof en.admin.announce.failures;
+export type AnnounceResult =
+  { ok: true; messageId: number } | { ok: false; reason: AnnounceFailure };
+
+/**
+ * The draft of an /announce (V1-38), replaced by every /announce. `id` is in its buttons: the
+ * buttons of another draft are inactive. `PUBLISHING` is written before the first post and every
+ * result as it comes, so a draft found `PUBLISHING` means the process stopped mid-publish.
+ */
+export type AnnounceState = {
+  id: string;
+  targets: Record<AnnounceChannel, boolean>;
+  results: Partial<Record<AnnounceChannel, AnnounceResult>>;
+  /** The preview sent to the admin: ✏️ Edit and ❌ Cancel delete it. */
+  previewMessageId?: number;
+} & (
+  | { status: "AWAITING_INPUT"; content?: AnnounceContent }
+  | { status: "PREVIEW" | "PUBLISHING" | "DONE"; content: AnnounceContent }
+);
+
 export type SessionData = {
   v: typeof SESSION_VERSION;
   /** The one screen message the navigation edits (§4.4). */
@@ -142,6 +175,7 @@ export type SessionData = {
   launch?: LaunchFlowState;
   adminGrant?: AdminGrantState;
   getallReveal?: GetAllRevealState;
+  announce?: AnnounceState;
 };
 
 export const initialSession = (): SessionData => ({ v: SESSION_VERSION });
@@ -159,6 +193,7 @@ const isPendingInput = (value: unknown): value is PendingInput => {
     case "withdraw_amount":
     case "sim_amount":
     case "launch_amount":
+    case "announce":
       return true;
     case "wallet_import":
       return (
@@ -269,6 +304,61 @@ const isGetAllReveal = (value: unknown): value is GetAllRevealState => {
   );
 };
 
+const ANNOUNCE_STATUSES: readonly unknown[] = ["AWAITING_INPUT", "PREVIEW", "PUBLISHING", "DONE"];
+
+const isOptionalArray = (value: unknown): boolean => value === undefined || Array.isArray(value);
+
+const isAnnounceContent = (value: unknown): value is AnnounceContent => {
+  if (typeof value !== "object" || value === null) return false;
+  const content = value as AnnounceContent;
+  if (content.kind === "text") {
+    const { linkPreview } = content;
+    return (
+      typeof content.text === "string" &&
+      isOptionalArray(content.entities) &&
+      (linkPreview === undefined || (typeof linkPreview === "object" && linkPreview !== null))
+    );
+  }
+  return (
+    content.kind === "photo" &&
+    typeof content.fileId === "string" &&
+    typeof content.caption === "string" &&
+    isOptionalArray(content.captionEntities)
+  );
+};
+
+const isAnnounceResult = (value: unknown): boolean => {
+  if (typeof value !== "object" || value === null) return false;
+  const result = value as AnnounceResult;
+  return result.ok
+    ? typeof result.messageId === "number"
+    : result.ok === false && Object.hasOwn(en.admin.announce.failures, result.reason);
+};
+
+const isAnnounceState = (value: unknown): value is AnnounceState => {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as AnnounceState;
+  const { targets, results } = state;
+  return (
+    typeof state.id === "string" &&
+    ANNOUNCE_STATUSES.includes(state.status) &&
+    // Only the input may wait without a message.
+    (state.content === undefined
+      ? state.status === "AWAITING_INPUT"
+      : isAnnounceContent(state.content)) &&
+    typeof targets === "object" &&
+    targets !== null &&
+    ANNOUNCE_CHANNELS.every((channel) => typeof targets[channel] === "boolean") &&
+    typeof results === "object" &&
+    results !== null &&
+    Object.entries(results).every(
+      ([channel, result]) =>
+        (ANNOUNCE_CHANNELS as readonly string[]).includes(channel) && isAnnounceResult(result),
+    ) &&
+    (state.previewMessageId === undefined || typeof state.previewMessageId === "number")
+  );
+};
+
 /** True for data this version can use; anything else is replaced by a fresh session. */
 export function isSessionData(value: unknown): value is SessionData {
   if (typeof value !== "object" || value === null) return false;
@@ -282,6 +372,7 @@ export function isSessionData(value: unknown): value is SessionData {
   if (data.launch !== undefined && !isLaunchState(data.launch)) return false;
   if (data.adminGrant !== undefined && !isAdminGrant(data.adminGrant)) return false;
   if (data.getallReveal !== undefined && !isGetAllReveal(data.getallReveal)) return false;
+  if (data.announce !== undefined && !isAnnounceState(data.announce)) return false;
   return data.pendingInput === undefined || isPendingInput(data.pendingInput);
 }
 

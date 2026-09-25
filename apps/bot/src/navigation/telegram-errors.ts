@@ -33,6 +33,30 @@ export const isUndeletable = (error: unknown): boolean =>
   isBadRequest(error, /message to delete not found|message can't be deleted|MESSAGE_ID_INVALID/i);
 
 /**
+ * Why a post in a channel failed (V1-38, reusable by the Success post of V1-39): the bot cannot
+ * post there (removed, no right to post, the chat gone), Telegram rate-limits it, or anything else.
+ */
+export type SendFailure = "cant_post" | "rate_limited" | "error";
+
+const CANT_POST =
+  /chat not found|not enough rights|need administrator rights|have no rights|CHAT_WRITE_FORBIDDEN|CHAT_ADMIN_REQUIRED/i;
+
+export function sendFailureOf(error: unknown): SendFailure {
+  if (!(error instanceof GrammyError)) return "error";
+  if (error.error_code === 429) return "rate_limited";
+  // 403: the bot was removed from the channel, or is not a member of it.
+  if (error.error_code === 403 || isBadRequest(error, CANT_POST)) return "cant_post";
+  return "error";
+}
+
+/** The wait Telegram asks for after a 429, in ms; `undefined` for any other failure. */
+export function retryAfterMs(error: unknown): number | undefined {
+  if (!(error instanceof GrammyError) || error.error_code !== 429) return undefined;
+  const seconds = error.parameters.retry_after;
+  return seconds === undefined ? undefined : seconds * 1000;
+}
+
+/**
  * What a log says of a failed call: Telegram's code and description, never `payload`, which
  * holds the text sent (a key, a user input).
  */

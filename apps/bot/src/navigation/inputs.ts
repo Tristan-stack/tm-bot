@@ -42,9 +42,21 @@ export type InputHandler<K extends InputKind> = (
   text: string | undefined,
 ) => Promise<void>;
 
+export type InputOptions = {
+  /**
+   * The message stays in the chat: an announcement (V1-38), which the admin may copy to send it
+   * again after ✏️ Edit.
+   */
+  keepMessage?: boolean;
+};
+
 export type InputRouter = {
   /** One handler per kind of input; a second one is a programming error, caught at startup. */
-  register: <K extends InputKind>(kind: K, handler: InputHandler<K>) => void;
+  register: <K extends InputKind>(
+    kind: K,
+    handler: InputHandler<K>,
+    options?: InputOptions,
+  ) => void;
   middleware: () => MiddlewareFn<BotContext>;
 };
 
@@ -56,24 +68,24 @@ export type InputRouter = {
  * the same deletion and the same rule for commands, so a secret never reaches this router.
  */
 export function createInputRouter(): InputRouter {
-  const handlers = new Map<InputKind, InputHandler<InputKind>>();
+  const handlers = new Map<InputKind, { handler: InputHandler<InputKind> } & InputOptions>();
 
   return {
-    register(kind, handler) {
+    register(kind, handler, options = {}) {
       if (handlers.has(kind)) throw new Error(`Input "${kind}" already has a handler`);
       // Registered by its kind: the message it receives is always of that kind.
-      handlers.set(kind, handler as unknown as InputHandler<InputKind>);
+      handlers.set(kind, { handler: handler as unknown as InputHandler<InputKind>, ...options });
     },
 
     middleware: () => async (ctx, next) => {
       const pending = ctx.session.pendingInput;
       const message = ctx.message;
       if (pending === undefined || message === undefined || isCommand(message)) return next();
-      const handler = handlers.get(pending.kind);
-      if (handler === undefined) return next();
+      const route = handlers.get(pending.kind);
+      if (route === undefined) return next();
       // Not waited for: the answer does not depend on it.
-      const deleting = deleteMessageNow(ctx);
-      await handler(ctx, pending, message.text);
+      const deleting = route.keepMessage === true ? undefined : deleteMessageNow(ctx);
+      await route.handler(ctx, pending, message.text);
       await deleting;
     },
   };

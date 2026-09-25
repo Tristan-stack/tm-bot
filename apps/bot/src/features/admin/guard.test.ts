@@ -10,6 +10,7 @@ import {
   textUpdate,
 } from "../../test-harness.js";
 import type { SupportDataService } from "@launchbot/db";
+import { SESSION_VERSION } from "../../context.js";
 import { renderAdminUsageError, renderAdminUserNotFound } from "./common.js";
 import { ADMIN_COMMANDS, createAdminGuard } from "./guard.js";
 
@@ -62,15 +63,42 @@ describe("the admin guard (V1-38)", () => {
 
     await feed(h.bot, callbackUpdate("adm:grant:ok:AbCd1234"));
     await feed(h.bot, callbackUpdate("adm:prg:ok:42"));
+    await feed(h.bot, callbackUpdate("adm:ann:pub:x"));
 
     expect(h.api.calls.map((call) => call.method)).toEqual([
+      "answerCallbackQuery",
       "answerCallbackQuery",
       "answerCallbackQuery",
     ]);
     expect(h.api.of("answerCallbackQuery").map((call) => call.payload["text"])).toEqual([
       undefined,
       undefined,
+      undefined,
     ]);
+  });
+
+  it("answers nothing to the message an admin input waits for, from anyone else", async () => {
+    const logs = captureLogs();
+    const h = harness(false);
+    // An /announce left waiting by an id since removed from the list.
+    h.prisma.sessions.set(
+      "777",
+      JSON.stringify({
+        v: SESSION_VERSION,
+        pendingInput: { kind: "announce" },
+        announce: {
+          id: "AbCd1234",
+          status: "AWAITING_INPUT",
+          targets: { announcements: true, botChannel: false },
+          results: {},
+        },
+      }),
+    );
+
+    await feed(h.bot, textUpdate("Big news"));
+
+    expect(h.api.calls).toEqual([]);
+    expect(logs.find((line) => line.includes("admin.denied"))).toContain('"command":"input"');
   });
 
   it("makes no admin of an empty list, and reads the ids as numbers or bigints", () => {

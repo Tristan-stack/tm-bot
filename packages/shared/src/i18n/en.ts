@@ -4,6 +4,7 @@ import {
   BUNDLE_MAX_SOL,
   BUNDLE_MIN_SOL,
   DEV_BUY_SOL,
+  TG,
   TOKEN_DESCRIPTION_MAX_CHARS,
   TOKEN_DESCRIPTION_MAX_SENTENCES,
   TOKEN_IMAGE_MAX_MB,
@@ -887,6 +888,12 @@ export const en = {
      * `<` and `>` — escaped by the builder of the reminder. Each ticket adds its command.
      */
     commands: {
+      announce: {
+        title: `${E.publish} ANNOUNCE`,
+        menu: "Publish an announcement",
+        usage: "/announce",
+        example: "/announce, then send the message to publish.",
+      },
       grant: {
         title: `${E.subscribe} GRANT`,
         menu: "Activate a plan by hand",
@@ -946,6 +953,61 @@ export const en = {
       /** `👛 Main · 7xKX…gAsU · 2.4999 SOL · Tx 5Hq1…Zk9a`: the address and the Tx are links. */
       sweptTransfer: (name: string, address: string, amount: string, tx: string) =>
         `${E.wallets} ${name} · ${address} · ${amount} · Tx ${tx}`,
+    },
+    // /announce (§3, §11.4, V1-38): the prompt is exact, the rest proposed (D19).
+    announce: {
+      prompt: "Send the announcement (text or photo with caption).",
+      kept: "Formatting and links are kept as sent.",
+      limits: `Text: ${TG.MESSAGE_MAX_CHARS} characters max · Caption: ${TG.CAPTION_MAX_CHARS} characters max`,
+      defaultChannel: "Default channel: Announcements",
+      types: { text: "text", photo: "photo with caption" },
+      /** After ✏️ Edit, behind `Current: ` (`common.current`): the draft the next message replaces. */
+      current: (type: string, length: number) =>
+        `${type} · ${counted(length, "character")}. Your next message replaces it.`,
+      unsupported: `${E.warning} Unsupported message. Send text or a photo with a caption.`,
+      noCaption: `${E.warning} Add a caption to the photo.`,
+      captionTooLong: (length: number) =>
+        `${E.warning} Caption too long: ${formatInt(length)}/${TG.CAPTION_MAX_CHARS} characters.`,
+      /** Telegram refused to send the preview (a custom emoji, a file it lost). */
+      previewFailed: `${E.warning} Telegram refused to send this message. Send another one.`,
+      previewTitle: "PREVIEW",
+      checkPreview: "Check the preview above, choose the channels, then tap Publish.",
+      /** `Type: text · 312/4096 characters` */
+      type: (type: string, length: number, max: number) =>
+        `Type: ${type} · ${formatInt(length)}/${max} characters`,
+      channels: "Channels:",
+      /** A box and its channel, on the screen and on its button. */
+      checked: (channel: string) => `${E.checked} ${channel}`,
+      unchecked: (channel: string) => `${E.unchecked} ${channel}`,
+      channelNames: { announcements: "Announcements", botChannel: "Bot channel" },
+      btnPublish: `${E.publish} Publish`,
+      btnEdit: `${E.edit} Edit`,
+      btnTryAgain: `${E.retry} Try again`,
+      noChannel: {
+        alert: "Select at least one channel.",
+        flag: `${E.warning} No channel selected. Tick at least one channel.`,
+      },
+      /** A button of a draft already published, replaced or canceled. */
+      inactive: "This preview is no longer active.",
+      canceled: `${E.cancel} Canceled. Nothing was published.`,
+      published: `${E.ok} Published.`,
+      partly: (published: number, total: number) =>
+        `${E.warning} Published in ${published} of ${total} channels.`,
+      nothing: `${E.fail} Nothing was published.`,
+      /** `📣 Announcements · ✅`, `📢 Bot channel · ❌ The bot can't post in this channel.` */
+      resultLines: {
+        announcements: `${E.announcements} Announcements`,
+        botChannel: `${E.botChannel} Bot channel`,
+      },
+      posted: (channel: string) => `${channel} · ${E.ok}`,
+      failed: (channel: string, reason: string) => `${channel} · ${E.fail} ${reason}`,
+      /** Why a channel has no post: what Telegram answered, or nothing known after a restart. */
+      failures: {
+        cant_post: "The bot can't post in this channel.",
+        rate_limited: "Telegram is rate limiting. Try again in a minute.",
+        error: "Telegram error. Try again.",
+        unknown: "Unknown result. Check the channel before trying again.",
+      },
     },
     // /grant (§8.4, §11.4, V1-42). `offer` is `Premium · 1 month`, `user` from `common.user`.
     grant: {

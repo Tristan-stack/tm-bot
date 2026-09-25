@@ -10,10 +10,13 @@ import type { Ui } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
 import type { KeyVault } from "@launchbot/solana";
 import type { Api } from "grammy";
+import type { InputRouter } from "../../navigation/inputs.js";
 import { notify } from "../../navigation/notify.js";
 import { telegramErrorFields } from "../../navigation/telegram-errors.js";
 import type { CallbackRouter } from "../../router/callback-router.js";
 import type { DataServices } from "../../services/data.js";
+import { createAnnounce } from "./announce.js";
+import type { AnnounceDeps } from "./announce.js";
 import { createAdminKit } from "./common.js";
 import { createGrant } from "./grant.js";
 import { ADMIN_COMMANDS } from "./guard.js";
@@ -40,17 +43,20 @@ export type AdminDeps = AdminServices & {
   data: Pick<DataServices, "getUserBalances" | "getSolUsdPrice" | "invalidateUserBalances">;
   /** The one vault of the process: Reveal keys decrypts with it. */
   vault: KeyVault;
+  /** The channels of /announce and the early write of its posts (V1-38). */
+  announce: Omit<AnnounceDeps, "kit">;
   now?: () => Date;
 };
 
 /**
- * The admin commands of §11.4 on the guard of V1-38: /grant (V1-42), /whois and /getall (V1-43),
- * /purge (V1-44), and their buttons `adm:*`, which the guard lets through to the router for an
- * admin only.
+ * The admin commands of §11.4 on the guard of V1-38: /announce (V1-38), /grant (V1-42), /whois
+ * and /getall (V1-43), /purge (V1-44), and their buttons `adm:*`, which the guard lets through
+ * to the router for an admin only, like the message /announce waits for.
  */
-export function registerAdmin(router: CallbackRouter, deps: AdminDeps): void {
+export function registerAdmin(router: CallbackRouter, inputs: InputRouter, deps: AdminDeps): void {
   const { ui, guard, support, data, now = () => new Date() } = deps;
   const kit = createAdminKit({ ui, findUser: support.findUser });
+  const announce = createAnnounce({ kit, ...deps.announce });
   const grant = createGrant({
     kit,
     subscriptions: deps.subscriptions,
@@ -61,12 +67,16 @@ export function registerAdmin(router: CallbackRouter, deps: AdminDeps): void {
   const reveal = createReveal({ kit, support, sensitive: deps.sensitive, vault: deps.vault, now });
   const purge = createPurge({ kit, deletion: deps.deletion, sweeper: deps.sweeper, data, now });
 
+  guard.commands.command("announce", announce.command);
   guard.commands.command("grant", grant.command);
   guard.commands.command("whois", userData.whois);
   guard.commands.command("getall", userData.getall);
   guard.commands.command("purge", purge.command);
+  // The announcement stays in the chat: the admin may copy it to send it again after ✏️ Edit.
+  inputs.register("announce", announce.input, { keepMessage: true });
 
   router.register("adm", {
+    ann: announce.callback,
     grant: grant.callback,
     ga: (ctx, [action, nonce]) => {
       if (nonce === undefined) return notify(ctx, en.common.staleButton);

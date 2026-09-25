@@ -14,6 +14,14 @@ import {
 
 const CHAT_KEY = "777";
 
+/** An /announce draft waiting for its message (V1-38). */
+const ANNOUNCE_INPUT = {
+  id: "AbCd1234",
+  status: "AWAITING_INPUT",
+  targets: { announcements: true, botChannel: false },
+  results: {},
+};
+
 describe("session data", () => {
   it("starts at the current version with no screen", () => {
     expect(initialSession()).toEqual({ v: SESSION_VERSION });
@@ -56,6 +64,59 @@ describe("session data", () => {
     [
       "a payment whose send lost its time",
       { v: SESSION_VERSION, pay: { paymentId: "p1", sent: { signature: "s" } } },
+      false,
+    ],
+    [
+      "an /announce waiting for its message",
+      {
+        v: SESSION_VERSION,
+        pendingInput: { kind: "announce" },
+        announce: ANNOUNCE_INPUT,
+      },
+      true,
+    ],
+    [
+      "an /announce with a failed post",
+      {
+        v: SESSION_VERSION,
+        announce: {
+          ...ANNOUNCE_INPUT,
+          status: "DONE",
+          content: { kind: "photo", fileId: "f", caption: "Hi", captionEntities: [] },
+          targets: { announcements: true, botChannel: true },
+          results: {
+            announcements: { ok: true, messageId: 5 },
+            botChannel: { ok: false, reason: "cant_post" },
+          },
+          previewMessageId: 101,
+        },
+      },
+      true,
+    ],
+    [
+      "an /announce preview without its message",
+      { v: SESSION_VERSION, announce: { ...ANNOUNCE_INPUT, status: "PREVIEW" } },
+      false,
+    ],
+    [
+      "an /announce with an unknown reason",
+      {
+        v: SESSION_VERSION,
+        announce: {
+          ...ANNOUNCE_INPUT,
+          status: "DONE",
+          content: { kind: "text", text: "Hi" },
+          results: { announcements: { ok: false, reason: "gone" } },
+        },
+      },
+      false,
+    ],
+    [
+      "an /announce to an unknown channel",
+      {
+        v: SESSION_VERSION,
+        announce: { ...ANNOUNCE_INPUT, results: { success: { ok: true, messageId: 5 } } },
+      },
       false,
     ],
     ["null", null, false],

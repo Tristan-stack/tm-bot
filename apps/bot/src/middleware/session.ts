@@ -1,9 +1,9 @@
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import type { PrismaClient } from "@launchbot/db";
 import { createLogger } from "@launchbot/shared/server";
-import type { StorageAdapter } from "grammy";
+import type { Context, StorageAdapter } from "grammy";
 import { isSessionData } from "../context.js";
-import type { SessionData } from "../context.js";
+import type { BotContext, SessionData } from "../context.js";
 
 const log = createLogger("bot:session");
 
@@ -12,6 +12,22 @@ const log = createLogger("bot:session");
  * @launchbot/db, which deletes both rows of a user with the account (V1-44).
  */
 export { CONVERSATION_KEY_PREFIX } from "@launchbot/db";
+
+/** One session per private chat (D16). */
+export const sessionKeyOf = (ctx: Context): string | undefined => ctx.chat?.id.toString();
+
+/**
+ * Writes the session of the update now, not at its end: what must survive the process stopping
+ * in the middle of the update (the posts of an /announce, V1-38). The end of the update writes
+ * it again, as usual.
+ */
+export async function saveSessionNow(
+  storage: StorageAdapter<SessionData>,
+  ctx: BotContext,
+): Promise<void> {
+  const key = sessionKeyOf(ctx);
+  if (key !== undefined) await storage.write(key, ctx.session);
+}
 
 /**
  * Sessions survive a deployment: data this version cannot read (corrupt JSON, unknown `v`) is

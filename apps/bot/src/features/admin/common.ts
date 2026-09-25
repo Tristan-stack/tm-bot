@@ -11,7 +11,7 @@ import {
 import type { Button, Offer, Screen, Ui, UserRef } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
 import { z } from "zod";
-import type { BotContext } from "../../context.js";
+import type { AnnounceChannel, BotContext } from "../../context.js";
 import { showScreen } from "../../navigation/show-screen.js";
 import type { ShowResult } from "../../navigation/show-screen.js";
 import { telegramErrorFields } from "../../navigation/telegram-errors.js";
@@ -19,11 +19,24 @@ import type { AdminCommandName } from "./guard.js";
 
 const log = createLogger("bot:admin");
 
+/** The box of a channel of /announce, one letter in its button (V1-38). */
+export const ANNOUNCE_CHANNEL_CODES = {
+  announcements: "a",
+  botChannel: "b",
+} as const satisfies Record<AnnounceChannel, string>;
+
 /**
  * Callback data of the admin commands (V1-38): `adm:<command>:<action>[:<arg>]`, filtered by the
  * guard. A nonce or a Telegram id, never anything of the account.
  */
 export const ADMIN_CB = {
+  /** The id of the draft closes each /announce button: another draft's buttons are inactive. */
+  announceToggle: (channel: AnnounceChannel, id: string) =>
+    encodeCallback("adm", "ann", "tg", ANNOUNCE_CHANNEL_CODES[channel], id),
+  announcePublish: (id: string) => encodeCallback("adm", "ann", "pub", id),
+  announceEdit: (id: string) => encodeCallback("adm", "ann", "edit", id),
+  announceCancel: (id: string) => encodeCallback("adm", "ann", "cancel", id),
+  announceRetry: (id: string) => encodeCallback("adm", "ann", "retry", id),
   grantConfirm: (nonce: string) => encodeCallback("adm", "grant", "ok", nonce),
   grantCancel: (nonce: string) => encodeCallback("adm", "grant", "no", nonce),
   reveal: (nonce: string) => encodeCallback("adm", "ga", "rev", nonce),
@@ -54,9 +67,9 @@ export const userArg = z.string().transform((query, ctx) => {
  */
 export const oneUserArgs = z.tuple([userArg]);
 
-/** The title of a command of the registry, as the header of its screens. */
-export const adminHeader = (ui: Ui, name: AdminCommandName): string =>
-  ui.screenHeader(en.admin.commands[name].title);
+/** The title of a command of the registry, as the header of its screens (`· PREVIEW` after it). */
+export const adminHeader = (ui: Ui, name: AdminCommandName, counter?: string): string =>
+  ui.screenHeader(en.admin.commands[name].title, counter);
 
 /** `Premium · 1 month`: an offer, an invoice or a period of a plan. */
 export const offerLabel = (offer: Pick<Offer, "plan" | "duration">): string =>

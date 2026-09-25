@@ -3,8 +3,24 @@ import { createLogger } from "@launchbot/shared/server";
 import { Composer, Context } from "grammy";
 import type { MiddlewareFn } from "grammy";
 import type { BotContext } from "../../context.js";
+import { isCommand } from "../../navigation/inputs.js";
+import type { InputKind } from "../../navigation/inputs.js";
 
 const log = createLogger("bot:admin");
+
+/** The inputs only an admin is asked for (/announce, V1-38): their messages meet the guard. */
+const ADMIN_INPUTS: ReadonlySet<InputKind> = new Set(["announce"]);
+
+/** The message an admin input waits for: what the input router would hand to it. */
+function isAdminInput(ctx: BotContext): boolean {
+  const pending = ctx.session.pendingInput;
+  return (
+    pending !== undefined &&
+    ADMIN_INPUTS.has(pending.kind) &&
+    ctx.message !== undefined &&
+    !isCommand(ctx.message)
+  );
+}
 
 /** A command of the registry of en.ts (`en.admin.commands`, V1-38): each ticket adds its own. */
 export type AdminCommandName = keyof typeof en.admin.commands;
@@ -26,10 +42,10 @@ export type AdminGuard = {
   /** The commands of the registry, registered here, run for an admin only. */
   commands: Composer<BotContext>;
   /**
-   * Mounted after the gate and right before the callback router (V1-38): a command of the
-   * registry or an `adm:*` click from anyone else meets what an unknown command meets, silence
-   * (§15) — the click is answered empty by `ensureAnswered`. Checked at every click, so an id
-   * removed from the list stops at once.
+   * Mounted after the gate, before the input router and the callback router (V1-38): a command
+   * of the registry, an `adm:*` click or the message an admin input waits for, from anyone else,
+   * meets what an unknown command meets, silence (§15) — the click is answered empty by
+   * `ensureAnswered`. Checked every time, so an id removed from the list stops at once.
    */
   middleware: () => MiddlewareFn<BotContext>;
 };
@@ -50,13 +66,15 @@ export function createAdminGuard(adminIds: readonly number[]): AdminGuard {
         const data = ctx.callbackQuery?.data;
         // The domain as the router reads it: what it would route to `adm`.
         const click = data !== undefined && decodeCallback(data)?.domain === "adm";
-        if (command === undefined && !click) return next();
+        const input = isAdminInput(ctx);
+        if (command === undefined && !click && !input) return next();
         if (!isAdmin(ctx.from?.id)) {
           // The name of the command only: its arguments name another user.
-          log.info({ telegramId: ctx.from?.id, command: command ?? "callback" }, "admin.denied");
+          const what = command ?? (click ? "callback" : "input");
+          log.info({ telegramId: ctx.from?.id, command: what }, "admin.denied");
           return;
         }
-        // A command runs here; an admin click goes on to its route of the callback router.
+        // A command runs here; an admin click or input goes on to its router.
         await run(ctx, next);
       };
     },

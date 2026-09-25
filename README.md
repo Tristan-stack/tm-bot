@@ -307,7 +307,7 @@ jamais de stack) et le process sort en code 1. Ordre de démarrage :
 Chaîne de middlewares, dans cet ordre : `privateOnly` (en groupe ou en canal le bot ne fait rien,
 aucune écriture en base), `ensureAnswered`, `touchUser` (activité, qui pilote la purge à 24 h),
 sessions, **`sensitiveMessageGuard`** (V1-12), limite globale de fréquence, `access.gate` (premier
-accès), conversations, puis `/start`, la saisie attendue, la garde admin (V1-38) et le routeur de
+accès), conversations, puis `/start`, la garde admin (V1-38), la saisie attendue et le routeur de
 callbacks. Les commandes admin passent donc après la gate : un admin rejoint le canal aussi. Le garde anti-secret est **avant** la limite de fréquence et la gate :
 une clé collée doit quitter le chat même si l'utilisateur est limité ou n'a pas rejoint le canal —
 en échange, un update au-dessus de la limite coûte désormais un upsert `User` et une lecture de
@@ -1275,15 +1275,16 @@ pour les sections de la V2).
 
 ### Garde admin et erreurs communes (V1-38, §1 et §2)
 
-Livrées avec le lot admin ; `/announce` (§3 à §5 de la carte) viendra avec les canaux.
+Livrées avec le lot admin ; `/announce` (§3 à §5 de la carte) suit, dans la section suivante.
 
 - `createAdminGuard(env.ADMIN_TELEGRAM_IDS)` ([guard.ts](apps/bot/src/features/admin/guard.ts)) :
   `isAdmin(id)`, le `Composer` des commandes (`guard.commands.command(...)`) et un middleware placé
-  **après** la gate et la saisie attendue, juste avant le routeur. Une commande du registre ou un
-  clic `adm:*` d'un non-admin : **silence**, comme une commande inconnue (le clic reçoit une réponse
-  vide d'`ensureAnswered`), log `admin.denied` avec l'ID et le nom de la commande, jamais ses
-  arguments. Revérifié à chaque clic. Liste vide → aucun admin. La garde reconnaît une commande avec
-  les matchers de grammY (`Context.has.command`, ceux de `commands.command()`) et un clic avec
+  **après** la gate, avant la saisie attendue et le routeur. Une commande du registre, un clic
+  `adm:*` ou le message qu'attend une saisie admin (`/announce`, `ADMIN_INPUTS`) d'un non-admin :
+  **silence**, comme une commande inconnue (le clic reçoit une réponse vide d'`ensureAnswered`), log
+  `admin.denied` avec l'ID et le nom de la commande (`callback`, `input`), jamais ses arguments.
+  Revérifié à chaque fois. Liste vide → aucun admin. La garde reconnaît une commande avec les
+  matchers de grammY (`Context.has.command`, ceux de `commands.command()`) et un clic avec
   `decodeCallback`, comme le routeur : elle filtre exactement ce qui s'exécuterait.
 - **Registre** `en.admin.commands` : titre, ligne du menu, usage, exemple. Au démarrage,
   `setAdminCommands` pose `/start` et ces commandes dans le menu de chaque admin
@@ -1300,6 +1301,44 @@ Livrées avec le lot admin ; `/announce` (§3 à §5 de la carte) viendra avec l
   l'utilisateur visé par /grant ou /purge, `false` si Telegram refuse). Les logs d'échec Telegram
   passent par `telegramErrorFields` ([telegram-errors.ts](apps/bot/src/navigation/telegram-errors.ts)) :
   code et description, jamais `payload`.
+
+### /announce (V1-38, §3 à §5)
+
+`createAnnounce` ([announce.ts](apps/bot/src/features/admin/announce.ts)), écrans purs dans
+[announce-screens.ts](apps/bot/src/features/admin/announce-screens.ts), message → brouillon dans
+[announce-content.ts](apps/bot/src/features/admin/announce-content.ts), envois dans
+[announce-publisher.ts](apps/bot/src/features/admin/announce-publisher.ts).
+
+- **Saisie** : `/announce` sans argument (sinon le rappel de syntaxe) ouvre un nouveau message et
+  attend le message (saisie `announce`, brouillon `session.announce`, son `id` de 8 caractères dans
+  chaque bouton). Accepté : un texte, avec ses entités et ses `link_preview_options`, ou une photo
+  avec légende (la plus grande taille). Refusé, avec l'écran de saisie renvoyé sous le message et un
+  flag : tout autre type (vidéo, image envoyée en fichier, sticker…), un album (`media_group_id`), une
+  photo sans légende, une légende de plus de 1024 caractères (comptés en UTF-16, comme Telegram). Le
+  message de l'admin **reste** dans le chat (`keepMessage` du routeur de saisies) : il peut le
+  recopier après ✏️ Edit.
+- **Aperçu** : envoyé à l'admin par `sendAnnouncement`, la fonction des posts (**sans
+  `parse_mode`**, entités telles quelles) : l'aperçu est le post. Dessous, l'écran de contrôle :
+  cases Announcements (cochée par défaut) et Bot channel, 📣 Publish, ✏️ Edit (supprime l'aperçu,
+  revient à la saisie avec « Current: … » et les cases) et ❌ Cancel (supprime l'aperçu, « ❌
+  Canceled. Nothing was published. »). Publish sans case → alerte et flag. Un aperçu refusé par
+  Telegram ramène la saisie avec un flag (proposition).
+- **Posts** : la query est répondue tout de suite, puis Announcements (`CHANNEL_ANNOUNCEMENTS_ID`)
+  et Bot channel (`CHANNEL_BOT_ID`), dans cet ordre, cases cochées seulement. Un 429 est retenté une
+  fois après son `retry_after` s'il vaut 30 s au plus (`ANNOUNCE_RETRY_MAX_WAIT_MS` ; `autoRetry`
+  prend déjà les attentes de 10 s au plus), sinon le canal échoue. Raison par canal, par
+  `sendFailureOf` ([telegram-errors.ts](apps/bot/src/navigation/telegram-errors.ts), réutilisable par
+  le post Succès de V1-39) : « The bot can't post in this channel. » (403, chat introuvable, droits),
+  limite de Telegram, autre erreur. Résultat : « ✅ Published. », « ⚠️ Published in 1 of 2
+  channels. » ou « ❌ Nothing was published. », une ligne par canal coché ; 🔁 Try again ne renvoie
+  qu'aux canaux sans post. Log `announce.published` (admin, type, longueur, ids des posts, canaux
+  en échec), jamais le texte.
+- **Anti-doublon** : un bouton d'un autre brouillon, ou d'une autre étape du même, donne « This
+  preview is no longer active. » et n'envoie rien ; tout posté, le brouillon est supprimé.
+  `PUBLISHING` puis chaque réponse sont écrits en session **avant** le post suivant
+  (`saveSessionNow`, le stockage du middleware) : un brouillon retrouvé `PUBLISHING` après un
+  redémarrage montre ses canaux sans réponse en « Unknown result. Check the channel before trying
+  again. », sans rien renvoyer à l'aveugle (proposition).
 
 ### /grant (V1-42)
 
@@ -1817,14 +1856,14 @@ tout dérive de `SOLANA_CLUSTER` (centralisé en V1-03).
 canal) et écran d'accueil (V1-01 à V1-08, jusqu'au commit `0d7c2d8`). Depuis ce socle, **une
 branche par feature**, nommée `feat/<feature>` et regroupant les tickets de la feature :
 
-| Branche              | Tickets                            |
-| -------------------- | ---------------------------------- |
-| `feat/wallets`       | V1-09 à V1-14                      |
-| `feat/token`         | V1-15 à V1-17                      |
-| `feat/simulation`    | V1-18 à V1-26                      |
-| `feat/subscribe`     | V1-27 à V1-34                      |
-| `feat/launch-coin`   | V1-35 à V1-37                      |
-| `feat/admin-support` | V1-38 (§1–2), V1-40, V1-42 à V1-45 |
+| Branche              | Tickets                     |
+| -------------------- | --------------------------- |
+| `feat/wallets`       | V1-09 à V1-14               |
+| `feat/token`         | V1-15 à V1-17               |
+| `feat/simulation`    | V1-18 à V1-26               |
+| `feat/subscribe`     | V1-27 à V1-34               |
+| `feat/launch-coin`   | V1-35 à V1-37               |
+| `feat/admin-support` | V1-38 (§1–2), V1-40 à V1-45 |
 
 Sur une branche : un commit par ticket, `pnpm lint`, `pnpm typecheck` et `pnpm test` verts avant
 chaque commit.
@@ -1832,7 +1871,8 @@ chaque commit.
 `develop` est la branche d'intégration. Elle a été créée depuis `feat/wallets` (commit `fe775d7`,
 V1-09 à V1-14) et porte donc déjà tout le travail des wallets sans fusion. Chaque branche de
 feature suivante part de `develop` et y est fusionnée quand tous ses tickets sont en ✅ Terminé ;
-`develop` est fusionnée dans `main` à chaque jalon stable.
+`develop` est fusionnée dans `main` à chaque jalon stable. Depuis le 25/09/2026 (choix de
+Tristan, à partir de `/announce`), le développement continue directement sur `develop`.
 
 ```
 main ──► develop ──► feat/token ──► (merge) develop ──► …

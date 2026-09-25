@@ -77,7 +77,12 @@ import { registerWallets } from "./features/wallets/wallets.js";
 import { privateOnly } from "./middleware/private-only.js";
 import { globalRateLimit } from "./middleware/rate-limit.js";
 import { sensitiveMessageGuard } from "./middleware/sensitive-input.js";
-import { CONVERSATION_KEY_PREFIX, createSessionStorage } from "./middleware/session.js";
+import {
+  CONVERSATION_KEY_PREFIX,
+  createSessionStorage,
+  saveSessionNow,
+  sessionKeyOf,
+} from "./middleware/session.js";
 import { userActivity } from "./middleware/user-activity.js";
 import { createInputRouter } from "./navigation/inputs.js";
 import { ensureAnswered } from "./navigation/notify.js";
@@ -124,6 +129,8 @@ export function createBot(
 ): { bot: Bot<BotContext>; simRunner: SimRunner } {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
   const ui = createUi(env.SOLANA_CLUSTER);
+  // One storage: the session middleware, and /announce, which writes its posts as they go.
+  const sessions = createSessionStorage(prisma);
   const router = createCallbackRouter();
   const inputs = createInputRouter();
   const access = createAccess({ env, prisma, api: bot.api, ui });
@@ -218,13 +225,7 @@ export function createBot(
   // Wraps everything below: a click always gets its one answer, whatever handled it.
   bot.use(ensureAnswered);
   bot.use(userActivity(prisma));
-  bot.use(
-    session({
-      initial: initialSession,
-      storage: createSessionStorage(prisma),
-      getSessionKey: (ctx) => ctx.chat?.id.toString(),
-    }),
-  );
+  bot.use(session({ initial: initialSession, storage: sessions, getSessionKey: sessionKeyOf }));
   // §9.4: a key or a seed phrase leaves the chat before anything else runs. It needs the
   // session (the input it answers) and it must run before the rate limit, which would drop the
   // update without deleting it, and before the gate, which would answer with the channel screen.
@@ -265,11 +266,22 @@ export function createBot(
     successUrl: env.CHANNEL_SUCCESS_URL,
   });
   registerSupport(router, { ui, data, supportUrl: env.SUPPORT_URL });
-  registerAdmin(router, { ...admin, ui, guard, data, vault });
+  registerAdmin(router, inputs, {
+    ...admin,
+    ui,
+    guard,
+    data,
+    vault,
+    announce: {
+      chatIds: { announcements: env.CHANNEL_ANNOUNCEMENTS_ID, botChannel: env.CHANNEL_BOT_ID },
+      saveSession: (ctx) => saveSessionNow(sessions, ctx),
+    },
+  });
+  // Admin commands, `adm:*` clicks and the message /announce waits for (V1-38), after the gate:
+  // an admin joins the channel too.
+  bot.use(guard.middleware());
   // The message that answers an input a screen waits for: a name, an address, an amount.
   bot.use(inputs.middleware());
-  // Admin commands and `adm:*` clicks (V1-38), after the gate: an admin joins the channel too.
-  bot.use(guard.middleware());
   bot.use(router.middleware());
 
   bot.catch(handleBotError);
