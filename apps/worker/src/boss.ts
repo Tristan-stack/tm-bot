@@ -1,3 +1,4 @@
+import { EVERY_MINUTE_CRON, MINUTE_MS } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
 import { PgBoss } from "pg-boss";
 import type { JobWithMetadata, Queue } from "pg-boss";
@@ -16,9 +17,27 @@ export const QUEUES = {
   /** The end-of-plan reminder and the expiry (V1-34). */
   remind: "subscriptions.remind",
   expire: "subscriptions.expire",
+  /** The inactive accounts and the 90 days of the data (V1-45): also launched by hand. */
+  inactiveAccounts: "accounts.delete-inactive",
+  cleanup: "data.expired-cleanup",
 } as const;
 
-type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
+export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
+
+/** What a job of a cron carries: nothing, or the clock of a launch by hand (`pnpm job --now`). */
+export type CronJobData = { now?: string };
+
+/**
+ * The cron of a pace of whole minutes that divide an hour: 15 minutes runs at :00, :15, :30 and
+ * :45. Any other value refuses the startup — the cron would silently run at another pace.
+ */
+export function cronEvery(intervalMs: number): string {
+  const minutes = intervalMs / MINUTE_MS;
+  if (!Number.isInteger(minutes) || minutes < 1 || 60 % minutes !== 0) {
+    throw new Error("A cron pace must be whole minutes that divide an hour");
+  }
+  return minutes === 1 ? EVERY_MINUTE_CRON : `*/${minutes} * * * *`;
+}
 
 /** The retry options of a queue, inherited by each of its jobs. */
 type QueueOptions = Pick<Queue, "retryLimit" | "retryDelay" | "retryBackoff">;
@@ -78,14 +97,22 @@ export async function workQueue<T extends object>(
 
 /**
  * A job on a cron of pg-boss (resolution: one minute, UTC). No retry: the next run is the
- * retry, and the exclusive policy drops a run while the previous one is still going.
+ * retry, and the exclusive policy drops a run while the previous one is still going — a run
+ * sent by hand in the same queue included (V1-45).
  */
 export async function scheduleCron(
   boss: PgBoss,
   name: QueueName,
   cron: string,
-  handler: () => Promise<unknown>,
+  handler: (data: CronJobData) => Promise<unknown>,
 ): Promise<void> {
-  await workQueue(boss, name, { retryLimit: 0 }, () => handler(), CRON_POLLING_SECONDS);
+  await workQueue<CronJobData>(
+    boss,
+    name,
+    { retryLimit: 0 },
+    // A scheduled run carries no data.
+    (job) => handler(job.data ?? {}),
+    CRON_POLLING_SECONDS,
+  );
   await boss.schedule(name, cron, null, { tz: "UTC" });
 }

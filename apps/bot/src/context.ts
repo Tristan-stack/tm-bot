@@ -1,6 +1,6 @@
 import type { PayInFlight, User } from "@launchbot/db";
-import { TOKEN_FIELDS } from "@launchbot/shared";
-import type { ImportFormat, TokenField } from "@launchbot/shared";
+import { ACTIVATION_KINDS, OFFER_CODES, TOKEN_FIELDS } from "@launchbot/shared";
+import type { ComputedActivation, ImportFormat, OfferCode, TokenField } from "@launchbot/shared";
 import type { ConversationFlavor } from "@grammyjs/conversations";
 import type { Context, SessionFlavor } from "grammy";
 
@@ -103,6 +103,33 @@ export type PayState = {
   sent?: PayInFlight;
 };
 
+/**
+ * The confirmation screen of a /grant (V1-42): what it showed, for its one Confirm. Replaced by
+ * every /grant; the nonce is in the buttons, the guard of a second click is in the database.
+ */
+export type AdminGrantState = {
+  nonce: string;
+  targetUserId: string;
+  /** A decimal string: JSON has no bigint. */
+  targetTelegramId: string;
+  offerCode: OfferCode;
+  kind: ComputedActivation["kind"];
+  /** The end an extension builds on, in ms; `null` without an active plan. */
+  currentExpiresAt: number | null;
+  createdAt: number;
+};
+
+/**
+ * The Reveal keys of a /getall (V1-43, decision of 16/09/2026): a nonce and whose keys, never a
+ * key. Replaced by every /getall, spent by its first click.
+ */
+export type GetAllRevealState = {
+  nonce: string;
+  targetUserId: string;
+  targetTelegramId: string;
+  createdAt: number;
+};
+
 export type SessionData = {
   v: typeof SESSION_VERSION;
   /** The one screen message the navigation edits (§4.4). */
@@ -113,6 +140,8 @@ export type SessionData = {
   sim?: SimFlowState;
   pay?: PayState;
   launch?: LaunchFlowState;
+  adminGrant?: AdminGrantState;
+  getallReveal?: GetAllRevealState;
 };
 
 export const initialSession = (): SessionData => ({ v: SESSION_VERSION });
@@ -164,8 +193,10 @@ const isSimFlow = (value: unknown): value is SimFlowState => {
   return bundleSol === undefined || (typeof bundleSol === "number" && Number.isFinite(bundleSol));
 };
 
-const isOptionalLamports = (value: unknown): boolean =>
-  value === undefined || (typeof value === "string" && /^\d+$/.test(value));
+/** A bigint as JSON holds it: lamports, a Telegram id. */
+const isDigits = (value: unknown): boolean => typeof value === "string" && /^\d+$/.test(value);
+
+const isOptionalLamports = (value: unknown): boolean => value === undefined || isDigits(value);
 
 const isLaunchState = (value: unknown): value is LaunchFlowState => {
   if (typeof value !== "object" || value === null) return false;
@@ -211,6 +242,33 @@ const isPayState = (value: unknown): value is PayState => {
   );
 };
 
+const GRANT_KINDS: readonly unknown[] = [...ACTIVATION_KINDS, "REFUSED"];
+
+const isAdminGrant = (value: unknown): value is AdminGrantState => {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as AdminGrantState;
+  return (
+    typeof state.nonce === "string" &&
+    typeof state.targetUserId === "string" &&
+    isDigits(state.targetTelegramId) &&
+    (OFFER_CODES as readonly unknown[]).includes(state.offerCode) &&
+    GRANT_KINDS.includes(state.kind) &&
+    (state.currentExpiresAt === null || typeof state.currentExpiresAt === "number") &&
+    typeof state.createdAt === "number"
+  );
+};
+
+const isGetAllReveal = (value: unknown): value is GetAllRevealState => {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as GetAllRevealState;
+  return (
+    typeof state.nonce === "string" &&
+    typeof state.targetUserId === "string" &&
+    isDigits(state.targetTelegramId) &&
+    typeof state.createdAt === "number"
+  );
+};
+
 /** True for data this version can use; anything else is replaced by a fresh session. */
 export function isSessionData(value: unknown): value is SessionData {
   if (typeof value !== "object" || value === null) return false;
@@ -222,6 +280,8 @@ export function isSessionData(value: unknown): value is SessionData {
   if (data.tokenStep !== undefined && !isTokenStep(data.tokenStep)) return false;
   if (data.sim !== undefined && !isSimFlow(data.sim)) return false;
   if (data.launch !== undefined && !isLaunchState(data.launch)) return false;
+  if (data.adminGrant !== undefined && !isAdminGrant(data.adminGrant)) return false;
+  if (data.getallReveal !== undefined && !isGetAllReveal(data.getallReveal)) return false;
   return data.pendingInput === undefined || isPendingInput(data.pendingInput);
 }
 

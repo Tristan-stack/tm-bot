@@ -213,7 +213,10 @@ export async function sendRecorded(
   deps: { prisma: PrismaClient; send: TransferApi["send"] },
   request: TransferRequest,
   signer: SignerSource,
-  record: Pick<Prisma.WithdrawalUncheckedCreateInput, "userId" | "walletId" | "kind" | "createdAt">,
+  record: Pick<
+    Prisma.WithdrawalUncheckedCreateInput,
+    "userId" | "walletId" | "kind" | "createdAt" | "userTelegramId"
+  >,
 ): Promise<RecordedSend> {
   const { prisma, send } = deps;
   let row: Withdrawal | undefined;

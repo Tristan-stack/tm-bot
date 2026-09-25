@@ -4,6 +4,8 @@ export { EnvValidationError, loadEnv, parseEnv } from "./env.js";
 export type { Env, EnvIssue } from "./env.js";
 export { runProcess } from "./lifecycle.js";
 export type { RunProcessOptions, Service } from "./lifecycle.js";
+export { runEvery } from "./loop.js";
+export type { Loop } from "./loop.js";
 export {
   captureLogs,
   createLogger,

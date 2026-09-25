@@ -45,10 +45,14 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
     expect(tables.map((table) => table.name)).toEqual([
       "AiGeneration",
       "Payment",
+      // The messages holding wallet keys, deleted after 60 s (V1-43)
+      "SensitiveMessage",
       // grammY sessions and conversations (V1-04)
       "Session",
       "Simulation",
       "Subscription",
+      // The manual activations of /grant (V1-42)
+      "SubscriptionGrant",
       "TokenDraft",
       "User",
       "Wallet",

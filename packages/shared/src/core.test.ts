@@ -70,7 +70,8 @@ describe("constants", () => {
     expect(PLAN_DURATION_MS.TWO_DAYS).toBe(172_800_000);
     expect(PLAN_DURATION_MS.ONE_MONTH).toBe(2_592_000_000);
     expect(INVOICE_TTL_MS).toBe(1_800_000);
-    expect(INACTIVITY_DELETE_MS).toBe(172_800_000);
+    // 24 h since 25/09/2026 (48 h in the decision of 16/09/2026).
+    expect(INACTIVITY_DELETE_MS).toBe(86_400_000);
     expect(CACHE_TTL_MS.solPriceMaxStale).toBe(600_000);
   });
 

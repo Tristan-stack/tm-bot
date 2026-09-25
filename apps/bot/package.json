@@ -22,6 +22,7 @@
     "@launchbot/sim-engine": "workspace:*",
     "@launchbot/sim-render": "workspace:*",
     "@launchbot/solana": "workspace:*",
-    "grammy": "1.46.0"
+    "grammy": "1.46.0",
+    "zod": "^4.6.5"
   }
 }

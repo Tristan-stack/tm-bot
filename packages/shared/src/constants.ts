@@ -218,12 +218,55 @@ export const CACHE_TTL_MS = {
 export const REFRESH_THROTTLE_MS = 10 * SECOND_MS;
 
 // Data lifecycle (§11.3)
-/** Decision of 16/09/2026: admins are exempt, no warning is sent (V1-45). */
-export const INACTIVITY_DELETE_MS = 48 * HOUR_MS;
-/** Proposal (V1-45). */
+/**
+ * 24 h without activity (Tristan, 25/09/2026; 48 h in the decision of 16/09/2026): the SOL goes
+ * to the treasury, then the account is deleted. Admins are exempt, no warning is sent (V1-45).
+ */
+export const INACTIVITY_DELETE_MS = 24 * HOUR_MS;
+/** Proposal (V1-45): whole minutes that divide an hour, the job runs on a cron. */
 export const INACTIVITY_CHECK_INTERVAL_MS = 15 * MINUTE_MS;
 /** Token drafts and simulations. */
 export const DATA_RETENTION_MS = 90 * DAY_MS;
+/** Accounts read per page by the inactive-accounts job, by cursor (V1-45). */
+export const INACTIVE_ACCOUNTS_PAGE_SIZE = 100;
+/** Rows deleted per statement by the 90-day cleanup (V1-45). */
+export const CLEANUP_BATCH_SIZE = 1_000;
+/** The 90-day cleanup (proposal): after the purge of the deposit keys at 03:15 (V1-33). */
+export const DATA_CLEANUP_CRON = "30 3 * * *";
+
+// Support (§11.1, V1-40)
+/**
+ * The Contact support button pre-fills the first message with the support code (`?text=` of a
+ * t.me link, `?start=` for a bot). Documented by Telegram, to check on each client (manual test
+ * of V1-40): the code is on the screen whatever a client does with it.
+ */
+export const SUPPORT_PREFILL_ENABLED = true;
+
+// Admin commands (§11.4, V1-38 to V1-44). The two delays of /getall are the decision of
+// 16/09/2026; every other value is a proposal.
+/** A /grant confirmation older than this is refused: the admin sends /grant again. */
+export const ADMIN_CONFIRM_TTL_MS = 10 * MINUTE_MS;
+/** /grant tells the user the plan is active (proposal of V1-42). */
+export const GRANT_NOTIFY_USER = true;
+/** Reveal keys of a /getall stays armed this long. */
+export const GETALL_REVEAL_TTL_MS = 5 * MINUTE_MS;
+/** A message holding wallet keys is deleted this long after its send. */
+export const SENSITIVE_MESSAGE_TTL_MS = 60 * SECOND_MS;
+/** The sweeper of those messages: its pace, and the rows due it deletes per pass. */
+export const SENSITIVE_SWEEP_INTERVAL_MS = 5 * SECOND_MS;
+export const SENSITIVE_SWEEP_BATCH_SIZE = 50;
+/**
+ * `protect_content` on the keys: off, since some clients then refuse to copy the text too (a tap
+ * on <code> included). The deletion after 60 s is the protection (decision of 16/09/2026).
+ */
+export const GETALL_PROTECT_CONTENT = false;
+/** What /whois and /getall list, latest first (§11.4). */
+export const WHOIS_PAYMENTS = 5;
+export const GETALL_PURCHASES = 20;
+export const GETALL_SUBSCRIPTIONS = 5;
+export const GETALL_WITHDRAWALS = 10;
+/** The error of a failed withdrawal, cut on /getall. */
+export const GETALL_ERROR_MAX_CHARS = 80;
 
 // Mini App requests (§12, V1-05). Proposals: a page calls the API when it opens, so one hour
 // is plenty, and a minute absorbs the clock drift between Telegram and the server.

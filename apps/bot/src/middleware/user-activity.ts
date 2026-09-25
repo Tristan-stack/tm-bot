@@ -5,7 +5,7 @@ import type { BotContext } from "../context.js";
 
 /**
  * Creates the account on first contact and records `lastActiveAt` on every message and every
- * click (§11.3): an account inactive for 48 h is deleted without warning (V1-45).
+ * click (§11.3): an account inactive for 24 h is deleted without warning (V1-45).
  */
 export const userActivity =
   (prisma: PrismaClient): MiddlewareFn<BotContext> =>

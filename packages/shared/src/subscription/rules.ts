@@ -26,7 +26,8 @@ export function decidePurchase(current: SubscriptionPeriod | null, plan: Plan): 
   return plan === "PREMIUM" ? "UPGRADE" : "REFUSED";
 }
 
-export type ActivationKind = "NEW" | "EXTEND" | "UPGRADE" | "EXTEND_PREMIUM";
+export const ACTIVATION_KINDS = ["NEW", "EXTEND", "UPGRADE", "EXTEND_PREMIUM"] as const;
+export type ActivationKind = (typeof ACTIVATION_KINDS)[number];
 
 /**
  * An activation from a paid invoice (`PAYMENT`) or by an admin (`GRANT`, /grant): the grant

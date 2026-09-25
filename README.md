@@ -6,7 +6,7 @@ joue dans le chat : le bot édite l'image du graphique en direct, avec les bouto
 Projet perso, **devnet uniquement**.
 
 - Spécification produit : [context_bot.md](context_bot.md)
-- Tickets, décisions (D1–D20) et suivi : [board Trello « Launch Bot »](https://trello.com/b/Rx4KkRAj/launch-bot)
+- Tickets, décisions (D1–D22) et suivi : [board Trello « Launch Bot »](https://trello.com/b/Rx4KkRAj/launch-bot)
 
 ## Structure
 
@@ -14,7 +14,7 @@ Projet perso, **devnet uniquement**.
 apps/
   bot/         grammY : menus, parcours, commandes admin
   api/         Fastify : validation initData (rejoint le process du bot) ; plus de route métier
-  worker/      jobs pg-boss : paiements, transferts, rappels, nettoyage
+  worker/      jobs pg-boss : paiements, transferts, rappels, comptes inactifs, nettoyage
   webapp/      Vite + React : pages Terms et Privacy (Mini App)
 packages/
   sim-engine/  moteur de simulation, TypeScript pur, sans réseau
@@ -39,11 +39,12 @@ Dépendances internes autorisées. pnpm n'expose à un package que les dépendan
 | `webapp`       | `shared` (entrée universelle, sans `en` ni `E`)                       |
 
 `@launchbot/shared` a deux entrées : `.` (navigateur + Node) et `./server` (Node uniquement :
-`loadEnv`, `parseEnv`, `createLogger`, `scrubSecrets`). La Mini App n'importe jamais `./server`,
+`loadEnv`, `parseEnv`, `createLogger`, `scrubSecrets`, `runEvery`…). La Mini App n'importe jamais `./server`,
 `db` ni `solana`.
 
 L'entrée universelle fournit les briques de tous les écrans : textes `en` et emojis `E`
-(`src/i18n/`), gabarit `renderScreen` / `renderInputScreen`, boutons et `navRow` (`src/ui/`), codec
+(`src/i18n/`), gabarit `renderScreen` / `renderInputScreen`, boutons, `navRow` et découpage des
+messages longs `splitHtmlMessage` (`src/ui/`), codec
 `encodeCallback` / `decodeCallback`, constantes métier, config de cluster, formateurs
 (`src/format/`, tout en UTC, SOL en lamports `bigint`) et schémas zod. ESLint y interdit tout import
 `node:*` ou `server`, et `sideEffects: false` laisse Vite retirer ce que la Mini App n'utilise pas.
@@ -89,19 +90,20 @@ machine. Pour en changer : `POSTGRES_PORT` dans `.env`, et adapter `DATABASE_URL
 
 ## Scripts
 
-| Script                   | Rôle                                                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`               | bot, worker et webapp en mode watch (`tsx watch`, `vite`)                                                                       |
-| `pnpm build`             | `tsc -b` sur tout le graphe, puis `vite build` pour la webapp                                                                   |
-| `pnpm typecheck`         | `tsc -b` sur les 8 projets (références de projets)                                                                              |
-| `pnpm lint`              | ESLint (typescript-eslint avec types, `no-console`)                                                                             |
-| `pnpm format`            | Prettier (`pnpm format:check` pour vérifier)                                                                                    |
-| `pnpm test`              | Vitest, un projet par app/package (`pnpm test:watch` en continu)                                                                |
-| `pnpm test:db`           | avec `RUN_DB_TESTS=1` : tests d'intégration sur `launchbot_test`                                                                |
-| `pnpm test:devnet`       | avec `RUN_DEVNET_TESTS=1` : tests qui appellent le RPC devnet                                                                   |
-| `sim:report`             | `pnpm --filter @launchbot/sim-engine sim:report [seeds]` : réglage du moteur (V1-19)                                            |
-| `render:sample`          | `pnpm --filter @launchbot/sim-render render:sample [seed] [dossier]` : images d'exemple dans `packages/sim-render/out/` (V1-25) |
-| `pnpm db:up` / `db:down` | démarre / arrête PostgreSQL                                                                                                     |
+| Script                   | Rôle                                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`               | bot, worker et webapp en mode watch (`tsx watch`, `vite`)                                                                           |
+| `pnpm build`             | `tsc -b` sur tout le graphe, puis `vite build` pour la webapp                                                                       |
+| `pnpm typecheck`         | `tsc -b` sur les 8 projets (références de projets)                                                                                  |
+| `pnpm lint`              | ESLint (typescript-eslint avec types, `no-console`)                                                                                 |
+| `pnpm format`            | Prettier (`pnpm format:check` pour vérifier)                                                                                        |
+| `pnpm test`              | Vitest, un projet par app/package (`pnpm test:watch` en continu)                                                                    |
+| `pnpm test:db`           | avec `RUN_DB_TESTS=1` : tests d'intégration sur `launchbot_test`                                                                    |
+| `pnpm test:devnet`       | avec `RUN_DEVNET_TESTS=1` : tests qui appellent le RPC devnet                                                                       |
+| `sim:report`             | `pnpm --filter @launchbot/sim-engine sim:report [seeds]` : réglage du moteur (V1-19)                                                |
+| `render:sample`          | `pnpm --filter @launchbot/sim-render render:sample [seed] [dossier]` : images d'exemple dans `packages/sim-render/out/` (V1-25)     |
+| `job`                    | `pnpm --filter @launchbot/worker job <accounts.delete-inactive\|data.expired-cleanup> [--now <ISO>]` : un passage à la main (V1-45) |
+| `pnpm db:up` / `db:down` | démarre / arrête PostgreSQL                                                                                                         |
 
 Un seul package : `pnpm --filter @launchbot/shared test`.
 
@@ -114,7 +116,8 @@ describe.skipIf(!process.env.RUN_DB_TESTS)("PaymentService (db)", () => { … })
 ## Base de données
 
 Schéma Prisma : [packages/db/prisma/schema.prisma](packages/db/prisma/schema.prisma) (8 modèles V1 du
-§13, plus la table `Session` que grammY utilise). Le client généré (`packages/db/src/generated/`) n'est pas commité : `pnpm install` lance
+§13, `SubscriptionGrant` de /grant et `SensitiveMessage` de /getall, plus la table `Session` que
+grammY utilise). Le client généré (`packages/db/src/generated/`) n'est pas commité : `pnpm install` lance
 `prisma generate`, qui ne demande ni base ni `.env`.
 
 | Script             | Rôle                                                                                           |
@@ -147,8 +150,8 @@ import { prisma, isUniqueViolation } from "@launchbot/db";
 - ne jamais activer le log de requêtes Prisma : les paramètres contiennent les clés chiffrées ;
 - une erreur Prisma peut contenir la ligne SQL fautive (`detail: Failing row contains…`) : logger
   `error.code`, pas l'erreur entière, dans le code qui touche `Wallet` et `Payment` ;
-- aucun `prisma.user.delete` hors du service de purge (V1-44) : la cascade efface les clés des
-  wallets.
+- aucun `prisma.user.delete` hors de `deleteUserData` (service de suppression de compte, V1-44 :
+  /purge et comptes inactifs de V1-45) : la cascade efface les clés des wallets.
 
 ## Configuration
 
@@ -194,7 +197,8 @@ local : il affiche le contenu des updates.
 2. `/setjoingroups` → **Disable** : le bot ne fonctionne qu'en conversation privée.
 
 Inutile de faire `/setcommands` : le bot enregistre sa commande `/start` lui-même au démarrage. Les
-commandes admin ne sont pas listées.
+commandes admin n'apparaissent que dans le menu de chaque admin (`setAdminCommands`, voir « Garde
+admin »), jamais dans la liste par défaut.
 
 Le bot ne répond qu'en **conversation privée** : `/start` se tape dans le chat ouvert depuis
 `https://t.me/<username_du_bot>`. Tapé dans un canal ou un groupe, il ne se passe rien, par
@@ -206,7 +210,8 @@ Créer les trois canaux (canal du bot, Succès, Annonces), puis ajouter le bot c
 **administrateur** de chacun : c'est nécessaire pour y publier et pour vérifier l'adhésion
 (`getChatMember`). Pour un canal public, `CHANNEL_*_ID` accepte directement `@nom_du_canal` ; pour
 un canal privé, c'est l'ID numérique `-100…`. `CHANNEL_*_URL` est le lien `https://t.me/…`, et le
-compte support va dans `SUPPORT_URL`.
+compte support va dans `SUPPORT_URL` (un lien `https://t.me/<username>` reçoit le code support en
+premier message, voir « Écran Support »).
 
 ### Mini App et API en local (HTTPS obligatoire)
 
@@ -293,13 +298,14 @@ jamais de stack) et le process sort en code 1. Ordre de démarrage :
 3. `SELECT 1` sur PostgreSQL ;
 4. `bot.init()` (le token n'apparaît dans aucun log) ;
 5. vérification des droits du bot dans ses trois canaux (voir « Premier accès ») ;
-6. `setMyCommands`, puis long polling (`bot.start` supprime lui-même le webhook).
+6. `setMyCommands` (liste par défaut, puis celle de chaque admin), le balayeur des messages de
+   clés (V1-43), puis long polling (`bot.start` supprime lui-même le webhook).
 
 Chaîne de middlewares, dans cet ordre : `privateOnly` (en groupe ou en canal le bot ne fait rien,
-aucune écriture en base), `ensureAnswered`, `touchUser` (activité, qui pilote la purge à 48 h),
+aucune écriture en base), `ensureAnswered`, `touchUser` (activité, qui pilote la purge à 24 h),
 sessions, **`sensitiveMessageGuard`** (V1-12), limite globale de fréquence, `access.gate` (premier
-accès), conversations, puis `/start` et le routeur de callbacks. Les commandes admin (V1-38)
-s'enregistrent après la gate. Le garde anti-secret est **avant** la limite de fréquence et la gate :
+accès), conversations, puis `/start`, la saisie attendue, la garde admin (V1-38) et le routeur de
+callbacks. Les commandes admin passent donc après la gate : un admin accepte les Terms aussi. Le garde anti-secret est **avant** la limite de fréquence et la gate :
 une clé collée doit quitter le chat même si l'utilisateur est limité ou n'a pas accepté les Terms —
 en échange, un update au-dessus de la limite coûte désormais un upsert `User` et une lecture de
 session.
@@ -844,8 +850,9 @@ Les primitives de sécurité des wallets vivent dans `@launchbot/solana`
 - **Deux sorties du vault seulement** (§9.6) : `withSigner(enc, address, fn)` construit le signataire
   le temps de `fn` puis remet la clé à zéro, même si `fn` lève ; `revealWalletSecrets(wallet, vault)`
   rend la clé en base58 (format « Import private key » de Phantom) et la phrase normalisée, pour
-  `/getall` seulement — ESLint refuse son import hors de `apps/bot/src/features/admin/` et des tests
-  (proposition). Elle lit la clé maître par un `WeakMap` interne, pas par une méthode du vault.
+  `/getall` seulement — ESLint refuse son import hors de
+  `apps/bot/src/features/admin/reveal.ts` (V1-43) et des tests (proposition). Elle lit la clé
+  maître par un `WeakMap` interne, pas par une méthode du vault.
 - **Erreurs** : `KeyDecryptionError` (« Wallet key decryption failed. », tag, IV, clé maître ou AAD
   faux, sans `cause`), `KeyIntegrityError` (clé publique dérivée ≠ adresse ; ligne mnemonic
   incomplète ou présente sur un `IMPORTED_KEY` ; phrase qui ne dérive pas l'adresse),
@@ -894,11 +901,10 @@ le Refresh et la reprise `home` du premier accès.
   [screen.ts](apps/bot/src/features/home/screen.ts)) : `lc:open`, `sim:open`, `sub:open`,
   `wal:list`, `sup:open`, `home:refresh`, plus `nav:home`. Les tickets de section reprennent
   **exactement** ces valeurs.
-- Sections pas encore livrées : `registerComingSoon` enregistre un écran **provisoire** sur leur
-  domaine (`router.registerProvisional`). Le `router.register` du ticket d'une section le remplace,
-  sans rien retirer nulle part (`sim` est sorti de la liste avec V1-16, `lc` avec V1-35). `showComingSoon(ctx, ui,
-section)` ([coming-soon.ts](apps/bot/src/features/home/coming-soon.ts)) sert aussi pour un
-  bouton laissé à un ticket ultérieur.
+- Sections pas encore livrées : `router.registerProvisional` enregistre un écran **provisoire**
+  sur leur domaine, que le `router.register` du ticket de la section remplace sans rien retirer
+  nulle part. Toutes les sections du menu sont livrées depuis V1-40 (Support) : l'écran « Coming
+  soon » de V1-08 est supprimé, le mécanisme reste pour la V2.
 
 Routeur de callbacks : `router.register(domain, { action: handler })`. Un domaine ou une action
 inconnus reçoivent « This button has expired » du routeur lui-même, aucun handler n'a à le faire.
@@ -909,7 +915,8 @@ d'une action trop fréquente.
 
 Les tests du bot tournent sur `botHarness()` ([test-harness.ts](apps/bot/src/test-harness.ts)) : faux
 Telegram, fausse base, faux services de données. Sans l'option `data`, `createBot` branche le vrai RPC
-et CoinGecko.
+et CoinGecko. L'option `admin` remplace les services des commandes admin (`fakeAdmin`), et personne
+n'est admin tant qu'un test ne met pas `ADMIN_ID` dans `ADMIN_TELEGRAM_IDS`.
 
 ### Services de données (V1-07)
 
@@ -1001,7 +1008,7 @@ dans 28 h ; `SEED_PLAN=CLASSIC` un Classic, `SEED_HOURS=200` une fin au-delà de
 
 `apps/worker` est un process à part (`pnpm --filter @launchbot/worker dev`, lancé aussi par
 `pnpm dev`) : `src/main.ts` → `runProcess([createWorkerService()])`. Au démarrage, dans l'ordre :
-env, garde-fou devnet (le worker signe les transferts des dépôts), base
+env, garde-fou devnet (le worker signe les transferts des dépôts et des comptes inactifs), base
 (`assertDatabaseReachable`, partagé avec le bot), `getMe` sur `BOT_TOKEN`, avertissement si
 `TREASURY_WALLET` n'existe pas encore sur le devnet (l'alimenter une fois au faucet), pg-boss,
 files et crons, puis la boucle. Telegram par `new Api(token)` seulement : jamais de polling, qui
@@ -1043,6 +1050,8 @@ couperait celui du bot (409). Arrêt : la boucle finit son tick, le verrou est r
   fin et réarme le rappel). Bot bloqué → réservation gardée ; autre échec → réservation rendue,
   essai au passage suivant. Bouton `🔄 Renew` (`sub:open`, `SUB_OPEN` de shared, comme le menu)
   → l'écran des offres remplace le rappel. `subscriptions.expire` chaque minute : `expireDueSubscriptions`, aucun message.
+- **Comptes inactifs et nettoyage à 90 jours** (V1-45) : `accounts.delete-inactive` et
+  `data.expired-cleanup`, décrits dans « Conservation des données ».
 
 ### Payer depuis un wallet du bot (V1-31)
 
@@ -1232,6 +1241,183 @@ partent du même wallet, et les textes le disent. Le minimum d'un launch est **4
   curve du moment (`renderBuyLines` de la simulation, `getCurveParams`, 1 décimale), frais
   « ≈ 0.05 SOL », lien vers le canal Succès, et « 🚧 Token creation arrives in V2. ». Wallet,
   bundle et nom + ticker sont revérifiés avant l'affichage ; ce qui manque renvoie à son étape.
+
+## Support et administration
+
+### Écran Support et code support (V1-40)
+
+« 🆘 Support » du menu (`sup:open`) ouvre l'écran du §11.1 en édition : comment joindre le support
+humain, le **code support** seul en `<code>` (un tap le copie) et la ligne de priorité Premium.
+`registerSupport` ([support.ts](apps/bot/src/features/support/support.ts)), écran pur dans
+[screens.ts](apps/bot/src/features/support/screens.ts), fonctions pures dans
+[support-code.ts](packages/shared/src/support/support-code.ts). Il remplace le dernier écran
+provisoire : `coming-soon.ts` et `en.comingSoon` sont supprimés (`router.registerProvisional` reste
+pour les sections de la V2).
+
+- **Code** : lettre de l'offre active puis ID Telegram, `P-123456789` (`buildSupportCode`). Offre lue
+  à chaque affichage, sans cache, par `getPlanStatus` (la lecture de l'accueil, même prédicat
+  ACTIVE + `expiresAt > now` que `getActiveSubscription`) : un Premium échu que le worker n'a pas
+  encore expiré donne `F`. Priorité : `getPlanFeatures(plan).prioritySupport`.
+- **💬 Contact support** : bouton `url` vers `SUPPORT_URL`. Pour un lien `t.me/<username>`, le code
+  pré-remplit le premier message (`?text=`, `?start=` si le nom finit par `bot`, `encodeURIComponent`) ;
+  une invitation, un autre chemin ou un autre site restent tels quels (`buildSupportUrl`).
+  `SUPPORT_PREFILL_ENABLED = true` : paramètre documenté par Telegram, **à vérifier** sur iOS,
+  Android, Desktop et Web (test manuel de V1-40) ; le code affiché suffit dans tous les cas.
+- **Parsing des commandes admin** : `parseUserRef(raw)` → `{ telegramId: bigint, claimedPlanLetter }`
+  (ID seul ou `P-`/`C-`/`F-` + ID, casse ignorée, 16 chiffres au plus, sans zéro initial ni signe ;
+  `parseTelegramId` pour l'ID seul). Le schéma zod `userArg` (bot,
+  [common.ts](apps/bot/src/features/admin/common.ts)) le lit une fois : un argument invalide donne le
+  rappel de syntaxe ; `resolveUserRef(ref)` lit ensuite le compte, `null` → « User not found ». La
+  lettre n'est que déclarée : les commandes relisent l'offre.
+
+### Garde admin et erreurs communes (V1-38, §1 et §2)
+
+Livrées avec le lot admin ; `/announce` (§3 à §5 de la carte) viendra avec les canaux.
+
+- `createAdminGuard(env.ADMIN_TELEGRAM_IDS)` ([guard.ts](apps/bot/src/features/admin/guard.ts)) :
+  `isAdmin(id)`, le `Composer` des commandes (`guard.commands.command(...)`) et un middleware placé
+  **après** la gate et la saisie attendue, juste avant le routeur. Une commande du registre ou un
+  clic `adm:*` d'un non-admin : **silence**, comme une commande inconnue (le clic reçoit une réponse
+  vide d'`ensureAnswered`), log `admin.denied` avec l'ID et le nom de la commande, jamais ses
+  arguments. Revérifié à chaque clic. Liste vide → aucun admin. La garde reconnaît une commande avec
+  les matchers de grammY (`Context.has.command`, ceux de `commands.command()`) et un clic avec
+  `decodeCallback`, comme le routeur : elle filtre exactement ce qui s'exécuterait.
+- **Registre** `en.admin.commands` : titre, ligne du menu, usage, exemple. Au démarrage,
+  `setAdminCommands` pose `/start` et ces commandes dans le menu de chaque admin
+  (`BotCommandScopeChat`), jamais dans la liste par défaut ; un admin qui n'a jamais ouvert le bot →
+  warn (proposition).
+- Erreurs : `parseArgs(ctx, name, schema)` lit les mots après la commande (tuple zod : un mot en trop
+  ou en moins est une erreur) et envoie sinon le rappel « ❌ Invalid command. / Usage: / Example: »
+  (usage échappé, il contient `<` et `>`) ; `renderAdminUserNotFound` : « ❌ User not found. » puis
+  « Searched: … ». Chaque réponse à une commande est un nouveau message (`showScreen` en `new`),
+  qui quitte une saisie en cours.
+- **Kit commun** (`createAdminKit`, [common.ts](apps/bot/src/features/admin/common.ts)) : `parseArgs`,
+  `resolveUserRef(ref)`, `replyNotFound`, `reply`, `replyParts` (fiche en plusieurs messages), plus
+  `adminHeader` (titre du registre), `offerLabel` (« Premium · 1 month ») et `tellUser` (message à
+  l'utilisateur visé par /grant ou /purge, `false` si Telegram refuse). Les logs d'échec Telegram
+  passent par `telegramErrorFields` ([telegram-errors.ts](apps/bot/src/navigation/telegram-errors.ts)) :
+  code et description, jamais `payload`.
+
+### /grant (V1-42)
+
+`/grant <id ou code> <classic|premium> <2d|1m>` ([grant.ts](apps/bot/src/features/admin/grant.ts),
+écrans et syntaxe dans [grant-screens.ts](apps/bot/src/features/admin/grant-screens.ts)).
+
+- Confirmation : question du §11.4, « Current plan » de l'écran des offres, fin calculée par V1-27
+  (`previewGrant`, qui lit désormais l'offre une fois et rend `{ status, computed }`) ; variantes
+  EXTEND (flag ℹ️), UPGRADE (perte du Classic), REFUSED (Classic pendant un Premium : Cancel seul).
+- Session `adminGrant` (`nonce`, `targetUserId`, `targetTelegramId`, `offerCode`, `kind`,
+  `currentExpiresAt`, `createdAt`), remplacée à chaque `/grant` ; boutons `adm:grant:ok|no:<nonce>`
+  (8 caractères base64url, `newNonce`).
+- **Confirm** : nonce déjà utilisé en base → « This grant is no longer valid. » ; nonce absent, autre
+  ou de plus de 10 min (`ADMIN_CONFIRM_TTL_MS`) → alerte + message « ⌛ … expired », clavier retiré.
+  Puis `confirmGrant` en **une transaction sous le verrou du User** : ligne `SubscriptionGrant`
+  (nonce unique, table de la migration `subscription_grant`) et activation ensemble, seulement si
+  l'offre est encore celle de l'écran (même kind, même fin pour EXTEND) ; sinon `CHANGED` → alerte
+  « The user's plan changed. » et écran à jour avec un nouveau nonce. Deux clics simultanés : le
+  second attend le verrou puis trouve la ligne (`USED`).
+- Résultat sans clavier, date issue de la ligne. L'utilisateur est prévenu (« ⭐ Premium is active
+  until … », Launch Coin et Menu ; `GRANT_NOTIFY_USER`, proposition), sinon « ℹ️ The user could not
+  be notified. ». Log `admin.grant` sans texte de message.
+
+### /whois et /getall (V1-43)
+
+`createUserData` ([user-data.ts](apps/bot/src/features/admin/user-data.ts)), rendus purs dans
+[user-data-screens.ts](apps/bot/src/features/admin/user-data-screens.ts), lectures dans
+`createSupportDataService` ([support-data.ts](packages/db/src/services/support-data.ts)) : `select`
+explicites, aucune colonne de clé, sauf `walletSecrets`, réservé à Reveal keys.
+
+- **/whois** : nom, ID, offre (date complète, temps restant sous 72 h, « ended … » si expirée), code
+  support actuel, nombre de wallets (sans RPC), 5 derniers paiements (montant tel que la facture
+  l'affichait, 4 décimales arrondies au-dessus ; reçu partiel ; « refund manually » pour une facture
+  terminée avec des SOL reçus). Code saisi dont la lettre ne correspond plus → flag avec le code actuel.
+- **/getall** : fiche sans secret (compte, abonnement et historique Payment/Grant, AI Generate du
+  jour, 20 derniers achats, wallets avec adresse complète et solde de `getUserBalances`, 10 derniers
+  retraits et transferts d'inactivité, compteurs), découpée par `splitHtmlMessage`
+  ([split.ts](packages/shared/src/ui/split.ts) : coupe entre blocs puis entre lignes, jamais dans
+  une balise, `Part 2/3`). `[🔑 Reveal keys][❌ Cancel]` sur la dernière partie s'il y a des wallets ;
+  session `getallReveal = { nonce (16), targetUserId, targetTelegramId, createdAt }`. Compte
+  inexistant : ses transferts `INACTIVITY_SWEEP` retrouvés par l'ID Telegram (V1-45).
+- **Reveal keys** ([reveal.ts](apps/bot/src/features/admin/reveal.ts), **seul** fichier autorisé à
+  importer `revealWalletSecrets`, règle ESLint resserrée) : demande lue et retirée de la session
+  (usage unique), 5 min max ; clavier de la fiche retiré ; clé base58 et seed de chaque wallet en
+  `<code>` (« none (imported with a private key) », « unavailable », ou « Keys unavailable
+  (decryption failed) »), `protect_content` désactivé (`GETALL_PROTECT_CONTENT`), un bloc par wallet
+  jamais coupé. Chaque partie est enregistrée **aussitôt** dans `SensitiveMessage` (migration
+  `sensitive_message`) pour sa suppression à 60 s ; si l'enregistrement échoue, le message est
+  supprimé tout de suite. Log `admin.getall.reveal` (admin, compte, nombre de wallets), seule trace.
+- **Balayeur** ([sensitive-sweeper.ts](apps/bot/src/services/sensitive-sweeper.ts)) : service du
+  process du bot, au démarrage puis toutes les 5 s (`runEvery`, déplacé du worker dans
+  `@launchbot/shared/server`), 50 lignes échues max. Supprimé ou déjà absent → ligne supprimée ;
+  impossible (plus de 48 h, 403, autre 400) → ligne supprimée, log error et réponse au message
+  « ⚠️ Couldn't delete this message with wallet keys. Delete it yourself now. » ; réseau ou 5xx →
+  `attempts + 1`, nouvel essai ; 429 → passage suivant.
+
+### /purge (V1-44)
+
+`createPurge` ([purge.ts](apps/bot/src/features/admin/purge.ts)), écrans dans
+[purge-screens.ts](apps/bot/src/features/admin/purge-screens.ts), service
+`createAccountDeletionService` ([account-deletion.ts](packages/db/src/services/account-deletion.ts),
+importable par le worker).
+
+- Résumé : compte, wallets avec leur solde lu **sans cache**, factures encore payables, puis les
+  blocages : `WALLET_FUNDS` (solde au-dessus des frais d'un retrait, seuil de V1-11 ; la poussière
+  ne bloque pas), `PENDING_INVOICE` (PENDING, ou terminée dans ses 24 h, proposition),
+  `BALANCES_UNAVAILABLE` (RPC en erreur). Abonnement actif : non bloquant, « will be lost ».
+  Bloqué → Cancel seul ; sinon `[🗑 Confirm purge][❌ Cancel]` (`adm:prg:ok:<telegramId>`, rien en
+  session).
+- **Confirm purge** : tout est relu ; blocage apparu → alerte + résumé à jour, rien n'est supprimé.
+  Sinon « Your data has been deleted. » à l'utilisateur (bot bloqué → on continue, ligne ℹ️), puis
+  `deleteUserData` : une transaction, verrou du User (`lockUserRow`, le même que les activations et
+  /grant), `Simulation`, `TokenDraft`, `AiGeneration` et `Subscription` supprimés, `Withdrawal` et
+  `Payment` détachés (`userId` null, `userTelegramId` gardé), `Wallet` supprimés (clés chiffrées et
+  seeds avec eux), sessions du chat (`sessionKeysOf`), puis le `User`. Compteurs à l'écran et dans
+  le log `purge.done`, cache des soldes invalidé.
+  `onlyIfLastActiveBefore` → `SKIPPED_ACTIVE` pour V1-45.
+
+## Conservation des données
+
+### Comptes inactifs et nettoyage à 90 jours (V1-45)
+
+Deux crons du worker ([jobs/retention.ts](apps/worker/src/jobs/retention.ts)), services dans
+[inactive-accounts.ts](packages/db/src/services/inactive-accounts.ts) et
+[data-cleanup.ts](packages/db/src/services/data-cleanup.ts).
+
+- **`accounts.delete-inactive`**, toutes les 15 min (`cronEvery(INACTIVITY_CHECK_INTERVAL_MS)`, qui
+  refuse le démarrage si l'intervalle ne divise pas l'heure) : d'abord les transferts
+  `INACTIVITY_SWEEP` restés PENDING, relus sur la chaîne (`settleTransfer`) ; puis les comptes sans
+  activité depuis **24 h** (`INACTIVITY_DELETE_MS` dans `constants.ts`, 48 h dans la décision du
+  16/09/2026 ; `inactivityCutoff`, fixé au début du passage), admins exclus (en SQL et
+  revérifié par `isInactiveCandidate`), par pages de 100 sur un curseur `(lastActiveAt, id)`, un
+  try/catch par compte. Pour chaque compte : `lastActiveAt` relu ; une ligne PENDING d'un de ses
+  wallets est relue d'abord (compte gardé si elle peut encore passer) ; soldes lus sans cache ;
+  chaque wallet au-dessus des frais d'un transfert part **en entier** vers `TREASURY_WALLET`
+  (`sendRecorded`, ligne `Withdrawal` `INACTIVITY_SWEEP` avec `userTelegramId`, `lastActiveAt` relu
+  avant chaque transfert) ; la poussière reste et se perd avec la clé. Un échec (lecture, devis,
+  transfert, issue inconnue) garde le compte pour le passage suivant : aucune clé n'est effacée
+  tant qu'il reste des fonds transférables. Soldes relus si un transfert est parti (sinon la lecture
+  du début sert), puis `deleteUserData(userId, { onlyIfLastActiveBefore })`. Aucun message à
+  l'utilisateur ; s'il est revenu après le départ de ses SOL, alerte `⚠️ MANUAL REFUND` aux admins
+  (une fois).
+- **Facture encore payable** : une facture reste payable 30 min + 24 h après sa création (§8.3),
+  plus longtemps que le délai d'inactivité. Le compte peut donc partir avant : un paiement arrivé
+  ensuite n'active rien (`ORPHAN_PAYMENT`, facture détachée), `deposits.watch` transfère le dépôt à
+  la trésorerie et les admins reçoivent l'alerte de remboursement manuel (« deleted account »,
+  expéditeur du dépôt). Rien de spécifique dans le job : c'était impossible en pratique à 48 h.
+- **`data.expired-cleanup`**, 03:30 UTC : simulations de plus de 90 jours, brouillons non modifiés
+  depuis 90 jours et référencés par aucune simulation (le `tokenDraftId` est en cascade), lignes
+  `AiGeneration` de plus de 90 jours (proposition), par lots de 1 000.
+- **Lancement à la main** (recette R9) :
+  `pnpm --filter @launchbot/worker job accounts.delete-inactive [--now 2026-12-24T03:30:00Z]` met le
+  job dans la file de son cron ; le worker en marche le prend dans la minute, un passage déjà en
+  attente ou en cours l'absorbe. `--now` fixe l'horloge de ce passage, refusé si
+  `NODE_ENV=production`. Le worker doit avoir démarré une fois (il crée les files).
+
+### Rétention des logs
+
+Les logs pino partent sur stdout, sans secret (redaction, `scrub`, jamais de texte de message). Leur
+conservation relève de l'hébergement : **6 mois** (collecteur réglé à 180 jours, ou logrotate avec
+`maxage 180`), la durée annoncée par la Privacy Policy (V1-41).
 
 ## Mini App
 
@@ -1604,14 +1790,14 @@ tout dérive de `SOLANA_CLUSTER` (centralisé en V1-03).
 canal) et écran d'accueil (V1-01 à V1-08, jusqu'au commit `0d7c2d8`). Depuis ce socle, **une
 branche par feature**, nommée `feat/<feature>` et regroupant les tickets de la feature :
 
-| Branche              | Tickets       |
-| -------------------- | ------------- |
-| `feat/wallets`       | V1-09 à V1-14 |
-| `feat/token`         | V1-15 à V1-17 |
-| `feat/simulation`    | V1-18 à V1-26 |
-| `feat/subscribe`     | V1-27 à V1-34 |
-| `feat/launch-coin`   | V1-35 à V1-37 |
-| `feat/admin-support` | V1-38 à V1-45 |
+| Branche              | Tickets                            |
+| -------------------- | ---------------------------------- |
+| `feat/wallets`       | V1-09 à V1-14                      |
+| `feat/token`         | V1-15 à V1-17                      |
+| `feat/simulation`    | V1-18 à V1-26                      |
+| `feat/subscribe`     | V1-27 à V1-34                      |
+| `feat/launch-coin`   | V1-35 à V1-37                      |
+| `feat/admin-support` | V1-38 (§1–2), V1-40, V1-42 à V1-45 |
 
 Sur une branche : un commit par ticket, `pnpm lint`, `pnpm typecheck` et `pnpm test` verts avant
 chaque commit.
@@ -1628,37 +1814,41 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 
 ## Décisions techniques
 
-| Date       | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 20/09/2026 | **Lib Solana (D10) : `@solana/web3.js` 1.x** (`^1.98.2`, 1.99.0 installée). C'est la dépendance directe de `@pump-fun/pump-sdk` 2.0.0 (avec `@coral-xyz/anchor`, `@solana/spl-token`, `bn.js`). Installée dans `packages/solana` uniquement, une seule copie dans le lockfile (`pnpm why -r @solana/web3.js`). Pas de `@solana/kit` en parallèle.                                                                                                                                                           |
-| 20/09/2026 | **TypeScript 6.0.x** (`~6.0`) et non 7.x : typescript-eslint 8 exige `typescript <6.1`. À relever quand typescript-eslint supportera TypeScript 7.                                                                                                                                                                                                                                                                                                                                                          |
-| 20/09/2026 | **Packages internes consommés en source TS** (`exports` → `./src/index.ts`) : pas d'étape de build entre packages. Les process Node tournent avec `tsx` (`dev` : `tsx watch`, `start` : `tsx`). `tsc -b` sert au typecheck et n'émet que les déclarations (`emitDeclarationOnly`), nécessaires aux références de projets.                                                                                                                                                                                   |
-| 20/09/2026 | **Imports relatifs en `.js`** dans les packages Node (`moduleResolution: NodeNext`), sans extension dans la webapp (`Bundler`).                                                                                                                                                                                                                                                                                                                                                                             |
-| 20/09/2026 | **Prisma 7.10.0**, version figée (le tag `latest` du CLI pointe sur une RC 8.0). Générateur `prisma-client` (client en TypeScript dans `src/generated/`), driver adapter `@prisma/adapter-pg`, URL dans `prisma.config.ts`. Avec l'adapter, P2002 ne donne que le nom de l'index : `isUniqueViolation` en déduit les champs.                                                                                                                                                                                |
-| 20/09/2026 | **PostgreSQL Docker publié sur le port 5440**, pas 5432 : la machine de dev a des PostgreSQL natifs sur 5432 à 5435.                                                                                                                                                                                                                                                                                                                                                                                        |
-| 20/09/2026 | **`@grammyjs/types` 5.0.0, version exacte**, dans `shared` : c'est celle que grammY 1.46 épingle, donc une seule copie des types Bot API. `shared` ne dépend pas de grammY.                                                                                                                                                                                                                                                                                                                                 |
-| 20/09/2026 | **Textes sous `packages/shared/src/i18n/`** (le contexte dit `shared/i18n/en.ts`) pour suivre les `exports` du package. `shared` ne lit jamais l'environnement : le cluster est passé en paramètre (`createUi(cluster)`), et la liste des clusters de `loadEnv` vient de `cluster.ts`.                                                                                                                                                                                                                      |
-| 21/09/2026 | **grammY 1.46 avec `@grammyjs/storage-prisma`** (sessions et conversations dans la table `Session`). `@grammyjs/ratelimiter` n'est pas installé : la limite globale appelle `consumeRateLimit(userId, "global")`, le même compteur que les actions coûteuses et que l'API, donc une seule fenêtre glissante et un seul balayage des utilisateurs partis. `@grammyjs/auto-retry` attend sur les 429, borné à 2 essais et 10 s : les updates passent un par un, un réessai illimité bloquerait tout le monde. |
-| 21/09/2026 | **`setLogDestination` est la prise de test du logger.** Un module crée son logger à l'import, donc sa destination doit pouvoir changer après coup : la bascule est au niveau du flux, après le nettoyage des secrets, et couvre tous les loggers et leurs enfants. C'est ce qui permet de prouver par un test qu'un secret n'est pas loggé.                                                                                                                                                                 |
-| 21/09/2026 | **Chaque suite d'intégration a sa base** (`resetTestDatabase("bot")` → `launchbot_bot_test`) : Vitest lance les projets en parallèle, et deux suites qui réinitialisent la même base se la suppriment mutuellement.                                                                                                                                                                                                                                                                                         |
-
-| 21/09/2026 | **`runProcess` sort avec un délai de 100 ms.** Node 24 sous Windows plante sur une assertion libuv (code 127) si `process.exit()` suit de trop près une requête réseau, ce qui est exactement le cas d'un démarrage refusé par le garde-fou. `setImmediate` ne suffit pas. |
-| 21/09/2026 | **Fastify 5 avec le logger de `@launchbot/shared`** (`loggerInstance`), donc la même redaction et le même nettoyage que le bot. L'API s'expose comme `createApiService()` et rejoint le process du bot dans `apps/bot/src/main.ts` ; elle ne parle jamais à Solana, donc elle n'a pas de garde-fou devnet propre, et le bot démarre avant elle. `API_PORT` (3001) et `API_HOST` (`127.0.0.1`, `0.0.0.0` en conteneur) sont optionnelles, hors §12. |
-| 21/09/2026 | **Un seul tunnel en local** : Vite relaie `/api` vers l'API, donc `WEBAPP_URL` = `API_URL`. Le CORS n'autorise que l'origine de `WEBAPP_URL` : une origine étrangère ne reçoit aucun `Access-Control-Allow-Origin`, et le preflight est mis en cache 2 h (`maxAge`), sinon l'en-tête personnalisé coûte un aller-retour de plus à chaque appel. |
-
-| 21/09/2026 | **Pas de `react-router-dom` dans la Mini App**, alors que la carte V1-05 le cite. Chaque page s'ouvre par une URL complète depuis un bouton `web_app` et aucune ne renvoie vers une autre : un aiguillage de dix lignes sur `location.pathname` suffit. Le routeur pesait 39 kB (13 kB gzip), soit 91 % de la croissance du bundle. À réintroduire si une page a un jour besoin de navigation interne. |
-| 21/09/2026 | **Les textes de la Mini App sont dans `i18n/en-webapp.ts`**, exposés aussi comme `en.webapp`. `en` est un seul objet, qu'un bundler ne sait pas élaguer : l'importer embarquerait tous les textes du bot. ESLint interdit `en` et `E` dans `apps/webapp`. Le choix zod ou parseur manuel pour la Mini App est tranché le 23/09/2026 (V1-24, ligne ci-dessous). |
-| 23/09/2026 | **zod dans le bundle de la Mini App** (V1-24) : `fetchSimulation` valide la réponse de l'API avec `simulationResponseSchema`, le schéma que l'API applique elle-même, comme la carte l'exige. Un parseur écrit à la main aurait dupliqué les règles de `simConfigSchema` et divergé un jour. Bundle : 221 kB → 330 kB (69 → 103 kB gzip), dont zod ≈ 74 kB (21 kB gzip) et le moteur `sim-engine`, puis 503 kB (159 kB gzip) avec `lightweight-charts` 5.2.1 en V1-25 (≈ 173 kB, 56 kB gzip, la dépendance que §12 impose) et 509 kB (161 kB gzip) avec la position et la PNL card de V1-26 ; les textes de la Mini App (`en-webapp.ts`) importent désormais `E` (la table des emojis, quelques centaines d'octets), toujours pas `en`. **Caduque le 24/09/2026** : l'écran de simulation est abandonné, zod et `lightweight-charts` sortent du bundle avec lui (ligne suivante). |
+| Date       | Décision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 20/09/2026 | **Lib Solana (D10) : `@solana/web3.js` 1.x** (`^1.98.2`, 1.99.0 installée). C'est la dépendance directe de `@pump-fun/pump-sdk` 2.0.0 (avec `@coral-xyz/anchor`, `@solana/spl-token`, `bn.js`). Installée dans `packages/solana` uniquement, une seule copie dans le lockfile (`pnpm why -r @solana/web3.js`). Pas de `@solana/kit` en parallèle.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 20/09/2026 | **TypeScript 6.0.x** (`~6.0`) et non 7.x : typescript-eslint 8 exige `typescript <6.1`. À relever quand typescript-eslint supportera TypeScript 7.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 20/09/2026 | **Packages internes consommés en source TS** (`exports` → `./src/index.ts`) : pas d'étape de build entre packages. Les process Node tournent avec `tsx` (`dev` : `tsx watch`, `start` : `tsx`). `tsc -b` sert au typecheck et n'émet que les déclarations (`emitDeclarationOnly`), nécessaires aux références de projets.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 20/09/2026 | **Imports relatifs en `.js`** dans les packages Node (`moduleResolution: NodeNext`), sans extension dans la webapp (`Bundler`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 20/09/2026 | **Prisma 7.10.0**, version figée (le tag `latest` du CLI pointe sur une RC 8.0). Générateur `prisma-client` (client en TypeScript dans `src/generated/`), driver adapter `@prisma/adapter-pg`, URL dans `prisma.config.ts`. Avec l'adapter, P2002 ne donne que le nom de l'index : `isUniqueViolation` en déduit les champs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 20/09/2026 | **PostgreSQL Docker publié sur le port 5440**, pas 5432 : la machine de dev a des PostgreSQL natifs sur 5432 à 5435.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 20/09/2026 | **`@grammyjs/types` 5.0.0, version exacte**, dans `shared` : c'est celle que grammY 1.46 épingle, donc une seule copie des types Bot API. `shared` ne dépend pas de grammY.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 20/09/2026 | **Textes sous `packages/shared/src/i18n/`** (le contexte dit `shared/i18n/en.ts`) pour suivre les `exports` du package. `shared` ne lit jamais l'environnement : le cluster est passé en paramètre (`createUi(cluster)`), et la liste des clusters de `loadEnv` vient de `cluster.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 21/09/2026 | **grammY 1.46 avec `@grammyjs/storage-prisma`** (sessions et conversations dans la table `Session`). `@grammyjs/ratelimiter` n'est pas installé : la limite globale appelle `consumeRateLimit(userId, "global")`, le même compteur que les actions coûteuses et que l'API, donc une seule fenêtre glissante et un seul balayage des utilisateurs partis. `@grammyjs/auto-retry` attend sur les 429, borné à 2 essais et 10 s : les updates passent un par un, un réessai illimité bloquerait tout le monde.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 21/09/2026 | **`setLogDestination` est la prise de test du logger.** Un module crée son logger à l'import, donc sa destination doit pouvoir changer après coup : la bascule est au niveau du flux, après le nettoyage des secrets, et couvre tous les loggers et leurs enfants. C'est ce qui permet de prouver par un test qu'un secret n'est pas loggé.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 21/09/2026 | **Chaque suite d'intégration a sa base** (`resetTestDatabase("bot")` → `launchbot_bot_test`) : Vitest lance les projets en parallèle, et deux suites qui réinitialisent la même base se la suppriment mutuellement.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 21/09/2026 | **`runProcess` sort avec un délai de 100 ms.** Node 24 sous Windows plante sur une assertion libuv (code 127) si `process.exit()` suit de trop près une requête réseau, ce qui est exactement le cas d'un démarrage refusé par le garde-fou. `setImmediate` ne suffit pas.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 21/09/2026 | **Fastify 5 avec le logger de `@launchbot/shared`** (`loggerInstance`), donc la même redaction et le même nettoyage que le bot. L'API s'expose comme `createApiService()` et rejoint le process du bot dans `apps/bot/src/main.ts` ; elle ne parle jamais à Solana, donc elle n'a pas de garde-fou devnet propre, et le bot démarre avant elle. `API_PORT` (3001) et `API_HOST` (`127.0.0.1`, `0.0.0.0` en conteneur) sont optionnelles, hors §12.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 21/09/2026 | **Un seul tunnel en local** : Vite relaie `/api` vers l'API, donc `WEBAPP_URL` = `API_URL`. Le CORS n'autorise que l'origine de `WEBAPP_URL` : une origine étrangère ne reçoit aucun `Access-Control-Allow-Origin`, et le preflight est mis en cache 2 h (`maxAge`), sinon l'en-tête personnalisé coûte un aller-retour de plus à chaque appel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 21/09/2026 | **Pas de `react-router-dom` dans la Mini App**, alors que la carte V1-05 le cite. Chaque page s'ouvre par une URL complète depuis un bouton `web_app` et aucune ne renvoie vers une autre : un aiguillage de dix lignes sur `location.pathname` suffit. Le routeur pesait 39 kB (13 kB gzip), soit 91 % de la croissance du bundle. À réintroduire si une page a un jour besoin de navigation interne.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 21/09/2026 | **Les textes de la Mini App sont dans `i18n/en-webapp.ts`**, exposés aussi comme `en.webapp`. `en` est un seul objet, qu'un bundler ne sait pas élaguer : l'importer embarquerait tous les textes du bot. ESLint interdit `en` et `E` dans `apps/webapp`. Le choix zod ou parseur manuel pour la Mini App est tranché le 23/09/2026 (V1-24, ligne ci-dessous).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 23/09/2026 | **zod dans le bundle de la Mini App** (V1-24) : `fetchSimulation` valide la réponse de l'API avec `simulationResponseSchema`, le schéma que l'API applique elle-même, comme la carte l'exige. Un parseur écrit à la main aurait dupliqué les règles de `simConfigSchema` et divergé un jour. Bundle : 221 kB → 330 kB (69 → 103 kB gzip), dont zod ≈ 74 kB (21 kB gzip) et le moteur `sim-engine`, puis 503 kB (159 kB gzip) avec `lightweight-charts` 5.2.1 en V1-25 (≈ 173 kB, 56 kB gzip, la dépendance que §12 impose) et 509 kB (161 kB gzip) avec la position et la PNL card de V1-26 ; les textes de la Mini App (`en-webapp.ts`) importent désormais `E` (la table des emojis, quelques centaines d'octets), toujours pas `en`. **Caduque le 24/09/2026** : l'écran de simulation est abandonné, zod et `lightweight-charts` sortent du bundle avec lui (ligne suivante).                                                                                                                                                                                       |
 | 24/09/2026 | **La simulation se joue dans le chat, plus de Mini App pour la simulation ni pour le launch** (§6.5 du contexte). Après le premier test sur téléphone de l'écran V1-24 à V1-26, Tristan a tranché : un message photo du bot édité toutes les 3 s (`editMessageMedia`), boutons Sell et contrôles en clavier inline, PNL card qui remplace l'image du même message, `protect_content` contre le transfert et l'enregistrement. Rendu : SVG construit en TypeScript, rasterisé en PNG par `@resvg/resvg-js` avec une police embarquée (proposition). Perdu : le graphique fluide et le bloc Top holders. La Mini App ne garde que Terms et Privacy ; l'API n'a plus de route métier. Les cartes V1-24 à V1-26 sont réécrites (nettoyage, rendu image, simulation dans le chat) et le code de la Mini App de simulation n'est jamais commité : V1-24 ramène `apps/webapp` à V1-05 (bundle 509 kB → 221 kB, 69 kB gzip, sans `zod`, `lightweight-charts` ni `sim-engine`), retire l'API de simulation et déplace `createTokenImageService` dans `@launchbot/shared/server`. |
-| 24/09/2026 | **Le runner de simulation vit dans le process du bot, en mémoire, un timer par simulation** (V1-26). Pas de table ni de worker : une simulation dure 3 minutes au plus, une pause 10 minutes, et un redémarrage la fige sans dommage (le message reste, ses boutons répondent « over »). Le temps simulé est un compteur entier de millisecondes que le runner pousse dans le moteur par `advanceTo(tSec)` (ajouté à `SimulationRun` par la passe `/simplify` : les trades sont tirés d'avance, le découpage en pas ne change rien, et `run.time()` devient exact). `createBot` rend désormais `{ bot, simRunner }` pour que le service arrête les minuteurs avant le bot. |
-| 24/09/2026 | **Un Sell 100 % du dev fait paniquer les détenteurs** (`DEV_DUMP_PANIC_SHARE` 0.9, moteur). Tristan voulait que la bougie de clôture retombe vers 2–3 k$ de market cap ; la courbe à produit constant ne descend jamais sous son niveau de lancement (≈ 28 SOL, 3 200 $ à 116 $ le SOL), et la seule vente du dev laissait 4 500 à 10 000 $. Chaque détenteur revend donc 90 % de ses tokens à l'instant de la vente, les plus gros d'abord : la dernière image montre la chute, la carte suit 2 s après. Réglable en une constante, ou à retirer si le scénario ne plaît pas. |
-| 24/09/2026 | **PNL card animée sur un clip, composée par `ffmpeg-static`** (V1-25, demande de Tristan après son premier test). La carte suit sa maquette (ticker, pastille verte ou rouge avec le glyphe Solana, PNL / Invested / Position) et se pose sur un clip d'animation qu'il a fourni ; Telegram reçoit un MP4 muet en `editMessageMedia` `animation`, joué en boucle. Le clip (1,8 MB, prétraité une fois : sans son, 30 fps, 1280 × 944) vit dans `packages/sim-render/assets/`. `ffmpeg-static` (GPL, binaire par plateforme téléchargé à l'installation, ≈ 80 MB) lance ffmpeg en sous-processus une fois par simulation, ≈ 1,7 s ; l'image de déploiement devra le laisser s'installer (`pnpm install` sans `--ignore-scripts`). Avant la carte, le dernier graphique (la bougie de la vente de clôture) reste 2 s (`SIM_END_HOLD_MS`). |
-| 24/09/2026 | **Images de simulation : SVG écrit en TypeScript, rasterisé par `@resvg/resvg-js` 2.6.2 avec la police Inter embarquée** (V1-25, `packages/sim-render`). Le SVG se teste comme du texte (classes, libellés, géométrie), resvg est un binaire précompilé par plateforme sans dépendance système, et la police du dépôt rend les PNG identiques partout (`loadSystemFonts: false`). Écartés : `@napi-rs/canvas` (API impérative, tests sur des pixels) et `sharp` (rendu SVG via librsvg et fontconfig, police selon la machine). `fontBuffers` n'existe pas en 2.6.2 : les fichiers sont relus à chaque rendu, ≈ 52 ms par image de 36 bougies au total. |
-| 23/09/2026 | **`@pump-fun/pump-sdk` 2.0.0 (version figée) chargé en CommonJS** via `createRequire` (V1-21) : son build ESM importe `BN` en export nommé de `@coral-xyz/anchor`, que Node et `tsx` refusent. `@types/bn.js` en devDependency. Le `Global` du devnet (1 SOL de réserves virtuelles, 30 sur mainnet) est rejeté par le service de curve : les simulations suivent le tableau §7.1 tant que le compte lu n'est pas cohérent avec le produit (un dev buy de 20 SOL ne doit pas compléter la curve à t = 0). |
-| 24/09/2026 | **Index unique partiel déclaré dans le schéma avec la preview Prisma `partialIndexes`** (V1-27) : `@@unique([userId], where: raw("status = 'ACTIVE'"))`, au plus un abonnement actif par utilisateur. Écrit à la main dans une migration, l'index aurait été vu comme une dérive et supprimé au prochain `migrate dev` ; déclaré, `migrate diff` reste vide. Revers : le client généré accepte `userId` dans un `findUnique` sans la condition, à ne jamais utiliser. |
-| 24/09/2026 | **Montants de facture en entiers, sans decimal.js** (V1-28) : le taux SOL/USD est d'abord arrondi à 8 décimales, celles de la colonne, puis `lamports = ceil(cents × 10^15 / taux × 10^8)` en `bigint`. Le montant attendu se recalcule donc à l'identique depuis la ligne. L'écran l'arrondit vers le haut à 4 décimales (`formatSol(x, { decimals: 4, rounding: "ceil" })`) : qui envoie le montant affiché n'est jamais en paiement partiel (DEC-06, validé le 24/09/2026). |
-| 24/09/2026 | **Un paiement depuis un wallet du bot à la fois par facture, par un verrou advisory de transaction** (V1-31) : `pg_try_advisory_xact_lock(hashtext('pay:' \|\| paymentId))` pris dans une transaction interactive qui reste ouverte pendant l'envoi (délai : toutes les tentatives de V1-13 plus une minute), plutôt qu'un verrou de session sur une connexion dédiée, que le pool de Prisma ne garantit pas. Déjà pris → rien n'est envoyé. Une transaction qui expirerait pendant l'envoi perd son verrou, jamais le résultat de l'envoi. Avant tout envoi, le dépôt est relu : une facture déjà couverte s'active sans nouvel envoi. |
-| 25/09/2026 | **pg-boss 12.34.0 pour les jobs du worker, une boucle à part pour les paiements** (V1-32). Le cron de pg-boss descend à la minute : la détection toutes les 15 s est une boucle `runEvery` dans le process, tenue par une seule instance grâce à un verrou advisory de session sur une connexion `pg` dédiée (le pool de Prisma et celui de pg-boss prêtent une connexion par requête, un verrou de session n'y tiendrait pas). Les files sont `exclusive` : l'id de la facture en `singletonKey` dédoublonne les envois, un cron ne se chevauche pas. |
-| 25/09/2026 | **Les transferts d'un dépôt vers la trésorerie sont des lignes `Withdrawal` de type `DEPOSIT_SWEEP`** (V1-33, migration `payment_deposit_key_lifecycle`), plutôt que des colonnes de plus sur `Payment`. La ligne est écrite avant la signature et reçoit la signature avant la confirmation : un résultat inconnu est relu avant tout nouvel essai, par le même code que le retrait (`sendRecorded`, `settleTransfer`), et chaque transfert reste en comptabilité avec ses frais. `Payment.sweepSignature` garde le dernier transfert confirmé. |
-| 24/09/2026 | **Limite de création de factures comptée en base** (V1-28), pas dans le compteur mémoire du bot : les factures créées par l'utilisateur depuis 10 minutes, sous un verrou advisory par utilisateur qui sérialise aussi la réutilisation d'une facture ouverte. La limite tient aux redémarrages et le service reste utilisable hors du bot. |
-| 25/09/2026 | **Dev buy fixe de 1 SOL puis bundle choisi, depuis le même wallet** (décision de Tristan après les tests de V1-35 à V1-37) : le bundle vaut 3 / 5 / 10 SOL ou Custom de 3 à 20 SOL et achète au bloc suivant ; le minimum d'un launch est 4 SOL pile, sans marge de frais (même seuil pour l'accueil, D13) ; la simulation suit le même modèle (`SimConfig.bundleSol`, colonne `Simulation.bundleSol` par la migration `simulation_bundle`, 0 pour les lignes d'avant, qui rejouent à l'identique). Le preset d'activité suit le bundle (la table 3 / 5 / 10 reste la même). |
+| 24/09/2026 | **Le runner de simulation vit dans le process du bot, en mémoire, un timer par simulation** (V1-26). Pas de table ni de worker : une simulation dure 3 minutes au plus, une pause 10 minutes, et un redémarrage la fige sans dommage (le message reste, ses boutons répondent « over »). Le temps simulé est un compteur entier de millisecondes que le runner pousse dans le moteur par `advanceTo(tSec)` (ajouté à `SimulationRun` par la passe `/simplify` : les trades sont tirés d'avance, le découpage en pas ne change rien, et `run.time()` devient exact). `createBot` rend désormais `{ bot, simRunner }` pour que le service arrête les minuteurs avant le bot.                                                                                                                                                                                                                                                                                                                                                                                              |
+| 24/09/2026 | **Un Sell 100 % du dev fait paniquer les détenteurs** (`DEV_DUMP_PANIC_SHARE` 0.9, moteur). Tristan voulait que la bougie de clôture retombe vers 2–3 k$ de market cap ; la courbe à produit constant ne descend jamais sous son niveau de lancement (≈ 28 SOL, 3 200 $ à 116 $ le SOL), et la seule vente du dev laissait 4 500 à 10 000 $. Chaque détenteur revend donc 90 % de ses tokens à l'instant de la vente, les plus gros d'abord : la dernière image montre la chute, la carte suit 2 s après. Réglable en une constante, ou à retirer si le scénario ne plaît pas.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 24/09/2026 | **PNL card animée sur un clip, composée par `ffmpeg-static`** (V1-25, demande de Tristan après son premier test). La carte suit sa maquette (ticker, pastille verte ou rouge avec le glyphe Solana, PNL / Invested / Position) et se pose sur un clip d'animation qu'il a fourni ; Telegram reçoit un MP4 muet en `editMessageMedia` `animation`, joué en boucle. Le clip (1,8 MB, prétraité une fois : sans son, 30 fps, 1280 × 944) vit dans `packages/sim-render/assets/`. `ffmpeg-static` (GPL, binaire par plateforme téléchargé à l'installation, ≈ 80 MB) lance ffmpeg en sous-processus une fois par simulation, ≈ 1,7 s ; l'image de déploiement devra le laisser s'installer (`pnpm install` sans `--ignore-scripts`). Avant la carte, le dernier graphique (la bougie de la vente de clôture) reste 2 s (`SIM_END_HOLD_MS`).                                                                                                                                                                                                                                 |
+| 24/09/2026 | **Images de simulation : SVG écrit en TypeScript, rasterisé par `@resvg/resvg-js` 2.6.2 avec la police Inter embarquée** (V1-25, `packages/sim-render`). Le SVG se teste comme du texte (classes, libellés, géométrie), resvg est un binaire précompilé par plateforme sans dépendance système, et la police du dépôt rend les PNG identiques partout (`loadSystemFonts: false`). Écartés : `@napi-rs/canvas` (API impérative, tests sur des pixels) et `sharp` (rendu SVG via librsvg et fontconfig, police selon la machine). `fontBuffers` n'existe pas en 2.6.2 : les fichiers sont relus à chaque rendu, ≈ 52 ms par image de 36 bougies au total.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 23/09/2026 | **`@pump-fun/pump-sdk` 2.0.0 (version figée) chargé en CommonJS** via `createRequire` (V1-21) : son build ESM importe `BN` en export nommé de `@coral-xyz/anchor`, que Node et `tsx` refusent. `@types/bn.js` en devDependency. Le `Global` du devnet (1 SOL de réserves virtuelles, 30 sur mainnet) est rejeté par le service de curve : les simulations suivent le tableau §7.1 tant que le compte lu n'est pas cohérent avec le produit (un dev buy de 20 SOL ne doit pas compléter la curve à t = 0).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 24/09/2026 | **Index unique partiel déclaré dans le schéma avec la preview Prisma `partialIndexes`** (V1-27) : `@@unique([userId], where: raw("status = 'ACTIVE'"))`, au plus un abonnement actif par utilisateur. Écrit à la main dans une migration, l'index aurait été vu comme une dérive et supprimé au prochain `migrate dev` ; déclaré, `migrate diff` reste vide. Revers : le client généré accepte `userId` dans un `findUnique` sans la condition, à ne jamais utiliser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 24/09/2026 | **Montants de facture en entiers, sans decimal.js** (V1-28) : le taux SOL/USD est d'abord arrondi à 8 décimales, celles de la colonne, puis `lamports = ceil(cents × 10^15 / taux × 10^8)` en `bigint`. Le montant attendu se recalcule donc à l'identique depuis la ligne. L'écran l'arrondit vers le haut à 4 décimales (`formatSol(x, { decimals: 4, rounding: "ceil" })`) : qui envoie le montant affiché n'est jamais en paiement partiel (DEC-06, validé le 24/09/2026).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 24/09/2026 | **Un paiement depuis un wallet du bot à la fois par facture, par un verrou advisory de transaction** (V1-31) : `pg_try_advisory_xact_lock(hashtext('pay:' \|\| paymentId))` pris dans une transaction interactive qui reste ouverte pendant l'envoi (délai : toutes les tentatives de V1-13 plus une minute), plutôt qu'un verrou de session sur une connexion dédiée, que le pool de Prisma ne garantit pas. Déjà pris → rien n'est envoyé. Une transaction qui expirerait pendant l'envoi perd son verrou, jamais le résultat de l'envoi. Avant tout envoi, le dépôt est relu : une facture déjà couverte s'active sans nouvel envoi.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 25/09/2026 | **pg-boss 12.34.0 pour les jobs du worker, une boucle à part pour les paiements** (V1-32). Le cron de pg-boss descend à la minute : la détection toutes les 15 s est une boucle `runEvery` dans le process, tenue par une seule instance grâce à un verrou advisory de session sur une connexion `pg` dédiée (le pool de Prisma et celui de pg-boss prêtent une connexion par requête, un verrou de session n'y tiendrait pas). Les files sont `exclusive` : l'id de la facture en `singletonKey` dédoublonne les envois, un cron ne se chevauche pas.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 25/09/2026 | **Les transferts d'un dépôt vers la trésorerie sont des lignes `Withdrawal` de type `DEPOSIT_SWEEP`** (V1-33, migration `payment_deposit_key_lifecycle`), plutôt que des colonnes de plus sur `Payment`. La ligne est écrite avant la signature et reçoit la signature avant la confirmation : un résultat inconnu est relu avant tout nouvel essai, par le même code que le retrait (`sendRecorded`, `settleTransfer`), et chaque transfert reste en comptabilité avec ses frais. `Payment.sweepSignature` garde le dernier transfert confirmé.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 24/09/2026 | **Limite de création de factures comptée en base** (V1-28), pas dans le compteur mémoire du bot : les factures créées par l'utilisateur depuis 10 minutes, sous un verrou advisory par utilisateur qui sérialise aussi la réutilisation d'une facture ouverte. La limite tient aux redémarrages et le service reste utilisable hors du bot.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 25/09/2026 | **Dev buy fixe de 1 SOL puis bundle choisi, depuis le même wallet** (décision de Tristan après les tests de V1-35 à V1-37) : le bundle vaut 3 / 5 / 10 SOL ou Custom de 3 à 20 SOL et achète au bloc suivant ; le minimum d'un launch est 4 SOL pile, sans marge de frais (même seuil pour l'accueil, D13) ; la simulation suit le même modèle (`SimConfig.bundleSol`, colonne `Simulation.bundleSol` par la migration `simulation_bundle`, 0 pour les lignes d'avant, qui rejouent à l'identique). Le preset d'activité suit le bundle (la table 3 / 5 / 10 reste la même).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 25/09/2026 | **Lot admin et support avant les canaux** (V1-38 §1–2, V1-40, V1-42 à V1-45, choix de Tristan) : la garde admin et les erreurs communes de V1-38 sont livrées avec les commandes qui en dépendent, `/announce` attend la partie canaux. La garde est un middleware juste avant le routeur de callbacks, après la gate : une commande du registre ou un clic `adm:*` d'un non-admin reçoit le silence d'une commande inconnue.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 25/09/2026 | **Le Confirm de /grant ne sert qu'une fois, garanti en base** (V1-42, migration `subscription_grant`) : la ligne `SubscriptionGrant` (nonce unique) et l'activation s'écrivent dans la même transaction, sous le verrou `FOR UPDATE` du User qui sérialise déjà grants et paiements (`lockUserRow`, sorti de `subscriptions.ts` dans `user.ts`, pris aussi par `deleteUserData`). La vérification « l'offre est-elle encore celle de l'écran » se fait sous ce verrou, pas avant : aucune fenêtre entre le contrôle et l'écriture.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 25/09/2026 | **Les messages de clés de /getall sont supprimés par un balayeur du bot, sur une table** (V1-43, migration `sensitive_message`) : `SensitiveMessage` (chat, message, échéance) écrit juste après chaque envoi, relu au démarrage puis toutes les 5 s, donc une suppression survit à un redémarrage. `runEvery` passe du worker à `@launchbot/shared/server` pour servir aux deux. `protect_content` reste désactivé : sur certains clients il bloque aussi la copie du texte.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 25/09/2026 | **Un seul service de suppression de compte, dans `@launchbot/db`** (V1-44) : `/purge` l'appelle après ses blocages, le worker (V1-45) après avoir vidé les wallets vers la trésorerie, avec `onlyIfLastActiveBefore`. Paiements et retraits restent, détachés ; les sessions grammY du chat partent avec le compte (`sessionKeysOf`, préfixe `conversation-` désormais défini dans `@launchbot/db`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 25/09/2026 | **Les transferts d'un compte inactif sont des retraits `INACTIVITY_SWEEP`** (V1-45), enregistrés par `sendRecorded` comme ceux de la trésorerie : ligne avant la signature, signature avant la confirmation, issue inconnue relue sur la chaîne avant tout nouvel essai, `userTelegramId` gardé pour un remboursement. Files en politique `exclusive` (déjà celle du worker) plutôt que `stately` : un passage à la fois, lancement à la main compris.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 25/09/2026 | **Un compte est supprimé après 24 h sans activité, et non plus 48 h** (Tristan, `INACTIVITY_DELETE_MS`) : ses SOL partent vers la trésorerie, puis le compte est supprimé, sans avertissement ; les admins restent exemptés. Le contrôle tourne toutes les 15 min, donc un compte part entre 24 h et 24 h 15 après sa dernière activité. Une facture restant payable 24 h 30 après sa création, un paiement tardif peut désormais arriver après la suppression : il n'active rien, le dépôt part à la trésorerie avec l'alerte de remboursement manuel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

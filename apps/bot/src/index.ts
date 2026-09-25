@@ -4,10 +4,13 @@ import type { ConversationData, VersionedState } from "@grammyjs/conversations";
 import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import {
   assertDatabaseReachable,
+  createAccountDeletionService,
   createAiQuotaStore,
   createPaymentService,
+  createSensitiveMessageStore,
   createSimulationStore,
   createSubscriptionService,
+  createSupportDataService,
   createTokenDraftService,
   createWalletPaymentService,
   createWalletService,
@@ -23,15 +26,21 @@ import type {
   WalletService,
   WithdrawalService,
 } from "@launchbot/db";
-import { createUi, en, getWithdrawFeeBudgetLamports } from "@launchbot/shared";
+import {
+  createUi,
+  en,
+  getWithdrawFeeBudgetLamports,
+  SENSITIVE_SWEEP_INTERVAL_MS,
+} from "@launchbot/shared";
 import type { AiProviders } from "@launchbot/shared";
 import {
   createLogger,
   createTelegramFileClient,
   createTokenImageService,
   loadEnv,
+  runEvery,
 } from "@launchbot/shared/server";
-import type { Env, Service, TokenImageService } from "@launchbot/shared/server";
+import type { Env, Loop, Service, TokenImageService } from "@launchbot/shared/server";
 import {
   assertDevnet,
   createKeyVault,
@@ -50,13 +59,16 @@ import type { BotContext } from "./context.js";
 import { handleBotError } from "./errors.js";
 import { createAccess } from "./features/access/access.js";
 import { checkChannelRights } from "./features/access/startup-check.js";
-import { registerComingSoon } from "./features/home/coming-soon.js";
+import { registerAdmin, setAdminCommands } from "./features/admin/admin.js";
+import type { AdminServices } from "./features/admin/admin.js";
+import { createAdminGuard } from "./features/admin/guard.js";
 import { registerHome } from "./features/home/home.js";
 import { registerLaunch } from "./features/launch/launch.js";
 import { registerSimulation } from "./features/simulation/simulation.js";
 import { simTelegram } from "./features/simulation/telegram.js";
 import type { InvoicePayments } from "./features/subscribe/invoice.js";
 import { createSubscribe, registerSubscribe } from "./features/subscribe/subscribe.js";
+import { registerSupport } from "./features/support/support.js";
 import { createTokenStep } from "./features/token-step/token-step.js";
 import { importConsumer } from "./features/wallets/import.js";
 import { createWalletNav } from "./features/wallets/nav.js";
@@ -73,6 +85,7 @@ import { createAiGenerateService } from "./services/ai/ai-generate.js";
 import { createAiProviders } from "./services/ai/providers.js";
 import { createDataServices } from "./services/data.js";
 import type { DataServices } from "./services/data.js";
+import { sweepSensitiveMessages } from "./services/sensitive-sweeper.js";
 import { createSimRunner } from "./services/sim-runner.js";
 import type { SimRunner, SimRunnerDeps } from "./services/sim-runner.js";
 import { createSimulationService } from "./services/simulation.js";
@@ -104,6 +117,8 @@ export function createBot(
     /** The clock, the renderer and the cap of the simulation runner (tests). */
     simRunner?: Omit<SimRunnerDeps, "ui" | "telegram">;
     images?: TokenImageService;
+    /** What the admin commands read and write (V1-42 to V1-44). */
+    admin?: AdminServices;
   } = {},
 ): { bot: Bot<BotContext>; simRunner: SimRunner } {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
@@ -153,13 +168,15 @@ export function createBot(
   // The invoices (V1-28): the price of V1-07, a deposit read at `confirmed` on the connection
   // the devnet guard verified, a new key per invoice encrypted by the one vault.
   const rpc = getSolanaRpc(env.SOLANA_RPC_URL);
+  const readLamports = (addresses: readonly string[]) => getBalancesFresh(rpc, addresses);
+  const subscriptions = createSubscriptionService({ prisma });
   const payments =
     options.payments ??
     createPaymentService({
       prisma,
-      subscriptions: createSubscriptionService({ prisma }),
+      subscriptions,
       getSolUsdPrice: data.getSolUsdPrice,
-      readLamports: (addresses) => getBalancesFresh(rpc, addresses),
+      readLamports,
       generateKeypair,
       vault,
     });
@@ -169,6 +186,18 @@ export function createBot(
   // The offers (V1-29) and the invoice (V1-30, V1-31): Renew (V1-34) and Launch Coin (V1-35)
   // open the offers.
   const subscribe = createSubscribe({ ui, data, providers, payments, walletPayments });
+  // The admin commands (§11.4, V1-38 to V1-44): the guard knows the ids of the environment.
+  const guard = createAdminGuard(env.ADMIN_TELEGRAM_IDS);
+  const admin = options.admin ?? {
+    subscriptions,
+    support: createSupportDataService({ prisma }),
+    deletion: createAccountDeletionService({
+      prisma,
+      readLamports,
+      feeBudgetLamports: withdrawFeeBudgetLamports,
+    }),
+    sensitive: createSensitiveMessageStore({ prisma }),
+  };
 
   // Waits on 429 Too Many Requests, within bounds: updates are handled one at a time, so an
   // unlimited retry would stall every user, and would hang the startup instead of failing it.
@@ -225,11 +254,12 @@ export function createBot(
     offers: subscribe,
     successUrl: env.CHANNEL_SUCCESS_URL,
   });
-  // Until the ticket of a section registers its domain.
-  registerComingSoon(router, ui);
+  registerSupport(router, { ui, data, supportUrl: env.SUPPORT_URL });
+  registerAdmin(router, { ...admin, ui, guard, data, vault });
   // The message that answers an input a screen waits for: a name, an address, an amount.
   bot.use(inputs.middleware());
-  // Admin commands (V1-38) go here, after the gate: an admin accepts the Terms too.
+  // Admin commands and `adm:*` clicks (V1-38), after the gate: an admin accepts the Terms too.
+  bot.use(guard.middleware());
   bot.use(router.middleware());
 
   bot.catch(handleBotError);
@@ -244,6 +274,7 @@ export function createBot(
 export function createBotService(options: BotServiceOptions = {}): Service {
   let bot: Bot<BotContext> | undefined;
   let simRunner: SimRunner | undefined;
+  let sweeper: Loop | undefined;
 
   return {
     name: "bot",
@@ -272,6 +303,19 @@ export function createBotService(options: BotServiceOptions = {}): Service {
       await bot.api.setMyCommands([{ command: "start", description: en.home.command }], {
         scope: { type: "all_private_chats" },
       });
+      await setAdminCommands(bot.api, env.ADMIN_TELEGRAM_IDS);
+
+      // The messages holding wallet keys (V1-43): at startup, then every 5 s, so one sent before a
+      // restart is still deleted.
+      const api = bot.api;
+      const store = createSensitiveMessageStore({ prisma });
+      sweeper = runEvery({
+        name: "sensitive-messages",
+        intervalMs: SENSITIVE_SWEEP_INTERVAL_MS,
+        run: async () => {
+          await sweepSensitiveMessages({ store, api });
+        },
+      });
 
       // `bot.start` deletes the webhook itself, then polls until `stop`: it is not awaited.
       void bot.start({
@@ -279,10 +323,12 @@ export function createBotService(options: BotServiceOptions = {}): Service {
         onStart: (info) => log.info({ username: info.username }, "Long polling started"),
       });
     },
-    // The simulations stop first (their messages stay), then the update being handled finishes.
-    stop: () => {
+    // The simulations stop first (their messages stay), then the update being handled finishes,
+    // then the sweeper ends its pass.
+    stop: async () => {
       simRunner?.stop();
-      return bot?.stop();
+      await bot?.stop();
+      await sweeper?.stop();
     },
   };
 }

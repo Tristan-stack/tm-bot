@@ -65,6 +65,13 @@ enum AiGenerationKind {
   LOGO
 }
 
+// What a /grant did (V1-42): the kinds of an activation an admin can make.
+enum GrantKind {
+  NEW
+  EXTEND
+  UPGRADE
+}
+
 model User {
   id               String    @id @default(cuid())
   // Telegram ids exceed int4. BigInt(ctx.from.id) on write, Number() on read (< 2^53).
@@ -84,8 +91,9 @@ model User {
   aiGenerations AiGeneration[]
   tokenDrafts   TokenDraft[]
   simulations   Simulation[]
+  grants        SubscriptionGrant[]
 
-  // Inactive accounts after 48 h (V1-45)
+  // Inactive accounts after 24 h (V1-45, `INACTIVITY_DELETE_MS`)
   @@index([lastActiveAt])
 }
 
@@ -108,6 +116,7 @@ model Subscription {
   // the end it was sent for: an extension moves `expiresAt`, which re-arms it.
   reminderSentAt       DateTime?          @db.Timestamptz(3)
   reminderForExpiresAt DateTime?          @db.Timestamptz(3)
+  grants               SubscriptionGrant[]
 
   // At most one ACTIVE subscription per user (V1-27): the safety net of the activation, which
   // expires the rows that ended before it inserts. The generated client accepts `userId` as a
@@ -117,6 +126,26 @@ model Subscription {
   @@index([status, expiresAt])
   // Active subscription of a user (V1-07)
   @@index([userId, status])
+}
+
+// A plan activated by an admin with /grant (V1-42): the history of the manual activations, and
+// the one-use guard of a Confirm — its nonce is unique, so a second click activates nothing.
+// Nothing personal of the target: its id only, detached by a purge.
+model SubscriptionGrant {
+  id              String        @id @default(cuid())
+  nonce           String        @unique
+  adminTelegramId BigInt
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  subscriptionId  String?
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  plan            Plan
+  duration        PlanDuration
+  kind            GrantKind
+  expiresAt       DateTime      @db.Timestamptz(3)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
 }
 
 // Accounting record: kept and detached from the account (userId -> null) after a purge.
@@ -258,6 +287,20 @@ model Simulation {
   @@index([userId, createdAt])
   // Cleanup after 90 days
   @@index([createdAt])
+}
+
+// A message of the bot that holds wallet keys (/getall, V1-43): the sweeper of the bot deletes it
+// at `deleteAt`, 60 s after its send, even across a restart. Holds no key, only where it is.
+model SensitiveMessage {
+  id        String   @id @default(cuid())
+  chatId    BigInt
+  messageId Int
+  deleteAt  DateTime @db.Timestamptz(3)
+  // Deletions that failed for a reason that may pass (network, 5xx): retried at every pass.
+  attempts  Int      @default(0)
+
+  @@unique([chatId, messageId])
+  @@index([deleteAt])
 }
 
 /// grammY session and conversation storage (@grammyjs/storage-prisma, V1-04).

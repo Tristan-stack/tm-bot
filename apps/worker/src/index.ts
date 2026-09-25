@@ -1,5 +1,8 @@
 import {
   assertDatabaseReachable,
+  createAccountDeletionService,
+  createDataCleanupService,
+  createInactiveAccountsService,
   createPaymentService,
   createReminderService,
   createSubscriptionService,
@@ -8,18 +11,20 @@ import {
 } from "@launchbot/db";
 import {
   createUi,
+  DATA_CLEANUP_CRON,
   DEPOSIT_KEY_PURGE_CRON,
   DEPOSIT_WATCH_CRON,
   EVERY_MINUTE_CRON,
   getWithdrawFeeBudgetLamports,
+  INACTIVITY_CHECK_INTERVAL_MS,
   NOTIFY_RETRY_LIMIT,
   PAYMENT_CHECK_INTERVAL_MS,
   SWEEP_RETRY_DELAY_SEC,
   SWEEP_RETRY_LIMIT,
   WORKER_STOP_TIMEOUT_MS,
 } from "@launchbot/shared";
-import { createLogger, loadEnv } from "@launchbot/shared/server";
-import type { Service } from "@launchbot/shared/server";
+import { createLogger, loadEnv, runEvery } from "@launchbot/shared/server";
+import type { Loop, Service } from "@launchbot/shared/server";
 import {
   assertDevnet,
   createKeyVault,
@@ -31,14 +36,13 @@ import {
   rpcHost,
 } from "@launchbot/solana";
 import type { PgBoss } from "pg-boss";
-import { createBoss, QUEUES, scheduleCron, workQueue } from "./boss.js";
+import { createBoss, cronEvery, QUEUES, scheduleCron, workQueue } from "./boss.js";
 import { createDepositJobs } from "./jobs/deposits.js";
 import { detectPayments, notifyPaid } from "./jobs/payments.js";
+import { createRetentionJobs } from "./jobs/retention.js";
 import { createSubscriptionJobs } from "./jobs/subscriptions.js";
 import { createLeaderLock } from "./leader-lock.js";
 import type { LeaderLock } from "./leader-lock.js";
-import { runEvery } from "./loop.js";
-import type { Loop } from "./loop.js";
 import { createTelegramApi, createTelegramSender } from "./telegram.js";
 
 const log = createLogger("worker");
@@ -47,8 +51,9 @@ type PaymentJob = { paymentId: string };
 
 /**
  * The worker (§12): the payment loop every 15 s (V1-32), the transfers of the deposits to the
- * treasury (V1-33) and the plans' reminders and expiry (V1-34), on pg-boss. The whole startup
- * runs inside `start()`: configuration, devnet guard, database, Telegram, jobs, then the loop.
+ * treasury (V1-33), the plans' reminders and expiry (V1-34), the inactive accounts and the 90
+ * days of the data (V1-45), on pg-boss. The whole startup runs inside `start()`: configuration,
+ * devnet guard, database, Telegram, jobs, then the loop.
  */
 export function createWorkerService(): Service {
   let boss: PgBoss | undefined;
@@ -87,17 +92,37 @@ export function createWorkerService(): Service {
         generateKeypair,
         vault,
       });
+      const transfer = createTransferApi(env);
+      const feeBudgetLamports = getWithdrawFeeBudgetLamports(env.PRIORITY_FEE_MAX_MICROLAMPORTS);
       const treasury = createTreasuryService({
         prisma,
-        transfer: createTransferApi(env),
+        transfer,
         vault,
         readLamports,
         treasury: env.TREASURY_WALLET,
-        feeBudgetLamports: getWithdrawFeeBudgetLamports(env.PRIORITY_FEE_MAX_MICROLAMPORTS),
+        feeBudgetLamports,
         findSender: (address) => findLastSender(rpc, address),
       });
       const telegram = createTelegramSender({ api, adminIds: env.ADMIN_TELEGRAM_IDS });
       await warnIfTreasuryEmpty(readLamports, env.TREASURY_WALLET);
+      // V1-45: the SOL of an inactive account goes to the treasury before the account goes.
+      const retention = createRetentionJobs({
+        accounts: createInactiveAccountsService({
+          prisma,
+          transfer,
+          vault,
+          readLamports,
+          treasury: env.TREASURY_WALLET,
+          feeBudgetLamports,
+          deletion: createAccountDeletionService({ prisma, readLamports, feeBudgetLamports }),
+        }),
+        cleanup: createDataCleanupService({ prisma }),
+        adminIds: env.ADMIN_TELEGRAM_IDS,
+        telegram,
+        ui,
+        now,
+      });
+      const inactiveCron = cronEvery(INACTIVITY_CHECK_INTERVAL_MS);
 
       const started = await createBoss(env.DATABASE_URL);
       boss = started;
@@ -131,6 +156,13 @@ export function createWorkerService(): Service {
       await scheduleCron(started, QUEUES.purgeKeys, DEPOSIT_KEY_PURGE_CRON, deposits.purgeKeys);
       await scheduleCron(started, QUEUES.remind, EVERY_MINUTE_CRON, plans.remind);
       await scheduleCron(started, QUEUES.expire, EVERY_MINUTE_CRON, plans.expire);
+      await scheduleCron(
+        started,
+        QUEUES.inactiveAccounts,
+        inactiveCron,
+        retention.inactiveAccounts,
+      );
+      await scheduleCron(started, QUEUES.cleanup, DATA_CLEANUP_CRON, retention.cleanup);
 
       // One worker runs the loop; another one waits for the lock, its jobs still work.
       const leader = createLeaderLock({

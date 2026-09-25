@@ -1,6 +1,6 @@
-import { createLogger } from "@launchbot/shared/server";
+import { createLogger } from "./logger.js";
 
-const log = createLogger("worker:loop");
+const log = createLogger("loop");
 
 export type Loop = {
   /** No tick starts after it; resolves once the tick in progress is over. */
@@ -9,8 +9,9 @@ export type Loop = {
 
 /**
  * A task every `intervalMs`, never two at once (V1-32): the next tick is planned at the end of
- * the current one, from its start, so a slow tick is followed at once, with a warning. The
- * pg-boss cron runs every minute at best, too slow for the payment detection (15 s).
+ * the current one, from its start, so a slow tick is followed at once, with a warning. For what
+ * a pg-boss cron (one minute at best) is too slow for: the payment detection of the worker
+ * (15 s), the deletion of the messages holding wallet keys in the bot (5 s, V1-43).
  */
 export function runEvery(options: {
   name: string;

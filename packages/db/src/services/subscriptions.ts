@@ -17,13 +17,16 @@ import type {
 } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
 import type { Db } from "../client.js";
+import { isUniqueViolation } from "../errors.js";
 import type {
+  GrantKind,
   PaymentStatus,
   Plan,
   PlanDuration,
   PrismaClient,
   Subscription,
 } from "../generated/prisma/client.js";
+import { lockUserRow } from "./user.js";
 
 // The subscription domain on the database side (§8, V1-27). Reads are never cached (except the
 // counter): an activation must show at once. The rules themselves are pure, in
@@ -143,6 +146,25 @@ export type ActivationResult =
 /** `REFUSED`: Classic during Premium (§8.4). */
 export type GrantResult = Activated | { status: "REFUSED" } | { status: "USER_DELETED" };
 
+export type GrantInput = { userId: string; offer: Offer; now: Date; actorTelegramId: bigint };
+
+/** What a /grant would do now (V1-42): the plan its confirmation shows, and what it becomes. */
+export type GrantPreview = { status: PlanStatus; computed: ComputedActivation };
+
+/** What the confirmation screen showed: its Confirm activates only while the plan is still that. */
+export type GrantExpectation = {
+  kind: ComputedActivation["kind"];
+  /** The end an extension builds on (EXTEND): a payment since has moved it. */
+  currentExpiresAt: Date | null;
+};
+
+export type GrantConfirmation =
+  | GrantResult
+  /** This Confirm already activated a plan: its nonce has a row. */
+  | { status: "USED" }
+  /** The plan is no longer the one the screen showed (a payment, another grant). */
+  | { status: "CHANGED" };
+
 export type ExpiredSubscription = Pick<Subscription, "id" | "userId" | "plan">;
 
 export type SubscriptionService = {
@@ -153,14 +175,22 @@ export type SubscriptionService = {
    */
   activateFromPayment: (paymentId: string, now: Date, tx?: Db) => Promise<ActivationResult>;
   /** /grant (§11.4, V1-42): the rules of a purchase, without an invoice. */
-  grantSubscription: (input: {
-    userId: string;
-    offer: Offer;
-    now: Date;
-    actorTelegramId: bigint;
-  }) => Promise<GrantResult>;
-  /** What a /grant would do, written nowhere: the confirmation screen of V1-42. */
-  previewGrant: (userId: string, offer: Offer, now: Date) => Promise<ComputedActivation>;
+  grantSubscription: (input: GrantInput) => Promise<GrantResult>;
+  /**
+   * What a /grant would do, written nowhere: the confirmation screen of V1-42, from one read of
+   * the plan, so its « Current plan » and its variant never disagree.
+   */
+  previewGrant: (userId: string, offer: Offer, now: Date) => Promise<GrantPreview>;
+  /**
+   * The Confirm of a /grant (V1-42), in one transaction under the lock of the user: once per
+   * confirmation screen (`nonce`, unique in `SubscriptionGrant`, written with the activation),
+   * and only while the plan is still the one the screen showed.
+   */
+  confirmGrant: (
+    input: GrantInput & { nonce: string; expected: GrantExpectation },
+  ) => Promise<GrantConfirmation>;
+  /** Whether a Confirm already activated a plan with this nonce (V1-42). */
+  isGrantUsed: (nonce: string) => Promise<boolean>;
   /** ACTIVE rows whose end has passed → EXPIRED; returns the rows it changed (V1-34). */
   expireDueSubscriptions: (now: Date) => Promise<ExpiredSubscription[]>;
 };
@@ -185,11 +215,6 @@ async function lockPayment(tx: Db, paymentId: string): Promise<LockedPayment | u
     SELECT "userId", plan::text AS plan, duration::text AS duration, status::text AS status
     FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`;
   return rows[0];
-}
-
-async function lockUser(tx: Db, userId: string): Promise<boolean> {
-  const rows = await tx.$queryRaw<unknown[]>`SELECT 1 FROM "User" WHERE id = ${userId} FOR UPDATE`;
-  return rows.length > 0;
 }
 
 /**
@@ -255,6 +280,12 @@ async function applyActivation(
   );
 }
 
+/** A grant refuses Classic during Premium (§8.4): it never gives EXTEND_PREMIUM, a payment does. */
+function grantKindOf(kind: ActivationKind): GrantKind {
+  if (kind === "EXTEND_PREMIUM") throw new Error("A grant never extends a Premium with a Classic");
+  return kind;
+}
+
 export function createSubscriptionService(deps: { prisma: PrismaClient }): SubscriptionService {
   const { prisma } = deps;
 
@@ -272,7 +303,7 @@ export function createSubscriptionService(deps: { prisma: PrismaClient }): Subsc
       log.warn({ paymentId }, "subscription.user_deleted");
       return { status: "USER_DELETED" };
     }
-    await lockUser(tx, userId);
+    await lockUserRow(tx, userId);
     // Second guard, the conditional update: only one caller claims the invoice.
     const claimed = await tx.payment.updateMany({
       where: { id: paymentId, status: { in: CLAIMABLE } },
@@ -291,40 +322,94 @@ export function createSubscriptionService(deps: { prisma: PrismaClient }): Subsc
     return result;
   }
 
+  async function grant(tx: Db, input: GrantInput): Promise<GrantResult> {
+    if (!(await lockUserRow(tx, input.userId))) return { status: "USER_DELETED" };
+    return grantLocked(tx, input);
+  }
+
+  /** `grant` once the row of the user is locked. */
+  async function grantLocked(tx: Db, input: GrantInput): Promise<GrantResult> {
+    const { userId, offer, now, actorTelegramId } = input;
+    const result = await applyActivation(tx, {
+      userId,
+      offer,
+      now,
+      mode: "GRANT",
+      paymentId: null,
+    });
+    if (result.status === "ACTIVATED") {
+      const { kind, subscription } = result;
+      log.info(
+        {
+          userId,
+          actorTelegramId: actorTelegramId.toString(),
+          plan: subscription.plan,
+          kind,
+          expiresAt: subscription.expiresAt,
+        },
+        "subscription.granted",
+      );
+    }
+    return result;
+  }
+
+  async function confirm(
+    tx: Db,
+    input: GrantInput & { nonce: string; expected: GrantExpectation },
+  ): Promise<GrantConfirmation> {
+    const { nonce, expected, userId, offer, now } = input;
+    if (!(await lockUserRow(tx, userId))) return { status: "USER_DELETED" };
+    // Under the lock: a second click of the same Confirm waited, then finds the first one's row.
+    if ((await tx.subscriptionGrant.count({ where: { nonce } })) > 0) return { status: "USED" };
+    const current = await getActiveSubscription(tx, userId, now);
+    const computed = computeActivation(current, offer, now, "GRANT");
+    const extensionMoved =
+      computed.kind === "EXTEND" &&
+      current?.expiresAt.getTime() !== expected.currentExpiresAt?.getTime();
+    if (computed.kind !== expected.kind || extensionMoved) return { status: "CHANGED" };
+
+    const result = await grantLocked(tx, input);
+    if (result.status !== "ACTIVATED") return result;
+    await tx.subscriptionGrant.create({
+      data: {
+        nonce,
+        adminTelegramId: input.actorTelegramId,
+        userId,
+        subscriptionId: result.subscription.id,
+        plan: offer.plan,
+        duration: offer.duration,
+        kind: grantKindOf(result.kind),
+        expiresAt: result.subscription.expiresAt,
+      },
+    });
+    return result;
+  }
+
   return {
     activateFromPayment: (paymentId, now, tx) =>
       tx === undefined
         ? prisma.$transaction((inner) => activate(inner, paymentId, now))
         : activate(tx, paymentId, now),
 
-    grantSubscription: ({ userId, offer, now, actorTelegramId }) =>
-      prisma.$transaction(async (tx): Promise<GrantResult> => {
-        if (!(await lockUser(tx, userId))) return { status: "USER_DELETED" };
-        const result = await applyActivation(tx, {
-          userId,
-          offer,
-          now,
-          mode: "GRANT",
-          paymentId: null,
-        });
-        if (result.status === "ACTIVATED") {
-          const { kind, subscription } = result;
-          log.info(
-            {
-              userId,
-              actorTelegramId: actorTelegramId.toString(),
-              plan: subscription.plan,
-              kind,
-              expiresAt: subscription.expiresAt,
-            },
-            "subscription.granted",
-          );
-        }
-        return result;
-      }),
+    grantSubscription: (input) => prisma.$transaction((tx) => grant(tx, input)),
 
-    previewGrant: async (userId, offer, now) =>
-      computeActivation(await getActiveSubscription(prisma, userId, now), offer, now, "GRANT"),
+    previewGrant: async (userId, offer, now) => {
+      const status = await getPlanStatus(prisma, userId, now);
+      const active = status.kind === "ACTIVE" ? status.subscription : null;
+      return { status, computed: computeActivation(active, offer, now, "GRANT") };
+    },
+
+    async confirmGrant(input) {
+      try {
+        return await prisma.$transaction((tx) => confirm(tx, input));
+      } catch (error) {
+        // The unique nonce is the last net: the activation of a second insert is rolled back.
+        if (isUniqueViolation(error)) return { status: "USED" };
+        throw error;
+      }
+    },
+
+    isGrantUsed: async (nonce) => (await prisma.subscriptionGrant.count({ where: { nonce } })) > 0,
 
     expireDueSubscriptions: (now) =>
       prisma.subscription.updateManyAndReturn({

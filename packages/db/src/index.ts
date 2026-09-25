@@ -66,13 +66,57 @@ export type {
 export type {
   ActivationResult,
   ExpiredSubscription,
+  GrantConfirmation,
+  GrantExpectation,
+  GrantInput,
+  GrantPreview,
   GrantResult,
   SubscriptionInfo,
   SubscriptionService,
   WalletQuota,
 } from "./services/subscriptions.js";
-export { acceptTerms, setChannelCheckedAt, touchUser } from "./services/user.js";
+export {
+  acceptTerms,
+  CONVERSATION_KEY_PREFIX,
+  findUserByTelegramId,
+  setChannelCheckedAt,
+  touchUser,
+} from "./services/user.js";
 export type { TelegramIdentity } from "./services/user.js";
+export { createAccountDeletionService } from "./services/account-deletion.js";
+export type {
+  AccountDeletionDeps,
+  AccountDeletionService,
+  DeleteUserResult,
+  DeletionBlocker,
+  DeletionCounts,
+  OpenInvoice,
+  PurgeSummary,
+  PurgeWallet,
+} from "./services/account-deletion.js";
+export { createDataCleanupService } from "./services/data-cleanup.js";
+export type { CleanupReport, DataCleanupService } from "./services/data-cleanup.js";
+export { createInactiveAccountsService } from "./services/inactive-accounts.js";
+export type {
+  AccountOutcome,
+  CandidateCursor,
+  InactiveAccountsDeps,
+  InactiveAccountsService,
+  InactiveUser,
+  SweepFailure,
+} from "./services/inactive-accounts.js";
+export { createSensitiveMessageStore } from "./services/sensitive-messages.js";
+export type { SensitiveMessageStore } from "./services/sensitive-messages.js";
+export { createSupportDataService } from "./services/support-data.js";
+export type {
+  SupportDataService,
+  SupportPayment,
+  SupportSubscription,
+  SupportWallet,
+  SupportWithdrawal,
+  UserSupportData,
+  WalletSecretsData,
+} from "./services/support-data.js";
 export { createWalletService } from "./services/wallets.js";
 export type {
   CreateWalletResult,

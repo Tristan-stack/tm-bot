@@ -39,6 +39,10 @@ export const warn = (text: string): { alert: string; flag: string } => ({
 /** §6: the exact mention, with its emoji on Telegram, without it on the pictures (V1-25). */
 const DEMO_MENTION = "DEMO — Bullish scenario. Not a prediction or a real result.";
 
+/** `1 wallet`, `2 wallets`, `1,248 simulations`: a count grouped, then its noun. */
+const counted = (count: number, one: string, many = `${one}s`): string =>
+  `${formatInt(count)} ${count === 1 ? one : many}`;
+
 export const en = {
   btn: {
     back: `${E.back} Back`,
@@ -68,6 +72,8 @@ export const en = {
     step: (step: number, total: number) => `STEP ${step}/${total}`,
     // proposed text (D19)
     tryAgainIn: (seconds: number) => `${E.waiting} Too many actions. Try again in ${seconds} s.`,
+    // proposed text (D19): a message too long for one Telegram message (V1-43)
+    part: (index: number, total: number) => `Part ${index}/${total}`,
   },
 
   // First access (§4.2): the Terms, then the channel of the bot.
@@ -145,26 +151,19 @@ export const en = {
     support: `${E.support} Support`,
   },
 
-  // Provisional screens of the sections that are not delivered yet (V1-08).
-  comingSoon: {
-    // proposed text (D19)
-    flag: `${E.construction} Coming soon: this section isn't available yet.`,
-    sections: {
-      simulate: {
-        title: `${E.simulate} SIMULATE A LAUNCH`,
-        // proposed text (D19)
-        description: "Simulate a live launch of your token. Free, no subscription needed.",
-      },
-      wallets: {
-        title: `${E.wallets} WALLETS`,
-        // proposed text (D19): the description of §9.1 makes no sense without a list
-        description: "Create, import and manage your Solana wallets.",
-      },
-      support: {
-        title: `${E.support} SUPPORT`,
-        description: "Need help? Contact our support team.",
-      },
-    },
+  // Support (§11.1, V1-40): the texts of the context, emojis rebuilt (D7). The code arrives in
+  // <code>: one tap copies it without its label.
+  support: {
+    title: `${E.support} SUPPORT`,
+    description: [
+      "Need help? Contact our support team.",
+      "Tell us what happened, on which screen, and add a screenshot if you can.",
+    ],
+    code: (code: string) => `Your support code: ${code}`,
+    pasteHint: "Paste it at the start of your first message.",
+    premium: `${E.plan} You're Premium: your requests are handled first.`,
+    standard: `${E.plan} Premium members are handled first.`,
+    btnContact: `${E.contact} Contact support`,
   },
 
   // Wallets (§9.1, §9.2, §9.3). Names arrive escaped, amounts and dates formatted.
@@ -887,8 +886,247 @@ export const en = {
     },
   },
 
-  // Messages to the admins (§11.4). Every text is proposed (D19).
+  // The admin commands (§11.4, V1-38 to V1-45) and the messages to the admins. « ❌ User not
+  // found. », the question of /grant, its result line and the funds flag of /purge are the texts
+  // of the context; every other text is proposed (D19). User values arrive escaped, amounts and
+  // dates formatted.
   admin: {
+    /**
+     * The registry of the commands (V1-38): the title of their screens, their line in the command
+     * menu of the admins, the syntax reminder. `usage` and `example` are plain text — they hold
+     * `<` and `>` — escaped by the builder of the reminder. Each ticket adds its command.
+     */
+    commands: {
+      grant: {
+        title: `${E.subscribe} GRANT`,
+        menu: "Activate a plan by hand",
+        usage: "/grant <id or support code> <classic|premium> <2d|1m>",
+        example: "/grant P-123456789 premium 1m",
+      },
+      whois: {
+        title: `${E.account} WHOIS`,
+        menu: "Check the plan of a user",
+        usage: "/whois <support code or id>",
+        example: "/whois P-123456789",
+      },
+      getall: {
+        title: `${E.userData} USER DATA`,
+        menu: "Everything about a user, keys on confirmation",
+        usage: "/getall <id or support code>",
+        example: "/getall 123456789",
+      },
+      purge: {
+        title: `${E.delete} PURGE USER`,
+        menu: "Delete all data of a user",
+        usage: "/purge <support code or Telegram ID>",
+        example: "/purge P-123456789",
+      },
+    },
+    // The errors of every command (V1-38): one format, repeated by V1-42 to V1-44.
+    common: {
+      invalid: `${E.fail} Invalid command.`,
+      usage: (usage: string) => `Usage: ${usage}`,
+      example: (example: string) => `Example: ${example}`,
+      notFound: `${E.notFound} User not found.`,
+      searched: (query: string) => `Searched: ${query}`,
+      /** `@username (ID <code>123456789</code>)`: `name` escaped, `id` in <code>. */
+      user: (name: string, id: string) => `${name} (ID ${id})`,
+      /** /grant and /purge tell the user; Telegram refused (bot blocked, chat gone). */
+      notNotified: `${E.info} The user could not be notified.`,
+      paymentStatuses: {
+        PENDING: "Pending",
+        PAID: "Paid",
+        SWEPT: "Paid",
+        EXPIRED: "Expired",
+        CANCELED: "Canceled",
+      },
+      /** `(0.2000 SOL received)`: a partial amount on an invoice not paid. */
+      received: (amount: string) => `(${amount} received)`,
+      /** §8.3: SOL arrived on an invoice that ended without activating anything. */
+      refund: "refund manually",
+      // The plan of an account on /whois and /getall: the date in full, `left` under 72 h.
+      noPlan: "No subscription",
+      /** `Premium · 1d 4h left · until 16 Sep 2026, 18:32 UTC` */
+      planActive: (plan: string, until: string, left?: string) =>
+        `${plan} · ${left === undefined ? "" : `${left} · `}until ${until}`,
+      /** `plan` is `Classic ⚠️ expired` (`planStatus.expired`). */
+      planEnded: (plan: string, ended: string) => `${plan} · ended ${ended}`,
+    },
+    // /grant (§8.4, §11.4, V1-42). `offer` is `Premium · 1 month`, `user` from `common.user`.
+    grant: {
+      question: (offer: string, user: string) => `Grant ${offer} to ${user}?`,
+      /** `plan` from `planLabel` (the offers screen), `None` without a plan. */
+      currentPlan: (plan: string) => `Current plan: ${plan}`,
+      ends: (at: string) => `Ends: ${at}`,
+      extends: (plan: string, duration: string) =>
+        `${E.info} Extends the current ${plan} by ${duration}.`,
+      upgradeLoss: `${E.warning} Their remaining Classic time will be lost.`,
+      /** §8.4: Classic during Premium is refused, as on the offers screen. */
+      premiumActive: (until: string) =>
+        `${E.warning} Classic: available when their Premium ends (${until}).`,
+      used: "This grant is no longer valid.",
+      expired: "This grant has expired. Send /grant again.",
+      changed: "The user's plan changed. Check again.",
+      /** `✅ Premium active until 15 Oct 2026, 14:32 UTC.` */
+      done: (plan: string, until: string) => `${E.ok} ${plan} active until ${until}.`,
+      grantedTo: (user: string, offer: string) => `Granted to ${user} · ${offer}`,
+      canceled: `${E.cancel} Grant canceled.`,
+      /** The message to the user (`GRANT_NOTIFY_USER`), adapted from « Payment received » (§8.3). */
+      notice: (plan: string, until: string) => `${E.plan} ${plan} is active until ${until}.`,
+    },
+    // /whois (§11.4, V1-43): the plan, checked before answering a support request.
+    whois: {
+      description: "Check the plan before answering a support request.",
+      /** `⭐ Premium · until 12 Oct 2026, 14:32 UTC`, from `common.planActive` and the others. */
+      plan: (text: string) => `${E.plan} ${text}`,
+      supportCode: (code: string) => `Support code: ${code}`,
+      wallets: (count: number) =>
+        count === 0 ? `${E.wallets} No wallet yet` : `${E.wallets} ${counted(count, "wallet")}`,
+      payments: `${E.invoice} LAST PAYMENTS`,
+      noPayment: "No payment yet.",
+      /** Both codes in <code>. */
+      codeMismatch: (typed: string, current: string) =>
+        `${E.warning} Code ${typed} doesn't match the current plan. Current code: ${current}.`,
+    },
+    // /getall (§11.4, V1-43, decision of 16/09/2026): the card is the confirmation of Reveal keys.
+    getall: {
+      description:
+        "Everything support needs about this user. Keys stay hidden until you tap Reveal keys.",
+      account: `${E.account} ACCOUNT`,
+      /** `@username · Alice` */
+      names: (username: string, firstName: string) => `${username} · ${firstName}`,
+      joined: (joined: string, lastActive: string) =>
+        `Joined ${joined} · Last active ${lastActive}`,
+      terms: (version: number, at: string) => `Terms v${version} accepted ${at}`,
+      noTerms: "Terms not accepted",
+      subscription: `${E.plan} SUBSCRIPTION`,
+      aiToday: (used: number, limit: number) => `AI Generate today: ${used}/${limit}`,
+      history: "History:",
+      /** `   · Classic · 2 days · 10 Sep → 12 Sep 2026 · Expired · Grant` */
+      historyLine: (line: string) => `   · ${line}`,
+      period: (from: string, to: string) => `${from} → ${to}`,
+      subscriptionStatuses: { ACTIVE: "Active", EXPIRED: "Expired" },
+      origins: { payment: "Payment", grant: "Grant" },
+      purchases: `${E.invoice} PURCHASES`,
+      /** Beyond the 20 shown: `🧾 PURCHASES · 20 of 34`. */
+      purchasesOf: (shown: number, total: number) =>
+        `${E.invoice} PURCHASES · ${shown} of ${formatInt(total)}`,
+      noPurchase: "No purchase yet.",
+      /** The deposit address of an invoice, shortened. */
+      to: (address: string) => `to ${address}`,
+      /** `👛 WALLETS · 2 · 4.250 SOL ($439.28)`; no total when the balances are unavailable. */
+      wallets: (count: number, total?: string) =>
+        `${E.wallets} WALLETS · ${formatInt(count)}${total === undefined ? "" : ` · ${total}`}`,
+      walletSources: {
+        CREATED: "Created",
+        IMPORTED_KEY: "Imported (key)",
+        IMPORTED_SEED: "Imported (seed)",
+      },
+      /** `1. Main · Created · 12 Sep 2026`, the full address below it in <code>. */
+      wallet: (index: number, name: string, source: string, created: string) =>
+        `${index}. ${name} · ${source} · ${created}`,
+      walletAddress: (address: string) => `   ${address}`,
+      walletBalance: (balance: string) => `   └ ${E.balance} ${balance}`,
+      balanceUnavailable: "Balance unavailable",
+      noWallet: "No wallet yet.",
+      withdrawals: `${E.withdraw} RECENT WITHDRAWALS`,
+      noWithdrawal: "No withdrawal yet.",
+      /** The source of a withdrawal: its wallet, gone since, or the sweep of an inactive account. */
+      deletedWallet: "Deleted wallet",
+      inactivitySweep: "Inactivity sweep",
+      /** `Main → 9WzD…AWWM` */
+      route: (from: string, to: string) => `${from} → ${to}`,
+      withdrawalStatuses: { PENDING: "Pending", CONFIRMED: "Confirmed" },
+      failed: (error: string) => `Failed: ${error}`,
+      explorer: "Explorer",
+      counts: (drafts: number, simulations: number) =>
+        `${E.simulate} ${counted(drafts, "token draft")} · ${counted(simulations, "simulation")}`,
+      btnReveal: `${E.revealKeys} Reveal keys`,
+      /** Under « User not found. »: the account went for inactivity, its SOL to the treasury (V1-45). */
+      deletedForInactivity: "Account deleted for inactivity. Transfers to treasury:",
+      // Reveal keys (decision of 16/09/2026): a message deleted 60 s after its send.
+      expired: "This request has expired. Send /getall again.",
+      noWalletToReveal: "No wallet to reveal.",
+      keysTitle: `${E.revealKeys} WALLET KEYS`,
+      /** `@username · 🆔 <code>123456789</code> · 2 wallets` */
+      keysOwner: (user: string, id: string, count: number) =>
+        `${user} · ${E.id} ${id} · ${counted(count, "wallet")}`,
+      keysWallet: (index: number, name: string, source: string) => `${index}. ${name} · ${source}`,
+      address: (address: string) => `Address: ${address}`,
+      privateKey: (key: string) => `${E.privateKey} Private key: ${key}`,
+      seedPhrase: (phrase: string) => `${E.seedPhrase} Seed phrase: ${phrase}`,
+      noSeed: "none (imported with a private key)",
+      /** A created or seed wallet stored without its phrase (data older than 16/09/2026). */
+      seedUnavailable: "unavailable",
+      decryptFailed: `${E.fail} Keys unavailable (decryption failed).`,
+      keysWarning: (seconds: number) =>
+        `${E.warning} Anyone with these keys controls the wallet. Send them only to the account owner, in private. This message will be deleted in ${seconds} s.`,
+      sendFailed: `${E.fail} Couldn't send the keys. Send /getall again.`,
+      canceled: `${E.cancel} Canceled. No keys were revealed.`,
+      /** The sweeper could not delete a keys message (older than 48 h, rights): a reply to it. */
+      notDeleted: `${E.warning} Couldn't delete this message with wallet keys. Delete it yourself now.`,
+    },
+    // /purge (§11.3, §11.4, V1-44). Names arrive escaped, amounts formatted.
+    purge: {
+      description:
+        "Delete all data of this user. Wallet keys will be erased: funds left on them can't be recovered.",
+      user: `${E.account} USER`,
+      wallets: `${E.wallets} WALLETS`,
+      /** `Main · 7xKX…gAsU · 2.500 SOL` */
+      wallet: (name: string, address: string, balance: string) =>
+        `${name} · ${address} · ${balance}`,
+      noWallet: "No wallet",
+      invoices: `${E.invoice} PENDING INVOICES`,
+      /** `Premium · 2 days · 0.5708 SOL · expires 14:32 UTC` */
+      pendingInvoice: (offer: string, amount: string, time: string) =>
+        `${offer} · ${amount} · expires ${time}`,
+      /** An invoice ended but still payable (§8.3, 24 h): the end of that window. */
+      payableInvoice: (offer: string, amount: string, until: string) =>
+        `${offer} · ${amount} · payable until ${until}`,
+      noInvoice: "None",
+      /** Exact (§11.4): `⚠️ Main still holds 2.500 SOL. Ask the user to withdraw first.` */
+      funds: (name: string, amount: string) =>
+        `${E.warning} ${name} still holds ${amount} SOL. Ask the user to withdraw first.`,
+      pending: (offer: string) =>
+        `${E.warning} Invoice ${offer} is still pending. Try again after it expires and its 24 h payment window ends.`,
+      payable: (offer: string, until: string) =>
+        `${E.warning} Invoice ${offer} can still be paid until ${until}. Try again after that.`,
+      balancesUnavailable: `${E.warning} Balances unavailable. Try again later.`,
+      subscriptionLost: `${E.warning} The active subscription will be lost.`,
+      btnConfirm: `${E.delete} Confirm purge`,
+      changed: "The user's data changed. Check the summary again.",
+      canceled: `${E.cancel} Purge canceled. Nothing was deleted.`,
+      failed: `${E.fail} Purge failed. Nothing was deleted. Try again.`,
+      done: `${E.ok} User data deleted. Payment records kept for accounting, detached from the account.`,
+      deleted: (counts: {
+        wallets: number;
+        drafts: number;
+        simulations: number;
+        aiGenerations: number;
+        subscriptions: number;
+      }) =>
+        `Deleted: ${[
+          counted(counts.wallets, "wallet"),
+          counted(counts.drafts, "draft"),
+          counted(counts.simulations, "simulation"),
+          counted(counts.aiGenerations, "AI generation"),
+          counted(counts.subscriptions, "subscription"),
+        ].join(", ")}.`,
+      detached: (counts: { payments: number; withdrawals: number }) =>
+        `Detached: ${counted(counts.payments, "payment")}, ${counted(counts.withdrawals, "withdrawal")}.`,
+      /** The message to the user, sent right before the deletion (§11.3). */
+      userNotice: "Your data has been deleted.",
+    },
+    // The SOL of an inactive account moved to the treasury, then its user came back (V1-45).
+    inactiveRefund: {
+      description:
+        "The user became active while their inactive account was being deleted. Their SOL was already moved to the treasury and the account was kept. Refund the user by hand.",
+      user: (user: string) => `${E.account} User: ${user}`,
+      moved: (amount: string) => `Moved to treasury: ${amount}`,
+      /** `👛 Main · 7xKX…gAsU · 2.4999 SOL · Tx 5Hq1…Zk9a`: the address and the Tx are links. */
+      transfer: (name: string, address: string, amount: string, tx: string) =>
+        `${E.wallets} ${name} · ${address} · ${amount} · Tx ${tx}`,
+    },
     // The deposit addresses of the invoices (§8.3, V1-33): what the worker moved to the
     // treasury and what an admin must refund by hand. Values arrive formatted and escaped.
     depositAlert: {

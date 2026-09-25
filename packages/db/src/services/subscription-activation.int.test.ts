@@ -295,15 +295,121 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("subscription activation (db)", ()
       expect(await grant("missing-user", PREMIUM_2D)).toEqual({ status: "USER_DELETED" });
     });
 
-    it("previews the end date without writing", async () => {
+    it("previews the plan and the end date from one read, without writing", async () => {
       const user = await createUser();
       await subscribe(user.id, "CLASSIC", at(DAY_MS));
 
       expect(await service.previewGrant(user.id, CLASSIC_2D, NOW)).toMatchObject({
-        kind: "EXTEND",
-        expiresAt: at(DAY_MS + 48 * HOUR_MS),
+        status: { kind: "ACTIVE", subscription: { plan: "CLASSIC", expiresAt: at(DAY_MS) } },
+        computed: { kind: "EXTEND", expiresAt: at(DAY_MS + 48 * HOUR_MS) },
       });
       expect(await rowsOf(user.id)).toMatchObject([{ expiresAt: at(DAY_MS) }]);
+    });
+  });
+
+  describe("confirmGrant (the Confirm of /grant, V1-42)", () => {
+    let nonces = 0;
+    const confirm = (
+      userId: string,
+      offer: Offer,
+      expected: { kind: "NEW" | "EXTEND" | "UPGRADE" | "REFUSED"; currentExpiresAt: Date | null },
+      nonce = `nonce${nonces++}`,
+    ) => service.confirmGrant({ userId, offer, now: NOW, actorTelegramId: 42n, nonce, expected });
+    const grantsOf = (userId: string) =>
+      prisma.subscriptionGrant.findMany({ where: { userId }, orderBy: { createdAt: "asc" } });
+
+    it("activates the plan and records the grant with its nonce", async () => {
+      const user = await createUser();
+
+      const result = await confirm(
+        user.id,
+        PREMIUM_1M,
+        { kind: "NEW", currentExpiresAt: null },
+        "n-new",
+      );
+
+      expect(result).toMatchObject({ status: "ACTIVATED", kind: "NEW" });
+      const [row] = await rowsOf(user.id);
+      expect(await grantsOf(user.id)).toEqual([
+        expect.objectContaining({
+          nonce: "n-new",
+          adminTelegramId: 42n,
+          subscriptionId: row?.id,
+          plan: "PREMIUM",
+          duration: "ONE_MONTH",
+          kind: "NEW",
+          expiresAt: at(30 * DAY_MS),
+        }),
+      ]);
+      await expect(service.isGrantUsed("n-new")).resolves.toBe(true);
+      await expect(service.isGrantUsed("n-other")).resolves.toBe(false);
+    });
+
+    it("extends the plan the screen showed", async () => {
+      const user = await createUser();
+      await subscribe(user.id, "PREMIUM", at(DAY_MS));
+
+      const result = await confirm(user.id, PREMIUM_1M, {
+        kind: "EXTEND",
+        currentExpiresAt: at(DAY_MS),
+      });
+
+      expect(result).toMatchObject({
+        status: "ACTIVATED",
+        kind: "EXTEND",
+        subscription: { expiresAt: at(DAY_MS + 30 * DAY_MS) },
+      });
+      expect(await grantsOf(user.id)).toMatchObject([{ kind: "EXTEND" }]);
+    });
+
+    it("two clicks of one Confirm at the same time activate once", async () => {
+      const user = await createUser();
+      const expected = { kind: "NEW" as const, currentExpiresAt: null };
+
+      const results = await Promise.all([
+        confirm(user.id, PREMIUM_2D, expected, "n-twice"),
+        confirm(user.id, PREMIUM_2D, expected, "n-twice"),
+      ]);
+
+      expect(results.map((result) => result.status).sort()).toEqual(["ACTIVATED", "USED"]);
+      expect(await rowsOf(user.id)).toHaveLength(1);
+      expect(await grantsOf(user.id)).toHaveLength(1);
+    });
+
+    it("activates nothing when the plan moved since the screen", async () => {
+      const user = await createUser();
+      await subscribe(user.id, "PREMIUM", at(DAY_MS));
+
+      // A payment extended the plan after the screen: the extension it showed is gone.
+      const moved = await confirm(user.id, PREMIUM_2D, {
+        kind: "EXTEND",
+        currentExpiresAt: at(HOUR_MS),
+      });
+      // A plan started after a screen that showed none.
+      const started = await confirm(user.id, PREMIUM_2D, { kind: "NEW", currentExpiresAt: null });
+
+      expect([moved, started]).toEqual([{ status: "CHANGED" }, { status: "CHANGED" }]);
+      expect(await rowsOf(user.id)).toMatchObject([{ expiresAt: at(DAY_MS) }]);
+      expect(await grantsOf(user.id)).toEqual([]);
+    });
+
+    it("refuses Classic during Premium and records nothing", async () => {
+      const user = await createUser();
+      await subscribe(user.id, "PREMIUM", at(DAY_MS));
+
+      const result = await confirm(user.id, CLASSIC_2D, {
+        kind: "REFUSED",
+        currentExpiresAt: at(DAY_MS),
+      });
+
+      expect(result).toEqual({ status: "REFUSED" });
+      expect(await grantsOf(user.id)).toEqual([]);
+    });
+
+    it("reports a user that no longer exists", async () => {
+      expect(
+        await confirm("missing-user", PREMIUM_2D, { kind: "NEW", currentExpiresAt: null }),
+      ).toEqual({ status: "USER_DELETED" });
     });
   });
 

@@ -30,6 +30,7 @@ import { BotError, GrammyError } from "grammy";
 import type { Bot } from "grammy";
 import type { ApiResponse, ChatMember, InlineKeyboardMarkup, Update } from "grammy/types";
 import type { BotContext, SessionData } from "./context.js";
+import type { AdminServices } from "./features/admin/admin.js";
 import type { InvoicePayments } from "./features/subscribe/invoice.js";
 import { createBot } from "./index.js";
 import type { Scheduler, SimRender, SimRunnerDeps } from "./services/sim-runner.js";
@@ -265,12 +266,13 @@ export const editedTextUpdate = (text: string): Update => ({
   edited_message: privateMessage({ text, edit_date: 1 }) as NonNullable<Update["edited_message"]>,
 });
 
+/** A text message; a command's entity covers the command, not its arguments, as Telegram does. */
 export const textUpdate = (text: string, overrides: MessageOverrides = {}): Update =>
   messageUpdate(
     {
       text,
       ...(text.startsWith("/")
-        ? { entities: [{ type: "bot_command", offset: 0, length: text.length }] }
+        ? { entities: [{ type: "bot_command", offset: 0, length: text.split(/\s/)[0]?.length }] }
         : {}),
     },
     overrides,
@@ -400,7 +402,13 @@ export const TEST_ENV = {
   CHANNEL_SUCCESS_URL: "https://t.me/launchbot_success",
   CHANNEL_ANNOUNCEMENTS_ID: "-1001000000003",
   CHANNEL_ANNOUNCEMENTS_URL: "https://t.me/launchbot_news",
+  SUPPORT_URL: "https://t.me/launchbot_support",
+  // Nobody is an admin unless a test says so (`env: { ADMIN_TELEGRAM_IDS: [ADMIN_ID] }`).
+  ADMIN_TELEGRAM_IDS: [],
 } as unknown as Env;
+
+/** The Telegram id of the user of the tests, to make them an admin. */
+export const ADMIN_ID = FROM.id;
 
 /** When the fake balances were read: the home screen shows it as "Updated 14:32 UTC". */
 export const BALANCES_READ_AT = new Date("2026-09-21T14:32:00Z");
@@ -829,6 +837,34 @@ export function fakeAiQuota(options: { used?: number } = {}) {
   return { ...store, used, logos };
 }
 
+/**
+ * What the admin commands read and write (V1-42 to V1-44), on nothing: no account is found, no
+ * grant is used, nothing is deleted. A test replaces what its command reads.
+ */
+export function fakeAdmin(overrides: Partial<AdminServices> = {}): AdminServices {
+  const unexpected = () => Promise.reject(new Error("Not faked by this test"));
+  return {
+    subscriptions: {
+      previewGrant: unexpected,
+      confirmGrant: unexpected,
+      isGrantUsed: () => Promise.resolve(false),
+    },
+    support: {
+      findUser: () => Promise.resolve(null),
+      findUserById: () => Promise.resolve(null),
+      loadUserSupportData: unexpected,
+      inactivitySweeps: () => Promise.resolve([]),
+      walletSecrets: () => Promise.resolve([]),
+    },
+    deletion: {
+      getPurgeSummary: () => Promise.resolve(null),
+      deleteUserData: () => Promise.resolve({ status: "NOT_FOUND" }),
+    },
+    sensitive: { schedule: () => Promise.resolve() },
+    ...overrides,
+  };
+}
+
 /** The whole bot on fakes: no Telegram, no database, no RPC, no price provider. */
 export function botHarness(
   options: {
@@ -848,6 +884,7 @@ export function botHarness(
     /** The virtual clock and the cap of the simulation runner (V1-26). */
     simRunner?: Partial<Pick<SimRunnerDeps, "scheduler" | "maxActive">>;
     images?: ReturnType<typeof fakeImages>;
+    admin?: Partial<AdminServices>;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });
@@ -861,6 +898,7 @@ export function botHarness(
     options.simulations ?? fakeSimulations({ draftOf: (draftId) => drafts.rows.get(draftId) });
   const aiQuota = options.aiQuota ?? fakeAiQuota();
   const images = options.images ?? fakeImages();
+  const admin = fakeAdmin(options.admin);
   const { bot, simRunner } = createBot({ ...TEST_ENV, ...options.env }, prisma, {
     data,
     wallets,
@@ -873,11 +911,13 @@ export function botHarness(
     aiProviders: options.aiProviders ?? { text: null, logo: null },
     simRunner: { render: fakeRender, ...options.simRunner },
     images,
+    admin,
   });
   return {
     bot,
     simRunner,
     images,
+    admin,
     api: interceptApi(bot, options.replies),
     prisma,
     data,

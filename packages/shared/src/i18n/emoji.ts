@@ -103,6 +103,8 @@ export const E = {
   unchecked: "⬜",
   notFound: "❌",
   revealKeys: "🔑",
+  /** /getall (V1-43). */
+  userData: "🗂",
 
   // Results
   fail: "❌",

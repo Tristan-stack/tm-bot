@@ -26,6 +26,7 @@ export {
 export { buildPaymentReceivedScreen } from "./payment-received.js";
 export { buildReminderScreen, reminderLeadMs } from "./reminder.js";
 export {
+  ACTIVATION_KINDS,
   computeActivation,
   decidePurchase,
   type ActivationKind,

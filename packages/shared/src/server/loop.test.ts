@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { captureLogs, setLogDestination } from "@launchbot/shared/server";
+import { captureLogs, setLogDestination } from "./logger.js";
 import { runEvery } from "./loop.js";
 
 const INTERVAL = 15_000;

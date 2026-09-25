@@ -46,7 +46,7 @@ describe("touchUser", () => {
     expect(upsert.mock.calls[0]?.[0]?.create).toMatchObject({ username: null });
   });
 
-  it("records the activity on every update: it drives the 48 h purge", async () => {
+  it("records the activity on every update: it drives the purge of inactive accounts", async () => {
     const { prisma, upsert } = fakePrisma();
     const later = new Date(NOW.getTime() + 60_000);
 

@@ -25,8 +25,6 @@ import {
 import type { ApiReplies } from "../../test-harness.js";
 import { computeNextStep, loadHomeData } from "./data.js";
 import type { HomeData } from "./data.js";
-import { buildComingSoonScreen } from "./coming-soon.js";
-import type { ComingSoonSection } from "./coming-soon.js";
 import { buildHomeScreen, MENU } from "./screen.js";
 
 const ui = createUi("devnet");
@@ -360,40 +358,5 @@ describe("home handlers", () => {
       en.common.staleButton,
       en.common.staleButton,
     ]);
-  });
-});
-
-describe("provisional screens", () => {
-  const SECTIONS: [ComingSoonSection, string, string][] = [
-    // launch: Launch Coin since V1-35, tested in features/launch.
-    // simulate: the Token step since V1-16, tested in features/token-step.
-    // subscribe: the offers screen since V1-29, tested in features/subscribe.
-    // wallets: delivered by V1-10, tested in features/wallets.
-    ["support", "<b>🆘 SUPPORT</b> · 🧪 Devnet", MENU.support],
-  ];
-
-  it.each(SECTIONS)("%s has a title, a description, the flag and Back", (section, title) => {
-    const screen = buildComingSoonScreen(ui, section);
-
-    expect(screen.text).toBe(
-      [
-        title,
-        en.comingSoon.sections[section].description,
-        "🚧 Coming soon: this section isn't available yet.",
-      ].join("\n\n"),
-    );
-    expect(screen.reply_markup.inline_keyboard).toEqual([
-      [{ text: "⬅️ Back", callback_data: "nav:home" }],
-    ]);
-  });
-
-  it.each(SECTIONS)("%s opens from its menu button, in place", async (_section, title, data) => {
-    const { bot, api } = harness();
-
-    await feed(bot, callbackUpdate(data, { messageId: 55 }));
-
-    expect(api.of("editMessageText")[0]?.payload).toMatchObject({ message_id: 55 });
-    expect(api.text("editMessageText")).toContain(title);
-    expect(api.of("answerCallbackQuery")).toHaveLength(1);
   });
 });

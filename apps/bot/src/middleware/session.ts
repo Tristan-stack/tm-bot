@@ -7,8 +7,11 @@ import type { SessionData } from "../context.js";
 
 const log = createLogger("bot:session");
 
-/** Sessions and conversations share the `Session` table: the conversations get this prefix. */
-export const CONVERSATION_KEY_PREFIX = "conversation-";
+/**
+ * Sessions and conversations share the `Session` table: the conversations get this prefix. In
+ * @launchbot/db, which deletes both rows of a user with the account (V1-44).
+ */
+export { CONVERSATION_KEY_PREFIX } from "@launchbot/db";
 
 /**
  * Sessions survive a deployment: data this version cannot read (corrupt JSON, unknown `v`) is

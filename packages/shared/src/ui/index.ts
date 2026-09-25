@@ -18,6 +18,8 @@ export {
   webAppBtn,
 } from "./screen.js";
 export type { Button, InputScreenParams, OptionalLine, Screen, ScreenParams } from "./screen.js";
+export { splitHtmlMessage } from "./split.js";
+export type { SplitOptions } from "./split.js";
 
 /**
  * Proposal: shared never reads the environment, so each process binds the cluster-dependent

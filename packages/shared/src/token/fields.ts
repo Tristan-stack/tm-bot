@@ -237,10 +237,12 @@ const TELEGRAM_RESERVED = new Set([
 
 const invalidTelegram = (): FieldResult => fail({ field: "telegram", code: "INVALID_TELEGRAM" });
 
+/** A public username of t.me, not the path of a Telegram feature (the support link, V1-40). */
+export const isTelegramUsername = (name: string): boolean =>
+  TELEGRAM_USERNAME.test(name) && !TELEGRAM_RESERVED.has(name.toLowerCase());
+
 const telegramUsername = (name: string): FieldResult =>
-  TELEGRAM_USERNAME.test(name) && !TELEGRAM_RESERVED.has(name.toLowerCase())
-    ? ok(`https://t.me/${name}`)
-    : invalidTelegram();
+  isTelegramUsername(name) ? ok(`https://t.me/${name}`) : invalidTelegram();
 
 /**
  * `t.me/name`, `https://telegram.me/name`, `@name` → `https://t.me/name`; invitations
