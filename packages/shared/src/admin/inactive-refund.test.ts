@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createUi } from "../ui/index.js";
 import { buildInactiveRefundAlert } from "./inactive-refund.js";
-import type { SweptTransfer } from "./inactive-refund.js";
+import type { SweptTransfer } from "./swept-transfers.js";
 
 const ui = createUi("devnet");
 const MAIN = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";

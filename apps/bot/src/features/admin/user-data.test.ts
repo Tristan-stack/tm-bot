@@ -447,7 +447,7 @@ describe("/getall and Reveal keys (V1-43)", () => {
             Promise.resolve(telegramId === TARGET.telegramId ? TARGET : null),
           findUserById: (id) => Promise.resolve(id === TARGET.id ? TARGET : null),
           loadUserSupportData: () => Promise.resolve(loaded),
-          inactivitySweeps: () => Promise.resolve(options.sweeps ?? []),
+          treasurySweeps: () => Promise.resolve(options.sweeps ?? []),
           walletSecrets,
         },
         sensitive: { schedule },
@@ -485,15 +485,22 @@ describe("/getall and Reveal keys (V1-43)", () => {
     expect(storedSession(h.prisma)?.getallReveal).toBeUndefined();
   });
 
-  it("finds the transfers of an account deleted for inactivity", async () => {
+  it("finds the transfers of a deleted account, for inactivity or by /purge", async () => {
     const h = harness({
       sweeps: [
+        withdrawal({
+          kind: "PURGE_SWEEP",
+          walletName: null,
+          lamports: 999_995_000n,
+          createdAt: new Date("2026-09-20T08:00:00Z"),
+        }),
         withdrawal({ kind: "INACTIVITY_SWEEP", walletName: null, lamports: 2_499_985_000n }),
       ],
     });
 
     await feed(h.bot, textUpdate("/getall 777000"));
 
+    const explorer = `<a href="https://explorer.solana.com/tx/${SIGNATURE}?cluster=devnet">Explorer</a>`;
     expect(h.api.text("sendMessage")).toBe(
       [
         "<b>🗂 USER DATA</b> · 🧪 Devnet",
@@ -501,8 +508,9 @@ describe("/getall and Reveal keys (V1-43)", () => {
         "❌ User not found.",
         "Searched: 777000",
         "",
-        "Account deleted for inactivity. Transfers to treasury:",
-        `· 14 Sep 2026, 10:02 UTC · Inactivity sweep · 7xKX…gAsU → 9WzD…AWWM · 2.499985 SOL · Confirmed · <a href="https://explorer.solana.com/tx/${SIGNATURE}?cluster=devnet">Explorer</a>`,
+        "Account deleted. Transfers to treasury:",
+        `· 20 Sep 2026, 08:00 UTC · Purge sweep · 7xKX…gAsU → 9WzD…AWWM · 0.999995 SOL · Confirmed · ${explorer}`,
+        `· 14 Sep 2026, 10:02 UTC · Inactivity sweep · 7xKX…gAsU → 9WzD…AWWM · 2.499985 SOL · Confirmed · ${explorer}`,
       ].join("\n"),
     );
     expect(h.buttons()).toEqual([]);

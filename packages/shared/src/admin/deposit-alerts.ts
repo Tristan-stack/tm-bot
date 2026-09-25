@@ -104,7 +104,7 @@ export function buildDepositAlert(ui: Ui, alert: DepositAlert): Screen {
           alert.kind === "OLD_ADDRESS" && texts.status(texts.statuses[invoice.status]),
           texts.expected(withUsd(invoiceSol(invoice.expectedLamports), Number(invoice.priceUsd))),
           texts.received(formatSolExact(alert.balanceLamports)),
-          texts.moved(formatSolExact(alert.movedLamports)),
+          en.admin.common.movedToTreasury(formatSolExact(alert.movedLamports)),
           deposit,
           alert.from !== undefined &&
             texts.from(a(shortAddress(alert.from), ui.explorerAddressUrl(alert.from))),

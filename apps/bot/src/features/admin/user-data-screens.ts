@@ -1,6 +1,7 @@
 import type {
   SupportPayment,
   SupportWithdrawal,
+  SweepKind,
   UserBalances,
   UserSupportData,
   WalletSource,
@@ -135,15 +136,22 @@ export function buildWhoisScreen(
 
 const sourceText = (source: WalletSource) => texts.getall.walletSources[source];
 
+/**
+ * The label of a transfer to the treasury before a deletion: every sweep kind has one (checked
+ * here), a withdrawal of the user has none.
+ */
+const sweepLabels: Record<SweepKind, string> & Partial<Record<SupportWithdrawal["kind"], string>> =
+  texts.getall.sweepKinds;
+
 /** `14 Sep 2026, 10:02 UTC · Main → 9WzD…AWWM · 0.500 SOL · Confirmed · Explorer` */
 export function withdrawalLine(ui: Ui, withdrawal: SupportWithdrawal): string {
   const { getall } = texts;
-  const sweep = withdrawal.kind === "INACTIVITY_SWEEP";
+  const sweep = sweepLabels[withdrawal.kind] ?? null;
   // Its wallet, or where it was: a sweep keeps the address of a wallet deleted with its account.
   const from =
     withdrawal.walletName !== null
       ? escapeHtml(withdrawal.walletName)
-      : sweep
+      : sweep !== null
         ? shortAddress(withdrawal.fromAddress)
         : getall.deletedWallet;
   const status =
@@ -152,7 +160,7 @@ export function withdrawalLine(ui: Ui, withdrawal: SupportWithdrawal): string {
       : getall.withdrawalStatuses[withdrawal.status];
   return [
     formatDateTime(withdrawal.createdAt),
-    ...(sweep ? [getall.inactivitySweep] : []),
+    ...(sweep === null ? [] : [sweep]),
     getall.route(from, shortAddress(withdrawal.toAddress)),
     formatSolExact(withdrawal.lamports),
     status,
@@ -294,13 +302,13 @@ export const revealKeyboard = (nonce: string): Button[][] => [
   ],
 ];
 
-/** Under « User not found. »: the transfers of an account deleted for inactivity (V1-45). */
-export function inactivitySweepLines(ui: Ui, sweeps: SupportWithdrawal[]): string[] {
+/**
+ * Under « User not found. »: the transfers to the treasury of a deleted account, for inactivity
+ * (V1-45) or by /purge (V1-44), for a refund by hand.
+ */
+export function treasurySweepLines(ui: Ui, sweeps: SupportWithdrawal[]): string[] {
   if (sweeps.length === 0) return [];
-  return [
-    texts.getall.deletedForInactivity,
-    ...sweeps.map((sweep) => `· ${withdrawalLine(ui, sweep)}`),
-  ];
+  return [texts.getall.deletedAccount, ...sweeps.map((sweep) => `· ${withdrawalLine(ui, sweep)}`)];
 }
 
 /** A wallet of the keys message: its secrets, or why there are none. */

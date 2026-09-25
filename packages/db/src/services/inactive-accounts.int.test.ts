@@ -19,6 +19,8 @@ import {
   testWalletData,
 } from "../test-db.js";
 import { createAccountDeletionService } from "./account-deletion.js";
+import { createAccountSweeper } from "./account-sweep.js";
+import type { SweepKind } from "./account-sweep.js";
 import { createInactiveAccountsService } from "./inactive-accounts.js";
 import type { TransferApi } from "./withdrawals.js";
 
@@ -37,7 +39,7 @@ const RECENT = INACTIVITY_DELETE_MS - HOUR_MS;
 type Outcome = "ok" | "failed" | "unknown";
 
 // Needs PostgreSQL (`pnpm db:up`), in a database of its own: suites run in parallel.
-describe.skipIf(!process.env["RUN_DB_TESTS"])("inactive accounts (db, V1-45)", () => {
+describe.skipIf(!process.env["RUN_DB_TESTS"])("sweeps to the treasury (db, V1-44, V1-45)", () => {
   let prisma: PrismaClient;
   const { lamports: chain, read } = fakeChain();
   let clock = START;
@@ -130,17 +132,17 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("inactive accounts (db, V1-45)", (
       feeBudgetLamports: FEE_BUDGET,
       now: () => clock,
     });
-    const accounts = createInactiveAccountsService({
+    const sweeperDeps = {
       prisma,
       transfer: { send, lookup },
       vault: createKeyVault(new Uint8Array(32)),
       readLamports,
       treasury: TREASURY,
       feeBudgetLamports: FEE_BUDGET,
-      deletion,
       now: () => clock,
-    });
-    return { accounts, send, lookup };
+    };
+    const accounts = createInactiveAccountsService({ ...sweeperDeps, deletion });
+    return { accounts, sweeper: createAccountSweeper(sweeperDeps), send, lookup };
   }
 
   /** An account whose last activity was `ago` before the start of the pass. */
@@ -315,9 +317,13 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("inactive accounts (db, V1-45)", (
     expect(await sweepsOf(user.telegramId)).toMatchObject([{ status: "CONFIRMED" }]);
   });
 
-  it("resolves the sweeps left PENDING by what the chain says", async () => {
+  it("resolves the sweeps left PENDING by what the chain says, a purge's too", async () => {
     const user = await account(HOUR_MS);
-    const row = (signature: string | null, minutesAgo: number) =>
+    const row = (
+      signature: string | null,
+      minutesAgo: number,
+      kind: SweepKind = "INACTIVITY_SWEEP",
+    ) =>
       prisma.withdrawal.create({
         data: {
           userId: user.id,
@@ -325,7 +331,7 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("inactive accounts (db, V1-45)", (
           toAddress: TREASURY,
           lamports: SOL,
           signature,
-          kind: "INACTIVITY_SWEEP",
+          kind,
           userTelegramId: user.telegramId,
           createdAt: new Date(START.getTime() - minutesAgo * MINUTE_MS),
         },
@@ -335,17 +341,21 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("inactive accounts (db, V1-45)", (
     const lost = await row("sig-lost", 10);
     const unsigned = await row(null, 10);
     const unknown = await row("sig-unknown", 10);
+    // A /purge stopped on a transfer in flight, and never tried again.
+    const purged = await row("sig-purged", 10, "PURGE_SWEEP");
     lookups.set("sig-landed", { status: "confirmed", slot: 1 });
     lookups.set("sig-rejected", { status: "failed", slot: 1, detail: "custom program error" });
     lookups.set("sig-unknown", { status: "unavailable" });
+    lookups.set("sig-purged", { status: "confirmed", slot: 2 });
 
     expect(await services().accounts.resolvePendingSweeps()).toEqual({
-      confirmed: 1,
+      confirmed: 2,
       failed: 3,
       unresolved: 1,
     });
     const statusOf = async (id: string) =>
       (await prisma.withdrawal.findUniqueOrThrow({ where: { id } })).status;
+    expect(await statusOf(purged.id)).toBe("CONFIRMED");
     expect(await statusOf(landed.id)).toBe("CONFIRMED");
     expect(await statusOf(rejected.id)).toBe("FAILED");
     expect(await statusOf(lost.id)).toBe("FAILED");
@@ -385,6 +395,51 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("inactive accounts (db, V1-45)", (
       (await sweepsOf(user.telegramId)).filter((row) => row.status === "CONFIRMED"),
     ).toHaveLength(1);
     expect(await prisma.user.count({ where: { id: user.id } })).toBe(0);
+  });
+
+  it("a purge moves the SOL of an active account, as PURGE_SWEEP rows, dust left", async () => {
+    // Active a minute ago: a purge reads no activity, the user asked for the deletion.
+    const user = await account(MINUTE_MS, [
+      ["Main", MAIN, SOL],
+      ["Test", TEST, FEE_BUDGET],
+    ]);
+    const { sweeper, send } = services();
+
+    expect(await sweeper.sweepAccount(user, { kind: "PURGE_SWEEP" })).toMatchObject({
+      status: "SWEPT",
+      transfers: [{ walletName: "Main", fromAddress: MAIN, lamports: SOL - FEE }],
+    });
+    expect(send).toHaveBeenCalledOnce();
+    expect(chain.get(TREASURY)).toBe(SOL - FEE);
+    expect(chain.get(TEST)).toBe(FEE_BUDGET);
+    expect(
+      await prisma.withdrawal.findMany({ where: { userTelegramId: user.telegramId } }),
+    ).toEqual([
+      expect.objectContaining({
+        kind: "PURGE_SWEEP",
+        status: "CONFIRMED",
+        userId: user.id,
+        fromAddress: MAIN,
+        toAddress: TREASURY,
+      }),
+    ]);
+  });
+
+  it("a purge keeps every key when a transfer fails, and says what moved", async () => {
+    const logs = captureLogs();
+    const user = await account(MINUTE_MS, [
+      ["Main", MAIN, SOL],
+      ["Test", TEST, 2n * SOL],
+    ]);
+    const { sweeper } = services({ outcomes: ["ok", "failed"] });
+
+    expect(await sweeper.sweepAccount(user, { kind: "PURGE_SWEEP" })).toMatchObject({
+      status: "KEPT",
+      reason: "TX_FAILED",
+      transfers: [{ walletName: "Main" }],
+    });
+    expect(await prisma.wallet.count({ where: { userId: user.id } })).toBe(2);
+    expect(logs.join("\n")).toContain("purge.sweep");
   });
 
   it("logs no key, no username and no full address", async () => {

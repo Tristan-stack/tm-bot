@@ -837,31 +837,40 @@ export function fakeAiQuota(options: { used?: number } = {}) {
   return { ...store, used, logos };
 }
 
+/** Per service, only the methods a test replaces: the others keep their fake. */
+export type AdminOverrides = { [K in keyof AdminServices]?: Partial<AdminServices[K]> };
+
 /**
  * What the admin commands read and write (V1-42 to V1-44), on nothing: no account is found, no
- * grant is used, nothing is deleted. A test replaces what its command reads.
+ * grant is used, nothing is moved or deleted. A test replaces what its command reads.
  */
-export function fakeAdmin(overrides: Partial<AdminServices> = {}): AdminServices {
+export function fakeAdmin(overrides: AdminOverrides = {}): AdminServices {
   const unexpected = () => Promise.reject(new Error("Not faked by this test"));
   return {
     subscriptions: {
       previewGrant: unexpected,
       confirmGrant: unexpected,
       isGrantUsed: () => Promise.resolve(false),
+      ...overrides.subscriptions,
     },
     support: {
       findUser: () => Promise.resolve(null),
       findUserById: () => Promise.resolve(null),
       loadUserSupportData: unexpected,
-      inactivitySweeps: () => Promise.resolve([]),
+      treasurySweeps: () => Promise.resolve([]),
       walletSecrets: () => Promise.resolve([]),
+      ...overrides.support,
     },
     deletion: {
       getPurgeSummary: () => Promise.resolve(null),
       deleteUserData: () => Promise.resolve({ status: "NOT_FOUND" }),
+      ...overrides.deletion,
     },
-    sensitive: { schedule: () => Promise.resolve() },
-    ...overrides,
+    sweeper: {
+      sweepAccount: () => Promise.resolve({ status: "SWEPT", transfers: [] }),
+      ...overrides.sweeper,
+    },
+    sensitive: { schedule: () => Promise.resolve(), ...overrides.sensitive },
   };
 }
 
@@ -884,7 +893,7 @@ export function botHarness(
     /** The virtual clock and the cap of the simulation runner (V1-26). */
     simRunner?: Partial<Pick<SimRunnerDeps, "scheduler" | "maxActive">>;
     images?: ReturnType<typeof fakeImages>;
-    admin?: Partial<AdminServices>;
+    admin?: AdminOverrides;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });

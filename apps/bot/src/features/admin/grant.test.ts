@@ -242,9 +242,6 @@ describe("/grant (V1-42)", () => {
           findUser: (telegramId) =>
             Promise.resolve(telegramId === TARGET.telegramId ? TARGET : null),
           findUserById: (id) => Promise.resolve(id === TARGET.id ? TARGET : null),
-          loadUserSupportData: () => Promise.reject(new Error("unused")),
-          inactivitySweeps: () => Promise.resolve([]),
-          walletSecrets: () => Promise.resolve([]),
         },
       },
     });

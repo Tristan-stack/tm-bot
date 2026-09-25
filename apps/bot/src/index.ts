@@ -5,6 +5,7 @@ import { PrismaAdapter } from "@grammyjs/storage-prisma";
 import {
   assertDatabaseReachable,
   createAccountDeletionService,
+  createAccountSweeper,
   createAiQuotaStore,
   createPaymentService,
   createSensitiveMessageStore,
@@ -194,6 +195,15 @@ export function createBot(
     deletion: createAccountDeletionService({
       prisma,
       readLamports,
+      feeBudgetLamports: withdrawFeeBudgetLamports,
+    }),
+    // /purge moves the SOL of the wallets to the treasury before the deletion (25/09/2026).
+    sweeper: createAccountSweeper({
+      prisma,
+      transfer,
+      vault,
+      readLamports,
+      treasury: env.TREASURY_WALLET,
       feeBudgetLamports: withdrawFeeBudgetLamports,
     }),
     sensitive: createSensitiveMessageStore({ prisma }),

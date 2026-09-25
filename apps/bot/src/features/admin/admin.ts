@@ -1,5 +1,6 @@
 import type {
   AccountDeletionService,
+  AccountSweeper,
   SensitiveMessageStore,
   SubscriptionService,
   SupportDataService,
@@ -28,6 +29,8 @@ export type AdminServices = {
   subscriptions: Pick<SubscriptionService, "previewGrant" | "confirmGrant" | "isGrantUsed">;
   support: SupportDataService;
   deletion: Pick<AccountDeletionService, "getPurgeSummary" | "deleteUserData">;
+  /** /purge moves the SOL of the wallets to the treasury first (decision of 25/09/2026). */
+  sweeper: Pick<AccountSweeper, "sweepAccount">;
   sensitive: Pick<SensitiveMessageStore, "schedule">;
 };
 
@@ -56,7 +59,7 @@ export function registerAdmin(router: CallbackRouter, deps: AdminDeps): void {
   });
   const userData = createUserData({ kit, support, data, now });
   const reveal = createReveal({ kit, support, sensitive: deps.sensitive, vault: deps.vault, now });
-  const purge = createPurge({ kit, deletion: deps.deletion, data, now });
+  const purge = createPurge({ kit, deletion: deps.deletion, sweeper: deps.sweeper, data, now });
 
   guard.commands.command("grant", grant.command);
   guard.commands.command("whois", userData.whois);

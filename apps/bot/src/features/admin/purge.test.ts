@@ -1,4 +1,12 @@
-import type { AccountDeletionService, DeleteUserResult, PurgeSummary, User } from "@launchbot/db";
+import type {
+  AccountDeletionService,
+  AccountSweep,
+  AccountSweeper,
+  DeleteUserResult,
+  DeletionCounts,
+  PurgeSummary,
+  User,
+} from "@launchbot/db";
 import { createUi, DAY_MS } from "@launchbot/shared";
 import { captureLogs, resetRateLimits, setLogDestination } from "@launchbot/shared/server";
 import { GrammyError } from "grammy";
@@ -16,7 +24,11 @@ import {
 } from "../../test-harness.js";
 import type { ApiReplies } from "../../test-harness.js";
 import type { DataServices } from "../../services/data.js";
-import { buildPurgeResultScreen, buildPurgeSummaryScreen } from "./purge-screens.js";
+import {
+  buildPurgeResultScreen,
+  buildPurgeStoppedScreen,
+  buildPurgeSummaryScreen,
+} from "./purge-screens.js";
 
 const ui = createUi("devnet");
 const NOW = new Date("2026-09-15T14:32:00Z");
@@ -39,10 +51,35 @@ const summary = (overrides: Partial<PurgeSummary> = {}): PurgeSummary => ({
     { ...MAIN_WALLET, lamports: 0n },
     { ...TEST_WALLET, lamports: 0n },
   ],
+  toTreasuryLamports: 0n,
   invoices: [],
   blockers: [],
   ...overrides,
 });
+
+/** Main above the fees of a transfer: its SOL goes to the treasury before the deletion. */
+const FUNDED = summary({
+  wallets: [{ ...MAIN_WALLET, lamports: 2_500_000_000n }],
+  toTreasuryLamports: 2_500_000_000n,
+});
+
+const COUNTS: DeletionCounts = {
+  wallets: 2,
+  drafts: 4,
+  simulations: 3,
+  aiGenerations: 12,
+  subscriptions: 1,
+  payments: 2,
+  withdrawals: 1,
+};
+
+/** Main emptied into the treasury by the purge (PURGE_SWEEP). */
+const SWEPT_MAIN = {
+  walletName: "Main",
+  fromAddress: MAIN_WALLET.publicKey,
+  lamports: 2_499_985_000n,
+  signature: "5Hq1sweepSignatureZk9a",
+};
 
 const PENDING_INVOICE = {
   paymentId: "p1",
@@ -55,7 +92,7 @@ const PENDING_INVOICE = {
 };
 
 describe("buildPurgeSummaryScreen (V1-44)", () => {
-  it("blocked: the funds and the invoice said, Cancel only", () => {
+  it("blocked by an invoice, Cancel only; the SOL for the treasury and the plan lost said", () => {
     const screen = buildPurgeSummaryScreen(ui, {
       now: NOW,
       summary: summary({
@@ -72,11 +109,9 @@ describe("buildPurgeSummaryScreen (V1-44)", () => {
           { ...MAIN_WALLET, lamports: 2_500_000_000n },
           { ...TEST_WALLET, lamports: 0n },
         ],
+        toTreasuryLamports: 2_500_000_000n,
         invoices: [PENDING_INVOICE],
-        blockers: [
-          { kind: "WALLET_FUNDS", walletId: "w1", name: "Main", lamports: 2_500_000_000n },
-          { kind: "PENDING_INVOICE", ...PENDING_INVOICE },
-        ],
+        blockers: [{ kind: "PENDING_INVOICE", ...PENDING_INVOICE }],
       }),
     });
 
@@ -84,7 +119,7 @@ describe("buildPurgeSummaryScreen (V1-44)", () => {
       [
         "<b>🗑 PURGE USER</b> · 🧪 Devnet",
         "",
-        "Delete all data of this user. Wallet keys will be erased: funds left on them can't be recovered.",
+        "Delete all data of this user. Their SOL goes to the treasury first, then the wallet keys are erased.",
         "",
         "<b>👤 USER</b>",
         "┌ @username",
@@ -98,8 +133,8 @@ describe("buildPurgeSummaryScreen (V1-44)", () => {
         "<b>🧾 PENDING INVOICES</b>",
         "└ Premium · 2 days · 0.5709 SOL · expires 14:52 UTC",
         "",
-        "⚠️ Main still holds 2.500 SOL. Ask the user to withdraw first.",
         "⚠️ Invoice Premium · 2 days is still pending. Try again after it expires and its 24 h payment window ends.",
+        "ℹ️ 2.500 SOL will be moved to the treasury before the deletion.",
         "⚠️ The active subscription will be lost.",
       ].join("\n"),
     );
@@ -127,6 +162,15 @@ describe("buildPurgeSummaryScreen (V1-44)", () => {
     );
   });
 
+  it("SOL on a wallet does not block: Confirm purge, the amount for the treasury said", () => {
+    const screen = buildPurgeSummaryScreen(ui, { now: NOW, summary: FUNDED });
+
+    expect(screen.text).toContain(
+      "ℹ️ 2.500 SOL will be moved to the treasury before the deletion.",
+    );
+    expect(buttonTexts(screen.reply_markup)).toEqual([["🗑 Confirm purge", "❌ Cancel"]]);
+  });
+
   it("nothing blocks: Confirm purge and Cancel, the id in the button", () => {
     const screen = buildPurgeSummaryScreen(ui, { now: NOW, summary: summary({ wallets: [] }) });
 
@@ -144,18 +188,7 @@ describe("buildPurgeSummaryScreen (V1-44)", () => {
 
 describe("buildPurgeResultScreen (V1-44)", () => {
   it("what went and what stays detached, then Menu", () => {
-    const screen = buildPurgeResultScreen(ui, {
-      counts: {
-        wallets: 2,
-        drafts: 4,
-        simulations: 3,
-        aiGenerations: 12,
-        subscriptions: 1,
-        payments: 2,
-        withdrawals: 1,
-      },
-      notified: false,
-    });
+    const screen = buildPurgeResultScreen(ui, { counts: COUNTS, notified: false, transfers: [] });
 
     expect(screen.text).toBe(
       [
@@ -171,26 +204,45 @@ describe("buildPurgeResultScreen (V1-44)", () => {
     );
     expect(buttonTexts(screen.reply_markup)).toEqual([["🏠 Menu"]]);
   });
+
+  it("lists the SOL moved to the treasury, for a refund by hand", () => {
+    const text = buildPurgeResultScreen(ui, {
+      counts: COUNTS,
+      notified: true,
+      transfers: [SWEPT_MAIN],
+    }).text;
+
+    expect(text).toContain(
+      [
+        "Detached: 2 payments, 1 withdrawal.",
+        "",
+        "Moved to treasury: 2.499985 SOL",
+        `👛 Main · <a href="https://explorer.solana.com/address/${MAIN_WALLET.publicKey}?cluster=devnet">7xKX…gAsU</a> · 2.499985 SOL · Tx <a href="https://explorer.solana.com/tx/${SWEPT_MAIN.signature}?cluster=devnet">5Hq1…Zk9a</a>`,
+      ].join("\n"),
+    );
+  });
+});
+
+describe("buildPurgeStoppedScreen (V1-44)", () => {
+  it("nothing deleted, what already moved listed, Menu", () => {
+    const screen = buildPurgeStoppedScreen(ui, [SWEPT_MAIN]);
+
+    expect(screen.text).toContain(
+      "❌ The SOL could not all be moved to the treasury. Nothing was deleted. Try again in a minute.",
+    );
+    expect(screen.text).toContain("Moved to treasury: 2.499985 SOL");
+    expect(buttonTexts(screen.reply_markup)).toEqual([["🏠 Menu"]]);
+  });
 });
 
 describe("/purge (V1-44)", () => {
-  const DELETED: DeleteUserResult = {
-    status: "DELETED",
-    counts: {
-      wallets: 2,
-      drafts: 1,
-      simulations: 1,
-      aiGenerations: 0,
-      subscriptions: 1,
-      payments: 1,
-      withdrawals: 0,
-    },
-  };
+  const DELETED: DeleteUserResult = { status: "DELETED", counts: COUNTS };
 
   function harness(
     options: {
       summaries?: (PurgeSummary | null)[];
       deleted?: () => Promise<DeleteUserResult>;
+      swept?: AccountSweep;
       replies?: ApiReplies;
     } = {},
   ) {
@@ -209,12 +261,16 @@ describe("/purge (V1-44)", () => {
       order.push("deleteUserData");
       return options.deleted?.() ?? Promise.resolve(DELETED);
     });
+    const sweepAccount = vi.fn<AccountSweeper["sweepAccount"]>(() => {
+      order.push("sweep");
+      return Promise.resolve(options.swept ?? { status: "SWEPT", transfers: [] });
+    });
     const invalidateUserBalances = vi.fn<DataServices["invalidateUserBalances"]>();
     const h = botHarness({
       env: { ADMIN_TELEGRAM_IDS: [ADMIN_ID] },
       replies: options.replies,
       data: { invalidateUserBalances },
-      admin: { deletion: { getPurgeSummary, deleteUserData } },
+      admin: { deletion: { getPurgeSummary, deleteUserData }, sweeper: { sweepAccount } },
     });
     h.bot.api.config.use((prev, method, payload, signal) => {
       if (method === "sendMessage" && (payload as { chat_id?: unknown }).chat_id === "555000111") {
@@ -223,7 +279,15 @@ describe("/purge (V1-44)", () => {
       return prev(method, payload, signal);
     });
     const click = (data: string) => feed(h.bot, callbackUpdate(data, { messageId: 60 }));
-    return { ...h, getPurgeSummary, deleteUserData, invalidateUserBalances, order, click };
+    return {
+      ...h,
+      getPurgeSummary,
+      deleteUserData,
+      sweepAccount,
+      invalidateUserBalances,
+      order,
+      click,
+    };
   }
 
   it("an unknown account is « User not found. »", async () => {
@@ -243,13 +307,14 @@ describe("/purge (V1-44)", () => {
     expect(h.api.text("sendMessage")).toContain("<b>🗑 PURGE USER</b>");
   });
 
-  it("tells the user first, then deletes, then shows what went", async () => {
+  it("moves the SOL, tells the user, then deletes, then shows what went", async () => {
     const logs = captureLogs();
     const h = harness();
 
     await h.click(`adm:prg:ok:${TARGET.telegramId}`);
 
-    expect(h.order).toEqual(["tellUser", "deleteUserData"]);
+    expect(h.order).toEqual(["sweep", "tellUser", "deleteUserData"]);
+    expect(h.sweepAccount).toHaveBeenCalledWith(TARGET, { kind: "PURGE_SWEEP" });
     const told = h.api.of("sendMessage").find((call) => call.payload["chat_id"] === "555000111");
     expect(told?.payload["text"]).toBe("Your data has been deleted.");
     expect(h.deleteUserData).toHaveBeenCalledWith(TARGET.id);
@@ -279,26 +344,54 @@ describe("/purge (V1-44)", () => {
     expect(h.api.screen()).toContain("ℹ️ The user could not be notified.");
   });
 
-  it("deletes nothing when a blocker appeared since the summary", async () => {
+  it("moves nothing and deletes nothing when a blocker appeared since the summary", async () => {
     const h = harness({
-      summaries: [
-        summary({
-          blockers: [
-            { kind: "WALLET_FUNDS", walletId: "w1", name: "Main", lamports: 1_000_000_000n },
-          ],
-        }),
-      ],
+      summaries: [summary({ blockers: [{ kind: "PENDING_INVOICE", ...PENDING_INVOICE }] })],
     });
 
     await h.click(`adm:prg:ok:${TARGET.telegramId}`);
 
+    expect(h.sweepAccount).not.toHaveBeenCalled();
     expect(h.deleteUserData).not.toHaveBeenCalled();
     expect(h.order).toEqual([]);
     expect(h.api.lastAlert()).toMatchObject({
       text: "The user's data changed. Check the summary again.",
       show_alert: true,
     });
-    expect(h.api.screen()).toContain("⚠️ Main still holds 1.000 SOL.");
+    expect(h.api.screen()).toContain("⚠️ Invoice Premium · 2 days is still pending.");
+  });
+
+  it("SOL on a wallet goes to the treasury, then the account, the transfers listed", async () => {
+    captureLogs();
+    const h = harness({
+      summaries: [FUNDED],
+      swept: { status: "SWEPT", transfers: [SWEPT_MAIN] },
+    });
+
+    await h.click(`adm:prg:ok:${TARGET.telegramId}`);
+
+    // The click is answered before the transfers, which take a few seconds each.
+    expect(h.api.of("answerCallbackQuery")).toHaveLength(1);
+    expect(h.api.text("editMessageText", 0)).toContain("⏳ Moving the SOL to the treasury…");
+    expect(h.order).toEqual(["sweep", "tellUser", "deleteUserData"]);
+    expect(h.api.screen()).toContain("✅ User data deleted.");
+    expect(h.api.screen()).toContain("Moved to treasury: 2.499985 SOL");
+  });
+
+  it("a transfer that fails deletes nothing, tells nobody and lists what moved", async () => {
+    captureLogs();
+    const h = harness({
+      summaries: [FUNDED],
+      swept: { status: "KEPT", reason: "TX_FAILED", transfers: [SWEPT_MAIN] },
+    });
+
+    await h.click(`adm:prg:ok:${TARGET.telegramId}`);
+
+    expect(h.order).toEqual(["sweep"]);
+    expect(h.deleteUserData).not.toHaveBeenCalled();
+    expect(h.invalidateUserBalances).not.toHaveBeenCalled();
+    expect(h.api.screen()).toContain("❌ The SOL could not all be moved to the treasury.");
+    expect(h.api.screen()).toContain("Moved to treasury: 2.499985 SOL");
   });
 
   it("says a failed purge deleted nothing", async () => {

@@ -58,6 +58,8 @@ enum WithdrawalKind {
   INACTIVITY_SWEEP
   // The funds of an invoice's deposit address moved to the treasury (V1-33).
   DEPOSIT_SWEEP
+  // The SOL of a purged account moved to the treasury (V1-44, decision of 25/09/2026).
+  PURGE_SWEEP
 }
 
 enum AiGenerationKind {
@@ -236,12 +238,12 @@ model Withdrawal {
   status         WithdrawalStatus @default(PENDING)
   error          String?
   kind           WithdrawalKind   @default(USER)
-  // INACTIVITY_SWEEP only: kept after the account is deleted, for a manual refund.
+  // INACTIVITY_SWEEP and PURGE_SWEEP: kept after the account is deleted, for a manual refund.
   userTelegramId BigInt?
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
 
   @@index([userId, createdAt])
-  // Manual refund of inactivity sweeps (V1-45)
+  // Manual refund of the sweeps of a deleted account (V1-44, V1-45)
   @@index([kind, userTelegramId])
   // The transfer of a deposit still in flight, looked up before another one (V1-33)
   @@index([fromAddress, status])

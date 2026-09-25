@@ -951,6 +951,11 @@ export const en = {
         `${plan} · ${left === undefined ? "" : `${left} · `}until ${until}`,
       /** `plan` is `Classic ⚠️ expired` (`planStatus.expired`). */
       planEnded: (plan: string, ended: string) => `${plan} · ended ${ended}`,
+      // The SOL of an account moved to the treasury (V1-44, V1-45): the total, then a line each.
+      movedToTreasury: (amount: string) => `Moved to treasury: ${amount}`,
+      /** `👛 Main · 7xKX…gAsU · 2.4999 SOL · Tx 5Hq1…Zk9a`: the address and the Tx are links. */
+      sweptTransfer: (name: string, address: string, amount: string, tx: string) =>
+        `${E.wallets} ${name} · ${address} · ${amount} · Tx ${tx}`,
     },
     // /grant (§8.4, §11.4, V1-42). `offer` is `Premium · 1 month`, `user` from `common.user`.
     grant: {
@@ -1031,9 +1036,10 @@ export const en = {
       noWallet: "No wallet yet.",
       withdrawals: `${E.withdraw} RECENT WITHDRAWALS`,
       noWithdrawal: "No withdrawal yet.",
-      /** The source of a withdrawal: its wallet, gone since, or the sweep of an inactive account. */
+      /** The source of a withdrawal: its wallet, gone since, or a sweep before a deletion. */
       deletedWallet: "Deleted wallet",
-      inactivitySweep: "Inactivity sweep",
+      /** A transfer to the treasury before a deletion: for inactivity (V1-45) or by /purge (V1-44). */
+      sweepKinds: { INACTIVITY_SWEEP: "Inactivity sweep", PURGE_SWEEP: "Purge sweep" },
       /** `Main → 9WzD…AWWM` */
       route: (from: string, to: string) => `${from} → ${to}`,
       withdrawalStatuses: { PENDING: "Pending", CONFIRMED: "Confirmed" },
@@ -1042,8 +1048,8 @@ export const en = {
       counts: (drafts: number, simulations: number) =>
         `${E.simulate} ${counted(drafts, "token draft")} · ${counted(simulations, "simulation")}`,
       btnReveal: `${E.revealKeys} Reveal keys`,
-      /** Under « User not found. »: the account went for inactivity, its SOL to the treasury (V1-45). */
-      deletedForInactivity: "Account deleted for inactivity. Transfers to treasury:",
+      /** Under « User not found. »: the account went, its SOL to the treasury first (V1-44, V1-45). */
+      deletedAccount: "Account deleted. Transfers to treasury:",
       // Reveal keys (decision of 16/09/2026): a message deleted 60 s after its send.
       expired: "This request has expired. Send /getall again.",
       noWalletToReveal: "No wallet to reveal.",
@@ -1069,7 +1075,7 @@ export const en = {
     // /purge (§11.3, §11.4, V1-44). Names arrive escaped, amounts formatted.
     purge: {
       description:
-        "Delete all data of this user. Wallet keys will be erased: funds left on them can't be recovered.",
+        "Delete all data of this user. Their SOL goes to the treasury first, then the wallet keys are erased.",
       user: `${E.account} USER`,
       wallets: `${E.wallets} WALLETS`,
       /** `Main · 7xKX…gAsU · 2.500 SOL` */
@@ -1084,9 +1090,9 @@ export const en = {
       payableInvoice: (offer: string, amount: string, until: string) =>
         `${offer} · ${amount} · payable until ${until}`,
       noInvoice: "None",
-      /** Exact (§11.4): `⚠️ Main still holds 2.500 SOL. Ask the user to withdraw first.` */
-      funds: (name: string, amount: string) =>
-        `${E.warning} ${name} still holds ${amount} SOL. Ask the user to withdraw first.`,
+      /** Decision of 25/09/2026: the SOL no longer blocks, it goes to the treasury first. */
+      toTreasury: (amount: string) =>
+        `${E.info} ${amount} SOL will be moved to the treasury before the deletion.`,
       pending: (offer: string) =>
         `${E.warning} Invoice ${offer} is still pending. Try again after it expires and its 24 h payment window ends.`,
       payable: (offer: string, until: string) =>
@@ -1097,6 +1103,10 @@ export const en = {
       changed: "The user's data changed. Check the summary again.",
       canceled: `${E.cancel} Purge canceled. Nothing was deleted.`,
       failed: `${E.fail} Purge failed. Nothing was deleted. Try again.`,
+      /** While the transfers to the treasury confirm, a few seconds each. */
+      moving: `${E.waiting} Moving the SOL to the treasury…`,
+      /** A transfer failed or is still unconfirmed: every key is kept. */
+      stopped: `${E.fail} The SOL could not all be moved to the treasury. Nothing was deleted. Try again in a minute.`,
       done: `${E.ok} User data deleted. Payment records kept for accounting, detached from the account.`,
       deleted: (counts: {
         wallets: number;
@@ -1122,10 +1132,6 @@ export const en = {
       description:
         "The user became active while their inactive account was being deleted. Their SOL was already moved to the treasury and the account was kept. Refund the user by hand.",
       user: (user: string) => `${E.account} User: ${user}`,
-      moved: (amount: string) => `Moved to treasury: ${amount}`,
-      /** `👛 Main · 7xKX…gAsU · 2.4999 SOL · Tx 5Hq1…Zk9a`: the address and the Tx are links. */
-      transfer: (name: string, address: string, amount: string, tx: string) =>
-        `${E.wallets} ${name} · ${address} · ${amount} · Tx ${tx}`,
     },
     // The deposit addresses of the invoices (§8.3, V1-33): what the worker moved to the
     // treasury and what an admin must refund by hand. Values arrive formatted and escaped.
@@ -1154,7 +1160,6 @@ export const en = {
       deletedAccount: "deleted account",
       expected: (amount: string) => `Expected: ${amount}`,
       received: (amount: string) => `Received: ${amount}`,
-      moved: (amount: string) => `Moved to treasury: ${amount}`,
       balance: (amount: string) => `Balance: ${amount}`,
       /** `status` is `Paid`, `Expired` or `Canceled`. */
       status: (status: string) => `Status: ${status}`,

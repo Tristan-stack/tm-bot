@@ -96,6 +96,16 @@ export type {
 } from "./services/account-deletion.js";
 export { createDataCleanupService } from "./services/data-cleanup.js";
 export type { CleanupReport, DataCleanupService } from "./services/data-cleanup.js";
+export { createAccountSweeper } from "./services/account-sweep.js";
+export type {
+  AccountSweep,
+  AccountSweeper,
+  AccountSweeperDeps,
+  KeptSweep,
+  SweepFailure,
+  SweepKind,
+  SweepStep,
+} from "./services/account-sweep.js";
 export { createInactiveAccountsService } from "./services/inactive-accounts.js";
 export type {
   AccountOutcome,
@@ -103,7 +113,6 @@ export type {
   InactiveAccountsDeps,
   InactiveAccountsService,
   InactiveUser,
-  SweepFailure,
 } from "./services/inactive-accounts.js";
 export { createSensitiveMessageStore } from "./services/sensitive-messages.js";
 export type { SensitiveMessageStore } from "./services/sensitive-messages.js";

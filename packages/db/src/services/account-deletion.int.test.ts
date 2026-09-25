@@ -64,14 +64,21 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("account deletion (db, V1-44)", ()
   };
 
   describe("getDeletionBlockers", () => {
-    it("a balance above the fees of a withdrawal blocks, dust does not", async () => {
+    it("funds do not block since 25/09/2026: the summary says what goes to the treasury", async () => {
       const user = await createTestUser(prisma);
-      const main = await wallet(user.id, "Main", MAIN, 2_500_000_000n);
+      await wallet(user.id, "Main", MAIN, 2_500_000_000n);
       await wallet(user.id, "Test", TEST, FEE_BUDGET);
 
-      expect(await service().getDeletionBlockers(user.id)).toEqual([
-        { kind: "WALLET_FUNDS", walletId: main.id, name: "Main", lamports: 2_500_000_000n },
-      ]);
+      expect(await service().getDeletionBlockers(user.id)).toEqual([]);
+      // Dust under the fees of a transfer stays where it is: it is lost with the key.
+      const summary = await service().getPurgeSummary(user.telegramId);
+      expect(summary?.wallets).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "Main", lamports: 2_500_000_000n }),
+          expect.objectContaining({ name: "Test", lamports: FEE_BUDGET }),
+        ]),
+      );
+      expect(summary).toMatchObject({ toTreasuryLamports: 2_500_000_000n, blockers: [] });
     });
 
     it("an RPC failure blocks: never a purge without the balances", async () => {
@@ -144,6 +151,7 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("account deletion (db, V1-44)", ()
         user: { id: user.id },
         plan: { kind: "NONE" },
         wallets: [{ name: "Main", publicKey: MAIN, lamports: 1_000n }],
+        toTreasuryLamports: 0n,
         invoices: [],
         blockers: [],
       });

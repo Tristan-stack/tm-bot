@@ -13,12 +13,14 @@ import {
   planLabel,
   renderScreen,
   shortAddress,
+  sweptTransferLines,
   tree,
 } from "@launchbot/shared";
-import type { OptionalLine, Screen, Ui } from "@launchbot/shared";
+import type { OptionalLine, Screen, SweptTransfer, Ui } from "@launchbot/shared";
 import { ADMIN_CB, adminHeader, MENU_ROW, offerLabel } from "./common.js";
 
-// /purge (§11.3, §11.4, V1-44): the summary, blocked or not, and the result.
+// /purge (§11.3, §11.4, V1-44): the summary, blocked or not, and the result. Since the decision of
+// 25/09/2026 the SOL of the wallets goes to the treasury before the deletion instead of blocking.
 
 const texts = en.admin.purge;
 
@@ -30,11 +32,9 @@ function invoiceLine(invoice: OpenInvoice): string {
     : texts.payableInvoice(offerLabel(invoice), amount, formatDateTime(invoice.payableUntil));
 }
 
-/** The written reason of each blocker (§4.5): the funds flag is the text of the context. */
+/** The written reason of each blocker (§4.5). */
 function blockerFlag(blocker: DeletionBlocker): string {
   switch (blocker.kind) {
-    case "WALLET_FUNDS":
-      return texts.funds(escapeHtml(blocker.name), formatSolAmount(blocker.lamports));
     case "PENDING_INVOICE":
       return blocker.status === "PENDING"
         ? texts.pending(offerLabel(blocker))
@@ -46,17 +46,19 @@ function blockerFlag(blocker: DeletionBlocker): string {
 
 /**
  * The summary (§11.4): the account, its wallets with a balance read now, the invoices that
- * could still be paid, then what blocks the purge. Blocked: Cancel only.
+ * could still be paid, then what blocks the purge and what goes to the treasury. Blocked:
+ * Cancel only.
  */
 export function buildPurgeSummaryScreen(
   ui: Ui,
   model: { summary: PurgeSummary; now: Date },
 ): Screen {
-  const { user, plan, wallets, invoices, blockers } = model.summary;
+  const { user, plan, wallets, toTreasuryLamports, invoices, blockers } = model.summary;
   const label = planLabel(plan, model.now);
   const flags: OptionalLine[] = [
     ...blockers.map(blockerFlag),
-    // Not a blocker (§11.4): lost with the account, never refunded.
+    // Not blockers: the SOL goes to the treasury, the plan is lost, never refunded (§11.4).
+    toTreasuryLamports > 0n && texts.toTreasury(formatSolAmount(toTreasuryLamports)),
     plan.kind === "ACTIVE" && texts.subscriptionLost,
   ];
   const cancel = cbBtn(en.btn.cancel, ADMIN_CB.purgeCancel);
@@ -91,16 +93,37 @@ export function buildPurgeSummaryScreen(
   });
 }
 
-/** Done: what went with the account, what stays detached for the books (§13). */
+/** The transfers of the purge, under what the screen says: nothing when none was needed. */
+const transfersBlock = (ui: Ui, transfers: SweptTransfer[]): string[] =>
+  transfers.length === 0 ? [] : [sweptTransferLines(ui, transfers).join("\n")];
+
+/**
+ * Done: what went with the account, what stays detached for the books (§13), and the SOL moved
+ * to the treasury before, for a refund by hand.
+ */
 export function buildPurgeResultScreen(
   ui: Ui,
-  model: { counts: DeletionCounts; notified: boolean },
+  model: { counts: DeletionCounts; notified: boolean; transfers: SweptTransfer[] },
 ): Screen {
+  const counts = [texts.deleted(model.counts), texts.detached(model.counts)].join("\n");
   return renderScreen({
     header: adminHeader(ui, "purge"),
     description: texts.done,
-    info: [texts.deleted(model.counts), texts.detached(model.counts)],
+    info: [counts, ...transfersBlock(ui, model.transfers)].join("\n\n"),
     flags: [!model.notified && en.admin.common.notNotified],
+    keyboard: [MENU_ROW],
+  });
+}
+
+/**
+ * A transfer to the treasury failed or is still unconfirmed: nothing was deleted, every key is
+ * kept. The transfers already made are listed; a new /purge moves only what is left.
+ */
+export function buildPurgeStoppedScreen(ui: Ui, transfers: SweptTransfer[]): Screen {
+  return renderScreen({
+    header: adminHeader(ui, "purge"),
+    description: texts.stopped,
+    info: transfersBlock(ui, transfers),
     keyboard: [MENU_ROW],
   });
 }

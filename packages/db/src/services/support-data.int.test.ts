@@ -146,26 +146,29 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("support data (db, V1-43)", () => 
     expect(data).toMatchObject({ drafts: 1, simulations: 1, aiToday: 1 });
   });
 
-  it("finds the transfers of an account deleted for inactivity by its Telegram id", async () => {
-    await prisma.withdrawal.create({
-      data: {
-        fromAddress: MAIN,
-        toAddress: TEST,
-        lamports: 2_499_985_000n,
-        status: "CONFIRMED",
-        kind: "INACTIVITY_SWEEP",
-        userTelegramId: 5_550_000n,
-      },
-    });
+  it("finds the transfers of a deleted account by its Telegram id, inactivity and purge", async () => {
+    const sweep = (kind: "INACTIVITY_SWEEP" | "PURGE_SWEEP" | "USER", minutesAgo: number) =>
+      prisma.withdrawal.create({
+        data: {
+          fromAddress: MAIN,
+          toAddress: TEST,
+          lamports: 2_499_985_000n,
+          status: "CONFIRMED",
+          kind,
+          userTelegramId: 5_550_000n,
+          createdAt: at(-minutesAgo * MINUTE_MS),
+        },
+      });
+    await sweep("INACTIVITY_SWEEP", 20);
+    await sweep("PURGE_SWEEP", 10);
+    // Only the transfers before a deletion carry the Telegram id; a withdrawal never does.
+    await sweep("USER", 5);
 
-    expect(await service().inactivitySweeps(5_550_000n)).toEqual([
-      expect.objectContaining({
-        walletName: null,
-        lamports: 2_499_985_000n,
-        kind: "INACTIVITY_SWEEP",
-      }),
+    expect(await service().treasurySweeps(5_550_000n)).toEqual([
+      expect.objectContaining({ walletName: null, kind: "PURGE_SWEEP" }),
+      expect.objectContaining({ walletName: null, kind: "INACTIVITY_SWEEP" }),
     ]);
-    expect(await service().inactivitySweeps(5_550_001n)).toEqual([]);
+    expect(await service().treasurySweeps(5_550_001n)).toEqual([]);
   });
 
   it("gives Reveal keys the encrypted columns it decrypts", async () => {

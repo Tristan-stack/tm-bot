@@ -1356,24 +1356,39 @@ explicites, aucune colonne de clé, sauf `walletSecrets`, réservé à Reveal ke
 ### /purge (V1-44)
 
 `createPurge` ([purge.ts](apps/bot/src/features/admin/purge.ts)), écrans dans
-[purge-screens.ts](apps/bot/src/features/admin/purge-screens.ts), service
-`createAccountDeletionService` ([account-deletion.ts](packages/db/src/services/account-deletion.ts),
-importable par le worker).
+[purge-screens.ts](apps/bot/src/features/admin/purge-screens.ts), services
+`createAccountDeletionService` ([account-deletion.ts](packages/db/src/services/account-deletion.ts))
+et `createAccountSweeper` ([account-sweep.ts](packages/db/src/services/account-sweep.ts)), partagés
+avec le worker.
 
-- Résumé : compte, wallets avec leur solde lu **sans cache**, factures encore payables, puis les
-  blocages : `WALLET_FUNDS` (solde au-dessus des frais d'un retrait, seuil de V1-11 ; la poussière
-  ne bloque pas), `PENDING_INVOICE` (PENDING, ou terminée dans ses 24 h, proposition),
-  `BALANCES_UNAVAILABLE` (RPC en erreur). Abonnement actif : non bloquant, « will be lost ».
-  Bloqué → Cancel seul ; sinon `[🗑 Confirm purge][❌ Cancel]` (`adm:prg:ok:<telegramId>`, rien en
-  session).
-- **Confirm purge** : tout est relu ; blocage apparu → alerte + résumé à jour, rien n'est supprimé.
-  Sinon « Your data has been deleted. » à l'utilisateur (bot bloqué → on continue, ligne ℹ️), puis
+**Décision du 25/09/2026** : des SOL sur un wallet ne bloquent plus la purge. Ils partent vers
+`TREASURY_WALLET` avant la suppression, comme pour un compte inactif (V1-45), chaque transfert tracé
+en `Withdrawal` de type `PURGE_SWEEP` avec `userTelegramId` (migration `purge_sweep`), pour un
+remboursement à la main.
+
+- Résumé : compte, wallets avec leur solde lu **sans cache**, factures encore payables, la ligne
+  « ℹ️ 2.500 SOL will be moved to the treasury before the deletion. » (wallets au-dessus des frais
+  d'un transfert, seuil de V1-11 ; la poussière reste et se perd avec la clé), puis les blocages :
+  `PENDING_INVOICE` (PENDING, ou terminée dans ses 24 h, proposition) et `BALANCES_UNAVAILABLE`
+  (RPC en erreur : impossible de dire ce qui part). Abonnement actif : non bloquant, « will be
+  lost ». Bloqué → Cancel seul ; sinon `[🗑 Confirm purge][❌ Cancel]` (`adm:prg:ok:<telegramId>`,
+  rien en session).
+- **Confirm purge** : tout est relu ; blocage apparu → alerte + résumé à jour, rien n'est bougé ni
+  supprimé. Sinon le clic est répondu tout de suite (les transferts prennent quelques secondes
+  chacun, le bot traite les updates une à une pendant ce temps), l'écran dit « ⏳ Moving the SOL to
+  the treasury… », puis `sweepAccount(user, { kind: "PURGE_SWEEP" })`. Un transfert en échec, resté
+  en vol ou des SOL arrivés entre-temps → « ❌ The SOL could not all be moved to the treasury.
+  Nothing was deleted. », les transferts déjà faits listés, toutes les clés gardées : un nouveau
+  /purge ne bouge que ce qui reste. Sinon « Your data has been deleted. » à l'utilisateur (bot
+  bloqué → on continue, ligne ℹ️), puis
   `deleteUserData` : une transaction, verrou du User (`lockUserRow`, le même que les activations et
   /grant), `Simulation`, `TokenDraft`, `AiGeneration` et `Subscription` supprimés, `Withdrawal` et
   `Payment` détachés (`userId` null, `userTelegramId` gardé), `Wallet` supprimés (clés chiffrées et
-  seeds avec eux), sessions du chat (`sessionKeysOf`), puis le `User`. Compteurs à l'écran et dans
-  le log `purge.done`, cache des soldes invalidé.
+  seeds avec eux), sessions du chat (`sessionKeysOf`), puis le `User`. Compteurs et transferts
+  vers la trésorerie (liens explorer) à l'écran, log `purge.done`, cache des soldes invalidé.
   `onlyIfLastActiveBefore` → `SKIPPED_ACTIVE` pour V1-45.
+- `/getall <ID>` d'un compte supprimé liste ses transferts vers la trésorerie sous « Account
+  deleted. Transfers to treasury: », chacun marqué « Inactivity sweep » ou « Purge sweep ».
 
 ## Conservation des données
 
@@ -1381,24 +1396,27 @@ importable par le worker).
 
 Deux crons du worker ([jobs/retention.ts](apps/worker/src/jobs/retention.ts)), services dans
 [inactive-accounts.ts](packages/db/src/services/inactive-accounts.ts) et
-[data-cleanup.ts](packages/db/src/services/data-cleanup.ts).
+[data-cleanup.ts](packages/db/src/services/data-cleanup.ts). Les transferts vers la trésorerie
+passent par [account-sweep.ts](packages/db/src/services/account-sweep.ts), que /purge (V1-44)
+utilise aussi.
 
 - **`accounts.delete-inactive`**, toutes les 15 min (`cronEvery(INACTIVITY_CHECK_INTERVAL_MS)`, qui
-  refuse le démarrage si l'intervalle ne divise pas l'heure) : d'abord les transferts
-  `INACTIVITY_SWEEP` restés PENDING, relus sur la chaîne (`settleTransfer`) ; puis les comptes sans
-  activité depuis **24 h** (`INACTIVITY_DELETE_MS` dans `constants.ts`, 48 h dans la décision du
-  16/09/2026 ; `inactivityCutoff`, fixé au début du passage), admins exclus (en SQL et
+  refuse le démarrage si l'intervalle ne divise pas l'heure) : d'abord les transferts vers la
+  trésorerie restés PENDING, `INACTIVITY_SWEEP` comme `PURGE_SWEEP` (un /purge arrêté sur un
+  transfert en vol), relus sur la chaîne (`resolvePendingSweeps`, `settleTransfer`) ; puis les
+  comptes sans activité depuis **24 h** (`INACTIVITY_DELETE_MS` dans `constants.ts`, 48 h dans la
+  décision du 16/09/2026 ; `inactivityCutoff`, fixé au début du passage), admins exclus (en SQL et
   revérifié par `isInactiveCandidate`), par pages de 100 sur un curseur `(lastActiveAt, id)`, un
-  try/catch par compte. Pour chaque compte : `lastActiveAt` relu ; une ligne PENDING d'un de ses
-  wallets est relue d'abord (compte gardé si elle peut encore passer) ; soldes lus sans cache ;
-  chaque wallet au-dessus des frais d'un transfert part **en entier** vers `TREASURY_WALLET`
-  (`sendRecorded`, ligne `Withdrawal` `INACTIVITY_SWEEP` avec `userTelegramId`, `lastActiveAt` relu
-  avant chaque transfert) ; la poussière reste et se perd avec la clé. Un échec (lecture, devis,
-  transfert, issue inconnue) garde le compte pour le passage suivant : aucune clé n'est effacée
-  tant qu'il reste des fonds transférables. Soldes relus si un transfert est parti (sinon la lecture
-  du début sert), puis `deleteUserData(userId, { onlyIfLastActiveBefore })`. Aucun message à
-  l'utilisateur ; s'il est revenu après le départ de ses SOL, alerte `⚠️ MANUAL REFUND` aux admins
-  (une fois).
+  try/catch par compte. Pour chaque compte : `lastActiveAt` relu ; une ligne PENDING partie d'un de
+  ses wallets (même adresse) est relue d'abord (compte gardé si elle peut encore passer) ; soldes
+  lus sans cache ; chaque wallet au-dessus des frais d'un transfert part **en entier** vers
+  `TREASURY_WALLET` (`sendRecorded`, ligne `Withdrawal` `INACTIVITY_SWEEP` avec `userTelegramId`,
+  `lastActiveAt` relu avant chaque transfert) ; la poussière reste et se perd avec la clé. Un échec
+  (lecture, devis, transfert, issue inconnue) garde le compte pour le passage suivant : aucune clé
+  n'est effacée tant qu'il reste des fonds transférables. Soldes relus si un transfert est parti
+  (sinon la lecture du début sert), puis `deleteUserData(userId, { onlyIfLastActiveBefore })`.
+  Aucun message à l'utilisateur ; s'il est revenu après le départ de ses SOL, alerte
+  `⚠️ MANUAL REFUND` aux admins (une fois).
 - **Facture encore payable** : une facture reste payable 30 min + 24 h après sa création (§8.3),
   plus longtemps que le délai d'inactivité. Le compte peut donc partir avant : un paiement arrivé
   ensuite n'active rien (`ORPHAN_PAYMENT`, facture détachée), `deposits.watch` transfère le dépôt à
@@ -1851,4 +1869,5 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 25/09/2026 | **Les messages de clés de /getall sont supprimés par un balayeur du bot, sur une table** (V1-43, migration `sensitive_message`) : `SensitiveMessage` (chat, message, échéance) écrit juste après chaque envoi, relu au démarrage puis toutes les 5 s, donc une suppression survit à un redémarrage. `runEvery` passe du worker à `@launchbot/shared/server` pour servir aux deux. `protect_content` reste désactivé : sur certains clients il bloque aussi la copie du texte.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 25/09/2026 | **Un seul service de suppression de compte, dans `@launchbot/db`** (V1-44) : `/purge` l'appelle après ses blocages, le worker (V1-45) après avoir vidé les wallets vers la trésorerie, avec `onlyIfLastActiveBefore`. Paiements et retraits restent, détachés ; les sessions grammY du chat partent avec le compte (`sessionKeysOf`, préfixe `conversation-` désormais défini dans `@launchbot/db`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 25/09/2026 | **Les transferts d'un compte inactif sont des retraits `INACTIVITY_SWEEP`** (V1-45), enregistrés par `sendRecorded` comme ceux de la trésorerie : ligne avant la signature, signature avant la confirmation, issue inconnue relue sur la chaîne avant tout nouvel essai, `userTelegramId` gardé pour un remboursement. Files en politique `exclusive` (déjà celle du worker) plutôt que `stately` : un passage à la fois, lancement à la main compris.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 25/09/2026 | **/purge transfère les SOL à la trésorerie au lieu de bloquer** (Tristan, V1-44) : les wallets au-dessus des frais d'un transfert partent vers `TREASURY_WALLET` avant la suppression, comme pour un compte inactif ; un seul mécanisme, `createAccountSweeper` (`account-sweep.ts`), sert aux deux, avec une relecture de l'activité pour l'inactivité seulement. Les transferts sont des `Withdrawal` de type `PURGE_SWEEP` (migration `purge_sweep`) avec l'ID Telegram. Une facture encore payable et des soldes illisibles bloquent toujours ; un transfert raté arrête la purge sans rien supprimer.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 25/09/2026 | **Un compte est supprimé après 24 h sans activité, et non plus 48 h** (Tristan, `INACTIVITY_DELETE_MS`) : ses SOL partent vers la trésorerie, puis le compte est supprimé, sans avertissement ; les admins restent exemptés. Le contrôle tourne toutes les 15 min, donc un compte part entre 24 h et 24 h 15 après sa dernière activité. Une facture restant payable 24 h 30 après sa création, un paiement tardif peut désormais arriver après la suppression : il n'active rien, le dépôt part à la trésorerie avec l'alerte de remboursement manuel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

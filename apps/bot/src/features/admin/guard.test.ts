@@ -25,15 +25,7 @@ function harness(admin: boolean) {
   const findUser = vi.fn<SupportDataService["findUser"]>(() => Promise.resolve(null));
   const h = botHarness({
     env: { ADMIN_TELEGRAM_IDS: admin ? [ADMIN_ID] : [] },
-    admin: {
-      support: {
-        findUser,
-        findUserById: () => Promise.resolve(null),
-        loadUserSupportData: () => Promise.reject(new Error("unused")),
-        inactivitySweeps: () => Promise.resolve([]),
-        walletSecrets: () => Promise.resolve([]),
-      },
-    },
+    admin: { support: { findUser } },
   });
   return { ...h, findUser };
 }

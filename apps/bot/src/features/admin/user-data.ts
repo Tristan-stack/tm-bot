@@ -8,7 +8,7 @@ import type { AdminKit } from "./common.js";
 import {
   buildGetAllMessages,
   buildWhoisScreen,
-  inactivitySweepLines,
+  treasurySweepLines,
   revealKeyboard,
 } from "./user-data-screens.js";
 
@@ -16,7 +16,7 @@ const log = createLogger("bot:admin:user-data");
 
 export type UserDataDeps = {
   kit: AdminKit;
-  support: Pick<SupportDataService, "loadUserSupportData" | "inactivitySweeps">;
+  support: Pick<SupportDataService, "loadUserSupportData" | "treasurySweeps">;
   /** The balances of the card (cached 30 s) and the SOL price. */
   data: Pick<DataServices, "getUserBalances" | "getSolUsdPrice">;
   now: () => Date;
@@ -55,8 +55,8 @@ export function createUserData(deps: UserDataDeps): {
       delete ctx.session.getallReveal;
       const user = await kit.resolveUserRef(ref);
       if (user === null) {
-        // An account deleted for inactivity: its transfers to the treasury, for a refund.
-        const lines = inactivitySweepLines(ui, await support.inactivitySweeps(ref.telegramId));
+        // A deleted account (inactivity or /purge): its transfers to the treasury, for a refund.
+        const lines = treasurySweepLines(ui, await support.treasurySweeps(ref.telegramId));
         return kit.reply(ctx, renderAdminUserNotFound(ui, "getall", query, { lines }));
       }
 

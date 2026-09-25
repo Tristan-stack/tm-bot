@@ -17,6 +17,7 @@ import type {
   WithdrawalKind,
   WithdrawalStatus,
 } from "../generated/prisma/client.js";
+import { ACCOUNT_SWEEP_KINDS } from "./account-sweep.js";
 import { createAiQuotaStore } from "./ai-generations.js";
 import { WALLET_SUMMARY_SELECT } from "./balances.js";
 import { getPlanStatus } from "./subscriptions.js";
@@ -80,7 +81,7 @@ export type UserSupportData = {
   paymentCount: number;
   /** Oldest first, as the wallet list of the user (§9.1). */
   wallets: SupportWallet[];
-  /** The withdrawals of the user and the sweeps of an inactive account, latest first. */
+  /** The withdrawals of the user and the sweeps of its account to the treasury, latest first. */
   withdrawals: SupportWithdrawal[];
   drafts: number;
   simulations: number;
@@ -95,8 +96,11 @@ export type SupportDataService = {
   findUser: (telegramId: bigint) => Promise<User | null>;
   findUserById: (userId: string) => Promise<User | null>;
   loadUserSupportData: (user: User, now: Date) => Promise<UserSupportData>;
-  /** The transfers of an account deleted for inactivity (V1-45), found by its Telegram id. */
-  inactivitySweeps: (telegramId: bigint) => Promise<SupportWithdrawal[]>;
+  /**
+   * The transfers to the treasury of a deleted account — for inactivity (V1-45) or by /purge
+   * (V1-44) —, found by its Telegram id.
+   */
+  treasurySweeps: (telegramId: bigint) => Promise<SupportWithdrawal[]>;
   /** The encrypted keys of the wallets of a user, oldest first: Reveal keys of /getall only. */
   walletSecrets: (userId: string) => Promise<WalletSecretsData[]>;
 };
@@ -174,7 +178,7 @@ export function createSupportDataService(deps: { prisma: PrismaClient }): Suppor
           }),
           // Not the transfers of the deposit addresses (V1-33): they are not the user's.
           prisma.withdrawal.findMany({
-            where: { userId, kind: { in: ["USER", "INACTIVITY_SWEEP"] } },
+            where: { userId, kind: { in: ["USER", ...ACCOUNT_SWEEP_KINDS] } },
             orderBy: { createdAt: "desc" },
             take: GETALL_WITHDRAWALS,
             select: WITHDRAWAL_SELECT,
@@ -212,10 +216,10 @@ export function createSupportDataService(deps: { prisma: PrismaClient }): Suppor
       };
     },
 
-    inactivitySweeps: async (telegramId) =>
+    treasurySweeps: async (telegramId) =>
       (
         await prisma.withdrawal.findMany({
-          where: { kind: "INACTIVITY_SWEEP", userTelegramId: telegramId },
+          where: { kind: { in: ACCOUNT_SWEEP_KINDS }, userTelegramId: telegramId },
           orderBy: { createdAt: "desc" },
           take: GETALL_WITHDRAWALS,
           select: WITHDRAWAL_SELECT,

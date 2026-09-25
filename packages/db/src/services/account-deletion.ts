@@ -12,7 +12,8 @@ import { getPlanStatus } from "./subscriptions.js";
 import { findUserByTelegramId, lockUserRow, sessionKeysOf } from "./user.js";
 
 // The deletion of an account (§11.3, V1-44): /purge after its checks, and the inactive accounts
-// of V1-45 once their SOL is in the treasury. No Telegram here, no message: the callers decide.
+// of V1-45, both once the SOL of the wallets is in the treasury (account-sweep.ts). No Telegram
+// here, no message: the callers decide.
 
 const log = createLogger("db:account-deletion");
 
@@ -28,9 +29,11 @@ export type OpenInvoice = {
   payableUntil: Date;
 };
 
-/** Why /purge refuses (§11.3, §11.4): erasing the keys would lose funds, a payment could land. */
+/**
+ * Why /purge refuses (§11.3, §11.4): a payment could still land. Funds do not block since the
+ * decision of 25/09/2026: they go to the treasury before the deletion.
+ */
 export type DeletionBlocker =
-  | { kind: "WALLET_FUNDS"; walletId: string; name: string; lamports: bigint }
   | ({ kind: "PENDING_INVOICE" } & OpenInvoice)
   /** The RPC did not answer: a purge is never decided without the balances. */
   | { kind: "BALANCES_UNAVAILABLE" };
@@ -49,6 +52,8 @@ export type PurgeSummary = {
   user: User;
   plan: PlanStatus;
   wallets: PurgeWallet[];
+  /** What the purge moves to the treasury first: the wallets above the fees of a transfer. */
+  toTreasuryLamports: bigint;
   invoices: OpenInvoice[];
   blockers: DeletionBlocker[];
 };
@@ -86,8 +91,8 @@ export type AccountDeletionService = {
   getPurgeSummary: (telegramId: bigint) => Promise<PurgeSummary | null>;
   /**
    * The account and all its data, in one transaction under the lock of the user; the payments
-   * and the withdrawals stay, detached (§13). Checks no blocker: the caller does, or has moved
-   * the funds first (V1-45, which passes `onlyIfLastActiveBefore`).
+   * and the withdrawals stay, detached (§13). Checks no blocker and moves no fund: the caller
+   * has checked and moved the SOL first (V1-44, V1-45, which passes `onlyIfLastActiveBefore`).
    */
   deleteUserData: (
     userId: string,
@@ -131,12 +136,17 @@ export function createAccountDeletionService(deps: AccountDeletionDeps): Account
     });
   }
 
-  /** The wallets with a balance read now, and the blockers they make. */
-  async function readWallets(
-    userId: string,
-  ): Promise<{ wallets: PurgeWallet[]; blockers: DeletionBlocker[] }> {
+  /**
+   * The wallets with a balance read now. Unreadable balances block: the purge could not say
+   * what goes to the treasury.
+   */
+  async function readWallets(userId: string): Promise<{
+    wallets: PurgeWallet[];
+    toTreasuryLamports: bigint;
+    blockers: DeletionBlocker[];
+  }> {
     const rows = await prisma.wallet.findMany({ where: { userId }, ...WALLETS });
-    if (rows.length === 0) return { wallets: [], blockers: [] };
+    if (rows.length === 0) return { wallets: [], toTreasuryLamports: 0n, blockers: [] };
     let balances: Map<string, bigint>;
     try {
       balances = await readLamports(rows.map((row) => row.publicKey));
@@ -144,24 +154,18 @@ export function createAccountDeletionService(deps: AccountDeletionDeps): Account
       log.warn({ err: error, userId }, "purge.balances_unavailable");
       return {
         wallets: rows.map((row) => ({ ...row, lamports: null })),
+        toTreasuryLamports: 0n,
         blockers: [{ kind: "BALANCES_UNAVAILABLE" }],
       };
     }
     const wallets = rows.map((row) => ({ ...row, lamports: balances.get(row.publicKey) ?? 0n }));
-    // A balance under the fees of a withdrawal cannot leave the wallet: it does not block (§9.3).
-    const blockers = wallets.flatMap((wallet): DeletionBlocker[] =>
-      isBalanceWithdrawable(wallet.lamports, feeBudgetLamports)
-        ? [
-            {
-              kind: "WALLET_FUNDS",
-              walletId: wallet.id,
-              name: wallet.name,
-              lamports: wallet.lamports,
-            },
-          ]
-        : [],
+    // A balance under the fees of a transfer cannot leave the wallet (§9.3): lost with the key.
+    const toTreasuryLamports = wallets.reduce(
+      (total, { lamports }) =>
+        isBalanceWithdrawable(lamports, feeBudgetLamports) ? total + lamports : total,
+      0n,
     );
-    return { wallets, blockers };
+    return { wallets, toTreasuryLamports, blockers: [] };
   }
 
   async function blockersAndSummary(userId: string, at: Date) {
@@ -170,7 +174,7 @@ export function createAccountDeletionService(deps: AccountDeletionDeps): Account
       ...read.blockers,
       ...invoices.map((invoice): DeletionBlocker => ({ kind: "PENDING_INVOICE", ...invoice })),
     ];
-    return { wallets: read.wallets, invoices, blockers };
+    return { ...read, invoices, blockers };
   }
 
   return {
