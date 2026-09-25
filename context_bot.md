@@ -1041,14 +1041,14 @@ Durées de conservation (propositions de départ, à faire valider par un jurist
 | Wallets (clés et seed phrases chiffrées) | Tant que le wallet existe |
 | Brouillons de token et simulations | 90 jours |
 | Paiements, retraits et ventes | 10 ans s'il s'agit de vrais paiements (obligation comptable), détachés du compte après une suppression. En devnet, supprimés avec le compte. |
-| Transferts vers la trésorerie des comptes inactifs (montant, wallet, ID Telegram) | Gardés après la suppression du compte, pour permettre un remboursement |
+| Transferts vers la trésorerie des comptes inactifs et des purges (montant, wallet, ID Telegram) | Gardés après la suppression du compte, pour permettre un remboursement |
 | Clés des wallets de dépôt | Supprimées après les 30 jours de surveillance |
 | Logs techniques | 6 mois |
 | Avis publiés | Jusqu'à ce que l'auteur demande leur retrait |
 
 Comptes inactifs : une activité, c'est toute interaction avec le bot (message ou clic). Après 24 h sans activité (décision du 25/09/2026 ; 48 h auparavant), le worker supprime le compte, même s'il a un abonnement actif, une facture en attente ou des fonds. Le worker vérifie toutes les 15 minutes : un compte part donc entre 24 h et 24 h 15 après sa dernière activité. Seuls les comptes admin (`ADMIN_TELEGRAM_IDS`) sont exemptés. Aucun avertissement n'est envoyé. Avant la suppression, le worker transfère le SOL de chaque wallet vers `TREASURY_WALLET` (en V2, les tokens d'abord, puis le SOL). Chaque transfert est enregistré avec l'ID Telegram, pour qu'un admin puisse rembourser l'utilisateur à la main s'il réclame. Si un transfert échoue, le compte est gardé et retraité au passage suivant.
 
-Suppression à la demande : pas de bouton dans le bot (décision). L'utilisateur écrit au support depuis son compte Telegram et retire d'abord ses SOL. Un admin lance ensuite `/purge` (voir 11.4), et l'utilisateur reçoit une confirmation dans le délai d'un mois prévu par le RGPD. Le bot est public : la Privacy Policy doit indiquer ce contact et ce délai. Effacer les clés rend les fonds irrécupérables, c'est pourquoi la suppression est bloquée tant qu'il reste des fonds.
+Suppression à la demande : pas de bouton dans le bot (décision). L'utilisateur écrit au support depuis son compte Telegram ; il peut retirer ses SOL avant. Un admin lance ensuite `/purge` (voir 11.4), et l'utilisateur reçoit une confirmation dans le délai d'un mois prévu par le RGPD. Le bot est public : la Privacy Policy doit indiquer ce contact et ce délai. Effacer les clés rend les fonds irrécupérables : depuis le 25/09/2026, les SOL restants ne bloquent plus la suppression, ils sont d'abord transférés à la trésorerie, comme pour un compte inactif, et chaque transfert est enregistré avec l'ID Telegram pour un remboursement à la main. Une facture encore payable bloque toujours la suppression.
 
 ### 11.4 Commandes admin
 
@@ -1074,8 +1074,8 @@ Réservées aux ID listés dans `ADMIN_TELEGRAM_IDS`.
 | `/getall` | Fiche | Texte sans secret : abonnement actif, historique d'achats, wallets (nom, adresse, source, solde), retraits récents. « 🔑 Reveal keys » et « ❌ Cancel » : la fiche sert d'étape de confirmation. |
 | `/getall` | Clés | Après « 🔑 Reveal keys », un nouveau message donne pour chaque wallet son nom, son adresse, sa clé privée (base58) et sa seed phrase, ou « Seed phrase: none (imported with a private key) ». Ce message est supprimé automatiquement après 60 s. |
 | `/whois` | Fiche | Texte seul, sans bouton : username, ID, offre, expiration, nombre de wallets et 5 derniers paiements |
-| `/purge` | Résumé | Utilisateur, offre, wallets avec leur solde, factures en attente. En cas de blocage, flag écrit (par exemple « ⚠️ Main still holds 2.500 SOL. Ask the user to withdraw first. ») et seulement « ❌ Cancel ». Sinon « 🗑 Confirm purge » et « ❌ Cancel ». |
-| `/purge` | Résultat | « ✅ User data deleted. Payment records kept for accounting, detached from the account. » Juste avant la suppression, l'utilisateur reçoit « Your data has been deleted. » |
+| `/purge` | Résumé | Utilisateur, offre, wallets avec leur solde, factures en attente. S'il reste des SOL : « ℹ️ 2.500 SOL will be moved to the treasury before the deletion. » (décision du 25/09/2026, les fonds ne bloquent plus). En cas de blocage (facture encore payable, soldes illisibles), flag écrit et seulement « ❌ Cancel ». Sinon « 🗑 Confirm purge » et « ❌ Cancel ». |
+| `/purge` | Résultat | Les SOL partent d'abord vers la trésorerie ; si un transfert échoue, rien n'est supprimé. Puis « ✅ User data deleted. Payment records kept for accounting, detached from the account. », avec les transferts faits. Juste avant la suppression, l'utilisateur reçoit « Your data has been deleted. » |
 | Toutes | Erreur | Commande mal formée : rappel de la syntaxe avec un exemple. Utilisateur inconnu : « ❌ User not found. » |
 
 `/getall` est accessible à tous les admins de `ADMIN_TELEGRAM_IDS`. Aucun journal d'audit n'est tenu en base pour les clés révélées. Aucun bouton du bot ne permet à l'utilisateur d'exporter lui-même ses clés.
@@ -1147,7 +1147,7 @@ IMAGE_API_KEY=
 | Payment | id, userId, plan, duration, priceUsd, solUsdRate, expectedLamports, receivedLamports, depositAddress, encSecretKey, iv, authTag, status (PENDING, PAID, EXPIRED, CANCELED, SWEPT), expiresAt, paidAt, sweepSignature, createdAt |
 | AiGeneration | id, userId, kind (TEXT, LOGO), createdAt |
 | Wallet | id, userId, name (unique par utilisateur), publicKey (unique par utilisateur), source (CREATED, IMPORTED_KEY, IMPORTED_SEED), derivationPath, encSecretKey, iv, authTag, encMnemonic, mnemonicIv, mnemonicAuthTag (seed phrase chiffrée, vide pour un import par clé privée), createdAt |
-| Withdrawal | id, userId, walletId (nullable), fromAddress, toAddress, lamports, feeLamports, signature, status (PENDING, CONFIRMED, FAILED), error, kind (USER, INACTIVITY_SWEEP), userTelegramId (transferts des comptes inactifs, gardé après la suppression), createdAt |
+| Withdrawal | id, userId, walletId (nullable), fromAddress, toAddress, lamports, feeLamports, signature, status (PENDING, CONFIRMED, FAILED), error, kind (USER, INACTIVITY_SWEEP, PURGE_SWEEP), userTelegramId (transferts des comptes inactifs et des purges, gardé après la suppression), createdAt |
 | TokenDraft | id, userId, name, symbol, description, imageFileId, website, twitter, telegram, createdAt |
 | Simulation | id, userId, tokenDraftId, devBuySol, bundleSol (0 avant le 25/09/2026), seed, params (JSON), createdAt |
 | Launch (V2) | id, userId, walletId, tokenDraftId, devBuySol, bundleSol (transaction du bundle à modéliser en V2), devTokens, mint, txSignature, status (PENDING, CONFIRMED, FAILED), error, channelMessageId, createdAt |
@@ -1202,7 +1202,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 | Admin | `/announce` ne publie rien sans aperçu et confirmation. |
 | Admin | `/grant` affiche un résumé avant d'activer l'abonnement. |
 | Admin | `/getall` n'affiche la clé privée et la seed phrase qu'après « Reveal keys », et ce message est supprimé après 60 s. |
-| Admin | `/purge` reste bloqué tant que l'utilisateur a des fonds sur un wallet. |
+| Admin | `/purge` transfère d'abord les SOL des wallets à la trésorerie, puis supprime le compte ; une facture encore payable la bloque (décision du 25/09/2026). |
 | Données | Un compte inactif depuis 24 h est supprimé, même avec un abonnement actif, une facture en attente ou des fonds ; seuls les admins sont exemptés. |
 | Données | Avant la suppression d'un compte inactif, les SOL de ses wallets sont transférés à la trésorerie, et chaque transfert est enregistré avec l'ID Telegram. |
 | Données | Aucun avertissement n'est envoyé avant la suppression d'un compte inactif. |
