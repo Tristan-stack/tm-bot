@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../generated/prisma/client.js";
-import { acceptTerms, setChannelCheckedAt, touchUser } from "./user.js";
+import { setChannelCheckedAt, touchUser } from "./user.js";
 
 type UpsertArgs = {
   where: { telegramId: bigint };
@@ -73,19 +73,6 @@ function fakeUpdate() {
   );
   return { prisma: { user: { update } } as unknown as PrismaClient, update };
 }
-
-describe("acceptTerms", () => {
-  it("records the accepted version with its date", async () => {
-    const { prisma, update } = fakeUpdate();
-
-    await acceptTerms(prisma, "u1", 2, NOW);
-
-    expect(update).toHaveBeenCalledExactlyOnceWith({
-      where: { id: "u1" },
-      data: { termsVersion: 2, termsAcceptedAt: NOW },
-    });
-  });
-});
 
 describe("setChannelCheckedAt", () => {
   it("writes the date of a positive check, and null after a negative one", async () => {

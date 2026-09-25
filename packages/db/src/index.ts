@@ -76,7 +76,6 @@ export type {
   WalletQuota,
 } from "./services/subscriptions.js";
 export {
-  acceptTerms,
   CONVERSATION_KEY_PREFIX,
   findUserByTelegramId,
   setChannelCheckedAt,

@@ -434,7 +434,7 @@ describe("sensitive message guard", () => {
     ]);
   });
 
-  it("deletes it before the Terms are accepted, and records the activity", async () => {
+  it("deletes it before the channel is joined, and records the activity", async () => {
     const { bot, api, prisma } = botHarness({ user: NEW_USER });
 
     await feed(bot, textUpdate(SEED));

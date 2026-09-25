@@ -23,7 +23,6 @@ const valid: Record<string, string> = {
   PRIORITY_FEE_MAX_MICROLAMPORTS: "100000",
   ADMIN_TELEGRAM_IDS: "111, 222",
   TREASURY_WALLET: "4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf",
-  TERMS_VERSION: "1",
 };
 
 const REQUIRED_VARIABLES = [
@@ -64,7 +63,6 @@ describe("parseEnv", () => {
     expect(env.WALLET_ENCRYPTION_KEY).toHaveLength(32);
     expect(env.ADMIN_TELEGRAM_IDS).toEqual([111, 222]);
     expect(env.PRIORITY_FEE_MAX_MICROLAMPORTS).toBe(100000);
-    expect(env.TERMS_VERSION).toBe(1);
     expect(env.WEBAPP_URL).toBe("https://example.trycloudflare.com");
     expect(env.LLM_API_KEY).toBeUndefined();
     expect(env.SOL_PRICE_API_URL).toBeUndefined();
@@ -75,7 +73,6 @@ describe("parseEnv", () => {
     delete source["SOLANA_CLUSTER"];
     delete source["SOLANA_RPC_URL"];
     delete source["PRIORITY_FEE_MIN_MICROLAMPORTS"];
-    delete source["TERMS_VERSION"];
     delete source["ADMIN_TELEGRAM_IDS"];
 
     const env = parseEnv(source);
@@ -83,9 +80,14 @@ describe("parseEnv", () => {
     expect(env.SOLANA_CLUSTER).toBe("devnet");
     expect(env.SOLANA_RPC_URL).toBe("https://api.devnet.solana.com");
     expect(env.PRIORITY_FEE_MIN_MICROLAMPORTS).toBe(0);
-    expect(env.TERMS_VERSION).toBe(1);
     expect(env.ADMIN_TELEGRAM_IDS).toEqual([]);
     expect(env.LOG_LEVEL).toBe("info");
+  });
+
+  it("ignores a variable it does not read, such as TERMS_VERSION in an older .env", () => {
+    const env = parseEnv({ ...valid, TERMS_VERSION: "1" });
+
+    expect(env).not.toHaveProperty("TERMS_VERSION");
   });
 
   it.each(REQUIRED_VARIABLES)("reports %s when it is missing", (variable) => {

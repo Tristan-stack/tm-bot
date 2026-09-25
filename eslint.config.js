@@ -52,7 +52,7 @@ export default defineConfig(
     rules: restrictImports(
       [
         ["@launchbot/shared/server", "@launchbot/db", "@launchbot/solana", "@launchbot/sim-engine"],
-        "The Mini App runs in a browser and serves the legal pages only: @launchbot/shared (universal entry) is the one internal package allowed (D21).",
+        "The Mini App runs in a browser: @launchbot/shared (universal entry) is the one internal package allowed (D21).",
       ],
       [
         ["@launchbot/shared"],
@@ -67,17 +67,6 @@ export default defineConfig(
       ["@launchbot/solana"],
       "The API never talks to Solana, which is why it starts without a devnet guard. A route that needs the chain must bring the guard with it.",
     ]),
-  },
-  {
-    // The Vite configuration of the Mini App loads this file by a relative path, which only
-    // works while it imports nothing.
-    files: ["packages/shared/src/legal.ts"],
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        { selector: "ImportDeclaration", message: "legal.ts must not import anything." },
-      ],
-    },
   },
   {
     // The only function that returns a stored key in clear (V1-09, proposal): its import is

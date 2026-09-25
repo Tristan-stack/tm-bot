@@ -25,7 +25,7 @@ export type SecretConsumer<Waiting> = {
 /**
  * The one place a private key or a seed phrase may reach (§9.4, §14). It runs on private
  * messages and edited messages, before the rate limit and `accessGate`: a secret must leave the
- * chat even from a user who is over their limit or has not accepted the Terms yet, and no
+ * chat even from a user who is over their limit or has not joined the channel yet, and no
  * request log, no conversation and no other handler may see the text.
  *
  * - An import is waiting: the text is read, the message deleted **before** any validation, then

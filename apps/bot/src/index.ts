@@ -227,10 +227,10 @@ export function createBot(
   );
   // §9.4: a key or a seed phrase leaves the chat before anything else runs. It needs the
   // session (the input it answers) and it must run before the rate limit, which would drop the
-  // update without deleting it, and before the gate, which would answer it with the Terms.
+  // update without deleting it, and before the gate, which would answer with the channel screen.
   bot.use(sensitiveMessageGuard(importConsumer(walletNav)));
   bot.use(globalRateLimit);
-  // No conversation and no menu before the Terms and the channel (§4.2).
+  // No conversation and no menu before the channel is joined (§4.2).
   bot.use(access.gate);
   bot.use(
     conversations<BotContext, BotContext>({
@@ -268,7 +268,7 @@ export function createBot(
   registerAdmin(router, { ...admin, ui, guard, data, vault });
   // The message that answers an input a screen waits for: a name, an address, an amount.
   bot.use(inputs.middleware());
-  // Admin commands and `adm:*` clicks (V1-38), after the gate: an admin accepts the Terms too.
+  // Admin commands and `adm:*` clicks (V1-38), after the gate: an admin joins the channel too.
   bot.use(guard.middleware());
   bot.use(router.middleware());
 

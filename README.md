@@ -2,11 +2,12 @@
 
 Bot Telegram pour créer et simuler des launchs de memecoins Solana via pump.fun. La simulation se
 joue dans le chat : le bot édite l'image du graphique en direct, avec les boutons de vente dessous
-(décision du 24/09/2026, §6.5 du contexte). Une Mini App ne sert qu'aux pages Terms et Privacy.
+(décision du 24/09/2026, §6.5 du contexte). Pas de Terms of Service ni de Privacy Policy
+(décision du 25/09/2026, §11.2) : la Mini App reste en place, mais ne sert plus aucune page.
 Projet perso, **devnet uniquement**.
 
 - Spécification produit : [context_bot.md](context_bot.md)
-- Tickets, décisions (D1–D22) et suivi : [board Trello « Launch Bot »](https://trello.com/b/Rx4KkRAj/launch-bot)
+- Tickets, décisions (D1–D23) et suivi : [board Trello « Launch Bot »](https://trello.com/b/Rx4KkRAj/launch-bot)
 
 ## Structure
 
@@ -15,7 +16,7 @@ apps/
   bot/         grammY : menus, parcours, commandes admin
   api/         Fastify : validation initData (rejoint le process du bot) ; plus de route métier
   worker/      jobs pg-boss : paiements, transferts, rappels, comptes inactifs, nettoyage
-  webapp/      Vite + React : pages Terms et Privacy (Mini App)
+  webapp/      Vite + React : Mini App, sans page depuis le 25/09/2026
 packages/
   sim-engine/  moteur de simulation, TypeScript pur, sans réseau
   sim-render/  images de la simulation : graphique en PNG (resvg), PNL card animée sur un clip (ffmpeg)
@@ -170,8 +171,9 @@ Le `.env` de la racine est chargé quel que soit le dossier courant. Les variabl
 dans l'environnement réel priment sur le fichier. Variables optionnelles hors §12 : `LOG_LEVEL`
 (défaut `info`) et `POSTGRES_PORT` (docker-compose).
 
-`WEBAPP_URL` doit être en `https://` dès le démarrage : lancer le tunnel avant le bot. Avec une URL
-https qui ne répond pas, le bot démarre, mais les boutons Terms et Privacy n'ouvrent rien.
+`WEBAPP_URL` doit être une URL en `https://`, même si la Mini App ne sert plus aucune page : le CORS
+de l'API n'autorise que son origine. Aucun bouton du bot ne l'ouvre plus, donc une URL qui ne répond
+pas ne gêne rien.
 
 ### Logs
 
@@ -215,6 +217,10 @@ premier message, voir « Écran Support »).
 
 ### Mini App et API en local (HTTPS obligatoire)
 
+La Mini App ne sert plus aucune page depuis le retrait des Terms et de la Privacy Policy
+(25/09/2026, V1-41) : aucun tunnel n'est nécessaire pour tester le bot. Ce qui suit reste valable
+pour une page à venir.
+
 Telegram n'ouvre une Mini App qu'en HTTPS. En local, **un seul tunnel** suffit : Vite sert la Mini
 App sur le port 5173 et relaie `/api` vers l'API locale (`server.proxy`), donc la Mini App et son API
 partagent l'origine du tunnel.
@@ -239,24 +245,21 @@ aussi mais impose une page d'avertissement par IP, instable dans Telegram. Varia
 (Mini App et API), avec `API_URL` sur le second ; le CORS de l'API n'autorise que l'origine de
 `WEBAPP_URL`.
 
-Tester une page : les boutons de l'écran Terms (voir « Premier accès ») ouvrent `/terms` et
-`/privacy`. Pour une autre page, s'envoyer un bouton `web_app`, depuis le chat privé avec le bot,
-jamais depuis un canal.
+Tester une page : s'envoyer un bouton `web_app`, depuis le chat privé avec le bot, jamais depuis un
+canal.
 
 ```sh
 curl "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
   -H "content-type: application/json" \
-  -d '{"chat_id": <ton_id>, "text": "Terms", "reply_markup": {"inline_keyboard":
-       [[{"text": "Open", "web_app": {"url": "https://<tunnel>/terms"}}]]}}'
+  -d '{"chat_id": <ton_id>, "text": "Page", "reply_markup": {"inline_keyboard":
+       [[{"text": "Open", "web_app": {"url": "https://<tunnel>/<page>"}}]]}}'
 ```
 
-Les pages : `/terms` et `/privacy` (« Version N · Updated … », N = `TERMS_VERSION`), et « Page not
-found. » ailleurs. Hors de Telegram, dans un navigateur,
-elles s'affichent aussi ; seuls les appels à l'API sont refusés, faute d'`initData`.
+Aujourd'hui, toute route répond « Page not found. », dans Telegram comme dans un navigateur. Hors de
+Telegram, une page s'afficherait aussi ; seuls les appels à l'API sont refusés, faute d'`initData`.
 
-`TERMS_VERSION` et `API_URL` sont les **deux seules** variables du `.env` injectées dans le bundle
-(`define` de Vite) : changer de version impose de rebuilder la Mini App, et le build échoue si la
-version n'a pas de date dans `LEGAL_UPDATED_AT`. En production, l'hébergement statique doit renvoyer
+`API_URL` est la **seule** variable du `.env` injectée dans le bundle (`define` de Vite). En
+production, l'hébergement statique doit renvoyer
 `index.html` pour toute route (`public/_redirects` le fait sur Cloudflare Pages et Netlify ; sur
 nginx, `try_files $uri /index.html`), et ne doit envoyer ni `X-Frame-Options: DENY` ni
 `frame-ancestors` restrictif : Telegram Web affiche la Mini App dans une iframe.
@@ -305,8 +308,8 @@ Chaîne de middlewares, dans cet ordre : `privateOnly` (en groupe ou en canal le
 aucune écriture en base), `ensureAnswered`, `touchUser` (activité, qui pilote la purge à 24 h),
 sessions, **`sensitiveMessageGuard`** (V1-12), limite globale de fréquence, `access.gate` (premier
 accès), conversations, puis `/start`, la saisie attendue, la garde admin (V1-38) et le routeur de
-callbacks. Les commandes admin passent donc après la gate : un admin accepte les Terms aussi. Le garde anti-secret est **avant** la limite de fréquence et la gate :
-une clé collée doit quitter le chat même si l'utilisateur est limité ou n'a pas accepté les Terms —
+callbacks. Les commandes admin passent donc après la gate : un admin rejoint le canal aussi. Le garde anti-secret est **avant** la limite de fréquence et la gate :
+une clé collée doit quitter le chat même si l'utilisateur est limité ou n'a pas rejoint le canal —
 en échange, un update au-dessus de la limite coûte désormais un upsert `User` et une lecture de
 session.
 `ensureAnswered` **englobe** la suite : une fois les handlers passés, il ferme toute callback query
@@ -954,21 +957,22 @@ process : les caches (§4.3) vivent dedans, en mémoire.
   `getChatMemberCount`) ont un timeout de 5 s (`readTimeout()`).
 - `createTtlCache` (`@launchbot/shared`) sert aux caches à clés : single-flight, un chargement
   rejeté n'est pas mis en cache, `peek` rend une valeur expirée.
-- Rien ne relit l'environnement en douce : `buildWebAppUrl(path, env.WEBAPP_URL)` et
-  `getSolanaRpc(env.SOLANA_RPC_URL)` reçoivent leur configuration.
+- Rien ne relit l'environnement en douce : `getSolanaRpc(env.SOLANA_RPC_URL)` et
+  `createCoinGeckoProvider(env.SOL_PRICE_API_URL)` reçoivent leur configuration.
 - `usdOf(lamports, price)`, `isWalletReady` et `getWalletLimit` sont dans `@launchbot/shared`.
 
 ### Premier accès (V1-06)
 
-Aucun menu avant d'avoir accepté la version courante des Terms (écran 1) puis rejoint le canal du bot
-(écran 2). `createAccess` ([apps/bot/src/features/access/access.ts](apps/bot/src/features/access/access.ts))
+Aucun menu avant d'avoir rejoint le canal du bot : c'est le seul écran du premier accès depuis le
+retrait des Terms et de la Privacy Policy (25/09/2026, V1-41 ; il y avait avant un écran « I accept »).
+`createAccess` ([apps/bot/src/features/access/access.ts](apps/bot/src/features/access/access.ts))
 fournit tout ; les parcours s'y branchent depuis `createBot`, comme le fait l'accueil :
 
-- `gate` : à **chaque** message ou clic, `termsVersion !== TERMS_VERSION` → écran 1, puis
-  `channelCheckedAt === null` → écran 2. Seuls les boutons `acc:*` passent toujours. Aucun appel à
-  Telegram ici : `ctx.user` est déjà chargé.
+- `gate` : à **chaque** message ou clic, `channelCheckedAt === null` → écran canal. Seul le bouton
+  `acc:join:*` passe toujours ; le « I accept » d'un ancien écran Terms (`acc:terms`) reçoit le texte
+  des boutons expirés. Aucun appel à Telegram ici : `ctx.user` est déjà chargé.
 - `ensureChannelMembership(ctx, { mode, resume, display? })` : `true` si l'utilisateur est dans le
-  canal, sinon affiche l'écran 2 et renvoie `false`. `/start` l'appelle en mode `cached` (10 min,
+  canal, sinon affiche l'écran canal et renvoie `false`. `/start` l'appelle en mode `cached` (10 min,
   sans appel à Telegram tant que la dernière vérification positive est récente) ; Launch Coin (V1-35)
   l'appellera en mode `fresh` avec `resume: "launch"`, ce qui ajoute la note « Join the channel to
   launch a coin. » à l'écran.
@@ -986,11 +990,10 @@ coûte un `getChatMember`.
 Au démarrage, `checkChannelRights` vérifie que le bot est administrateur des trois canaux avec le
 droit de publier. Un défaut donne un log `error` qui nomme la variable (`CHANNEL_SUCCESS_ID`…) et
 n'arrête pas le bot : on corrige les droits dans Telegram, sans redémarrer. Si le bot n'administre pas
-le canal du bot, `getChatMember` échoue et **personne ne passe l'écran 2**.
+le canal du bot, `getChatMember` échoue et **personne ne passe l'écran canal**.
 
-Rejouer le premier accès avec son propre compte : remettre `termsVersion` et `channelCheckedAt` à
-`NULL` sur sa ligne `User` (`pnpm db:studio`), ou passer `TERMS_VERSION=2` après avoir ajouté la date
-de la version 2 dans [packages/shared/src/legal.ts](packages/shared/src/legal.ts).
+Rejouer le premier accès avec son propre compte : remettre `channelCheckedAt` à `NULL` sur sa ligne
+`User` (`pnpm db:studio`).
 
 ## Abonnement
 
@@ -1435,15 +1438,21 @@ utilise aussi.
 
 Les logs pino partent sur stdout, sans secret (redaction, `scrub`, jamais de texte de message). Leur
 conservation relève de l'hébergement : **6 mois** (collecteur réglé à 180 jours, ou logrotate avec
-`maxage 180`), la durée annoncée par la Privacy Policy (V1-41).
+`maxage 180`), la durée proposée au §11.3 du contexte.
 
 ## Mini App
 
-La Mini App (`apps/webapp`, V1-05) sert les pages Terms et Privacy, rien d'autre. L'écran de
-simulation (tickets V1-24 à V1-26 d'origine : contrôleur et horloge simulée, Lightweight Charts,
-stats, top holders, position, ventes et PNL card) a été construit, testé une fois sur téléphone le
-24/09/2026 et abandonné le jour même, sans être commité : la simulation se joue dans le chat (§6 du
-contexte, tickets V1-24 à V1-26 réécrits, décision ci-dessous). Ce qui en reste dans le dépôt, parce
+La Mini App (`apps/webapp`, V1-05) ne sert plus aucune page : elle répond « Page not found. » à
+toute route. Ses pages Terms et Privacy ont été retirées le 25/09/2026 (V1-41, §11.2 du contexte),
+avec l'écran « I accept » du premier accès, les boutons du menu, `TERMS_VERSION` et les colonnes
+`termsVersion` / `termsAcceptedAt` (migration `20260925200000_drop_terms`). Le squelette reste pour
+une page à venir : thème Telegram, client `apiFetch`, bouton `webAppBtn` de `@launchbot/shared`, et
+l'API avec son `/api` protégé.
+
+L'écran de simulation (tickets V1-24 à V1-26 d'origine : contrôleur et horloge simulée, Lightweight
+Charts, stats, top holders, position, ventes et PNL card) a été construit, testé une fois sur
+téléphone le 24/09/2026 et abandonné le jour même, sans être commité : la simulation se joue dans le
+chat (§6 du contexte, tickets V1-24 à V1-26 réécrits, décision ci-dessous). Ce qui en reste dans le dépôt, parce
 que le rendu dans le chat en a besoin : les formateurs `formatPctSupply`, `solToLamports` et
 l'option `signed` de `formatSol` (`@launchbot/shared`), la borne `SIM_SEED_MAX` partagée avec
 `drawSeed` du bot, et l'entrée `@launchbot/sim-engine/test-helpers` (`simConfig`).
@@ -1871,3 +1880,4 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 25/09/2026 | **Les transferts d'un compte inactif sont des retraits `INACTIVITY_SWEEP`** (V1-45), enregistrés par `sendRecorded` comme ceux de la trésorerie : ligne avant la signature, signature avant la confirmation, issue inconnue relue sur la chaîne avant tout nouvel essai, `userTelegramId` gardé pour un remboursement. Files en politique `exclusive` (déjà celle du worker) plutôt que `stately` : un passage à la fois, lancement à la main compris.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 25/09/2026 | **/purge transfère les SOL à la trésorerie au lieu de bloquer** (Tristan, V1-44) : les wallets au-dessus des frais d'un transfert partent vers `TREASURY_WALLET` avant la suppression, comme pour un compte inactif ; un seul mécanisme, `createAccountSweeper` (`account-sweep.ts`), sert aux deux, avec une relecture de l'activité pour l'inactivité seulement. Les transferts sont des `Withdrawal` de type `PURGE_SWEEP` (migration `purge_sweep`) avec l'ID Telegram. Une facture encore payable et des soldes illisibles bloquent toujours ; un transfert raté arrête la purge sans rien supprimer.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 25/09/2026 | **Un compte est supprimé après 24 h sans activité, et non plus 48 h** (Tristan, `INACTIVITY_DELETE_MS`) : ses SOL partent vers la trésorerie, puis le compte est supprimé, sans avertissement ; les admins restent exemptés. Le contrôle tourne toutes les 15 min, donc un compte part entre 24 h et 24 h 15 après sa dernière activité. Une facture restant payable 24 h 30 après sa création, un paiement tardif peut désormais arriver après la suppression : il n'active rien, le dépôt part à la trésorerie avec l'alerte de remboursement manuel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 25/09/2026 | **Plus de Terms of Service ni de Privacy Policy** (Tristan, V1-41 devenu le retrait) : plus d'écran « I accept » au premier accès (l'écran canal est le seul), plus de boutons dans le menu, plus de pages `/terms` et `/privacy`, plus de `TERMS_VERSION` ni de `legal.ts` ; colonnes `termsVersion` et `termsAcceptedAt` supprimées (migration `drop_terms`). La Mini App et l'API restent en place, sans page. Conséquence acceptée : aucun accord de l'utilisateur n'est plus enregistré (transferts vers la trésorerie, publication dans le canal Succès, durées de conservation).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

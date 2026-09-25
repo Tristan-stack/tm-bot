@@ -10,8 +10,6 @@ export const E = {
   subscribe: "⭐",
   wallets: "👛",
   support: "🆘",
-  terms: "📜",
-  privacy: "🔒",
   refresh: "🔄",
   devnet: "🧪",
 

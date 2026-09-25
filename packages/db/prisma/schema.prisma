@@ -80,8 +80,6 @@ model User {
   telegramId       BigInt    @unique
   username         String?
   firstName        String?
-  termsVersion     Int?
-  termsAcceptedAt  DateTime? @db.Timestamptz(3)
   channelCheckedAt DateTime? @db.Timestamptz(3)
   lastActiveAt     DateTime  @default(now()) @db.Timestamptz(3)
   createdAt        DateTime  @default(now()) @db.Timestamptz(3)

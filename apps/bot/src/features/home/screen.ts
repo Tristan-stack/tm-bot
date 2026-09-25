@@ -15,7 +15,6 @@ import {
 } from "@launchbot/shared";
 import type { Screen, Ui } from "@launchbot/shared";
 import type { Env } from "@launchbot/shared/server";
-import { legalRow } from "../access/screens.js";
 import { computeNextStep } from "./data.js";
 import type { HomeData } from "./data.js";
 
@@ -34,7 +33,7 @@ export const MENU = {
 
 export type HomeEnv = Pick<
   Env,
-  "WEBAPP_URL" | "CHANNEL_BOT_URL" | "CHANNEL_SUCCESS_URL" | "CHANNEL_ANNOUNCEMENTS_URL"
+  "CHANNEL_BOT_URL" | "CHANNEL_SUCCESS_URL" | "CHANNEL_ANNOUNCEMENTS_URL"
 >;
 
 function subscriptionLine({ subscription, now }: HomeData): string {
@@ -81,7 +80,6 @@ export function buildHomeScreen(ui: Ui, env: HomeEnv, data: HomeData): Screen {
       [cbBtn(en.menu.simulate, MENU.simulate)],
       [cbBtn(en.menu.subscribe, MENU.subscribe)],
       [cbBtn(en.menu.wallets, MENU.wallets), cbBtn(en.menu.support, MENU.support)],
-      legalRow(env.WEBAPP_URL),
       [cbBtn(en.btn.refresh, MENU.refresh)],
     ],
   });

@@ -314,21 +314,22 @@ export const channelPost = (): Update =>
     },
   }) as unknown as Update;
 
-/** A user who is through the first access: current Terms accepted, channel joined. */
+/** A user who is through the first access: channel joined. */
 export const TEST_USER: User = {
   id: "cjld2cjxh0000qzrmn831i7rn",
   telegramId: BigInt(FROM.id),
   username: FROM.username,
   firstName: FROM.first_name,
-  termsVersion: 1,
-  termsAcceptedAt: new Date("2026-09-20T14:01:00Z"),
   channelCheckedAt: new Date("2026-09-20T14:02:00Z"),
   lastActiveAt: new Date("2026-09-20T14:32:00Z"),
   createdAt: new Date("2026-09-20T14:00:00Z"),
 };
 
-/** Someone who has never used the bot: no Terms accepted, channel never checked. */
-export const NEW_USER = { termsVersion: null, termsAcceptedAt: null, channelCheckedAt: null };
+/**
+ * Someone who has never used the bot, or whose last check found them out of the channel: the
+ * gate shows the channel screen.
+ */
+export const NEW_USER = { channelCheckedAt: null };
 
 /**
  * Only the calls the bot makes: a session table and one user row, which `update` changes so
@@ -394,7 +395,6 @@ export const TEST_ENV = {
   // Required by Env; never used, since every test injects its wallet service.
   WALLET_ENCRYPTION_KEY: new Uint8Array(32),
   PRIORITY_FEE_MAX_MICROLAMPORTS: 1_000_000,
-  TERMS_VERSION: 1,
   WEBAPP_URL: "https://launchbot.example.com",
   CHANNEL_BOT_ID: "-1001000000001",
   CHANNEL_BOT_URL: "https://t.me/launchbot_channel",

@@ -100,8 +100,6 @@ describe("texts", () => {
       continue: "➡️ Continue",
       confirm: "✅ Confirm",
       refresh: "🔄 Refresh",
-      terms: "📜 Terms of Service",
-      privacy: "🔒 Privacy Policy",
     });
     expect(en.common.alreadyUpToDate).toBe("Already up to date");
     expect(en.common.updated("14:32 UTC")).toBe("🕒 Updated 14:32 UTC");

@@ -22,5 +22,3 @@ export { createTelegramFileClient, detectImageType, TelegramFileError } from "./
 export type { TelegramFile, TelegramFileClient, TelegramFileFailure } from "./telegram-file.js";
 export { createTokenImageService } from "./token-image.js";
 export type { TokenImageService } from "./token-image.js";
-export { buildWebAppUrl } from "./webapp-url.js";
-export type { WebAppPath } from "./webapp-url.js";

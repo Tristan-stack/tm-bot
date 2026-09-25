@@ -1,7 +1,6 @@
 import type { User } from "@launchbot/db";
 import { createUi, en, encodeCallback, isCallbackDataSize, RATE_LIMITS } from "@launchbot/shared";
 import { captureLogs, resetRateLimits, setLogDestination } from "@launchbot/shared/server";
-import type { Env } from "@launchbot/shared/server";
 import { Bot, session } from "grammy";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initialSession } from "../../context.js";
@@ -23,22 +22,18 @@ import {
 import type { ApiReplies } from "../../test-harness.js";
 import { MENU } from "../home/screen.js";
 import { createAccess } from "./access.js";
-import { ACCEPT_TERMS, joinedCallback } from "./screens.js";
+import { joinedCallback } from "./screens.js";
 
-const TERMS_TITLE = "<b>🚀 Welcome to Launch Bot</b> · 🧪 Devnet";
 const CHANNEL_TITLE = "<b>📢 ONE LAST STEP</b> · 🧪 Devnet";
 const CHANNEL_SCREEN = `${CHANNEL_TITLE}\n\nJoin our channel to follow updates and new features.`;
 const HOME_TITLE = "<b>🚀 LAUNCH BOT</b> · 🧪 Devnet";
 const NOT_JOINED_LINE = "ℹ️ Not joined yet. Join the channel, then tap I've joined.";
-/** Terms accepted, channel never checked: the user is on screen 2. */
-const ON_CHANNEL_SCREEN = { channelCheckedAt: null };
 const MEMBER_LIST_HIDDEN = telegramError(
   "getChatMember",
   "Bad Request: member list is inaccessible",
 );
 
-const harness = (user: Partial<User>, replies: ApiReplies = {}, env: Partial<Env> = {}) =>
-  botHarness({ user, replies, env });
+const harness = (user: Partial<User>, replies: ApiReplies = {}) => botHarness({ user, replies });
 
 beforeEach(resetRateLimits);
 afterEach(() => {
@@ -46,53 +41,31 @@ afterEach(() => {
 });
 
 describe("access gate", () => {
-  it("shows the Terms, in a new message, to a user who never accepted them", async () => {
+  it("shows the channel screen, in a new message, to a new user", async () => {
     const { bot, api } = harness(NEW_USER);
 
     await feed(bot, textUpdate("/start"));
 
     expect(api.of("sendMessage")).toHaveLength(1);
-    expect(api.text("sendMessage")).toBe(
-      [
-        TERMS_TITLE,
-        "Create and simulate Solana memecoin launches, right from Telegram.",
-        "ℹ️ This bot runs on Solana.",
-        "Before you start, please read and accept our Terms of Service and Privacy Policy.",
-      ].join("\n\n"),
-    );
-    expect(api.keyboard("sendMessage")).toEqual([
-      [
-        { text: "📜 Terms of Service", web_app: { url: "https://launchbot.example.com/terms" } },
-        { text: "🔒 Privacy Policy", web_app: { url: "https://launchbot.example.com/privacy" } },
-      ],
-      [{ text: "✅ I accept", callback_data: "acc:terms" }],
-    ]);
-    // Nothing is checked before the Terms are accepted.
-    expect(api.of("getChatMember")).toEqual([]);
-  });
-
-  it("shows the Terms again when their version changed, on any interaction", async () => {
-    const { bot, api } = harness({ termsVersion: 1 }, {}, { TERMS_VERSION: 2 });
-
-    await feed(bot, callbackUpdate(MENU.refresh, { messageId: 55 }));
-
-    // A click edits the screen that carries the button, and is answered without a text.
-    expect(api.of("editMessageText")[0]?.payload).toMatchObject({ message_id: 55 });
-    expect(api.text("editMessageText")).toContain(TERMS_TITLE);
-    expect(api.of("answerCallbackQuery")).toHaveLength(1);
-    expect(api.of("answerCallbackQuery")[0]?.payload["text"]).toBeUndefined();
-  });
-
-  it("shows the channel screen once the Terms are accepted", async () => {
-    const { bot, api } = harness(ON_CHANNEL_SCREEN);
-
-    await feed(bot, textUpdate("hello"));
-
     expect(api.text("sendMessage")).toBe(CHANNEL_SCREEN);
     expect(api.keyboard("sendMessage")).toEqual([
       [{ text: "📢 Join channel", url: "https://t.me/launchbot_channel" }],
       [{ text: "✅ I've joined", callback_data: "acc:join:home" }],
     ]);
+    // Nothing is checked before "I've joined".
+    expect(api.of("getChatMember")).toEqual([]);
+  });
+
+  it("shows it on any interaction, in place of the screen that was clicked", async () => {
+    const { bot, api } = harness(NEW_USER);
+
+    await feed(bot, callbackUpdate(MENU.refresh, { messageId: 55 }));
+
+    // A click edits the screen that carries the button, and is answered without a text.
+    expect(api.of("editMessageText")[0]?.payload).toMatchObject({ message_id: 55 });
+    expect(api.text("editMessageText")).toBe(CHANNEL_SCREEN);
+    expect(api.of("answerCallbackQuery")).toHaveLength(1);
+    expect(api.of("answerCallbackQuery")[0]?.payload["text"]).toBeUndefined();
   });
 
   it("lets a user who is through reach the handlers", async () => {
@@ -103,64 +76,18 @@ describe("access gate", () => {
     expect(api.text("editMessageText")).toContain(HOME_TITLE);
   });
 
-  it("always lets its own buttons through", async () => {
-    const { bot, prisma } = harness(NEW_USER);
+  it("always lets its own button through", async () => {
+    const { bot, api } = harness(NEW_USER);
 
-    await feed(bot, callbackUpdate(ACCEPT_TERMS));
+    await feed(bot, callbackUpdate(joinedCallback("home")));
 
-    expect(prisma.currentUser().termsVersion).toBe(1);
-  });
-});
-
-describe("I accept", () => {
-  it("records the version and the date, then shows the channel screen in place", async () => {
-    const { bot, api, prisma } = harness(NEW_USER, { getChatMember: chatMember("left") });
-    const before = Date.now();
-
-    await feed(bot, callbackUpdate(ACCEPT_TERMS, { messageId: 55 }));
-
-    // Nothing else is written: the channel date was already empty.
-    expect(prisma.updates).toHaveLength(1);
-    expect(prisma.updates[0]?.termsVersion).toBe(1);
-    expect(prisma.updates[0]?.termsAcceptedAt?.getTime()).toBeGreaterThanOrEqual(before);
-    expect(api.of("editMessageText")[0]?.payload).toMatchObject({ message_id: 55 });
-    expect(api.text("editMessageText")).toBe(CHANNEL_SCREEN);
-    expect(api.of("answerCallbackQuery")[0]?.payload["text"]).toBeUndefined();
-  });
-
-  it("keeps the first date on a second click", async () => {
-    const { bot, prisma } = harness(NEW_USER, { getChatMember: chatMember("left") });
-
-    await feed(bot, callbackUpdate(ACCEPT_TERMS));
-    const firstDate = prisma.currentUser().termsAcceptedAt;
-    await feed(bot, callbackUpdate(ACCEPT_TERMS));
-
-    expect(prisma.updates.filter((data) => "termsVersion" in data)).toHaveLength(1);
-    expect(prisma.currentUser().termsAcceptedAt).toBe(firstDate);
-  });
-
-  it("goes straight home when the user is already in the channel", async () => {
-    const { bot, api, prisma } = harness(NEW_USER);
-
-    await feed(bot, callbackUpdate(ACCEPT_TERMS));
-
-    expect(api.text("editMessageText")).toContain(HOME_TITLE);
-    expect(prisma.currentUser().channelCheckedAt).toBeInstanceOf(Date);
-  });
-
-  it("shows the channel screen without an error line when the check fails", async () => {
-    captureLogs();
-    const { bot, api } = harness(NEW_USER, { getChatMember: MEMBER_LIST_HIDDEN });
-
-    await feed(bot, callbackUpdate(ACCEPT_TERMS));
-
-    expect(api.text("editMessageText")).toBe(CHANNEL_SCREEN);
+    expect(api.of("getChatMember")).toHaveLength(1);
   });
 });
 
 describe("I've joined", () => {
   it("resumes home, in the same message, once the user is in the channel", async () => {
-    const { bot, api, prisma } = harness(ON_CHANNEL_SCREEN);
+    const { bot, api, prisma } = harness(NEW_USER);
 
     await feed(bot, callbackUpdate(joinedCallback("home"), { messageId: 55 }));
 
@@ -192,7 +119,7 @@ describe("I've joined", () => {
   });
 
   it("keeps the launch note, above the line, and the resume target of the button", async () => {
-    const { bot, api } = harness(ON_CHANNEL_SCREEN, { getChatMember: chatMember("kicked") });
+    const { bot, api } = harness(NEW_USER, { getChatMember: chatMember("kicked") });
 
     await feed(bot, callbackUpdate(joinedCallback("launch")));
 
@@ -205,7 +132,7 @@ describe("I've joined", () => {
   });
 
   it("settles for the alert when the line is already on the screen", async () => {
-    const { bot, api } = harness(ON_CHANNEL_SCREEN, {
+    const { bot, api } = harness(NEW_USER, {
       getChatMember: chatMember("left"),
       editMessageText: telegramError("editMessageText", "Bad Request: message is not modified"),
     });
@@ -240,24 +167,15 @@ describe("I've joined", () => {
   });
 
   it("goes home for a resume target nobody registered", async () => {
-    const { bot, api } = harness(ON_CHANNEL_SCREEN);
+    const { bot, api } = harness(NEW_USER);
 
     await feed(bot, callbackUpdate(encodeCallback("acc", "join", "gone")));
 
     expect(api.text("editMessageText")).toContain(HOME_TITLE);
   });
 
-  it("shows the Terms first when an old message still carries the button", async () => {
-    const { bot, api } = harness({ termsVersion: 1 }, {}, { TERMS_VERSION: 2 });
-
-    await feed(bot, callbackUpdate(joinedCallback("home")));
-
-    expect(api.text("editMessageText")).toContain(TERMS_TITLE);
-    expect(api.of("getChatMember")).toEqual([]);
-  });
-
   it("stops calling Telegram past the rate limit, and says so on the screen", async () => {
-    const { bot, api } = harness(ON_CHANNEL_SCREEN, { getChatMember: chatMember("left") });
+    const { bot, api } = harness(NEW_USER, { getChatMember: chatMember("left") });
     const { limit } = RATE_LIMITS.channelCheck;
 
     for (let click = 0; click <= limit; click++) {
@@ -274,7 +192,8 @@ describe("I've joined", () => {
   it("answers the expired-button text for an action it does not take", async () => {
     const { bot, api } = harness({});
 
-    await feed(bot, callbackUpdate(encodeCallback("acc", "unknown")));
+    // "I accept" of a Terms screen sent before the Terms were removed (25/09/2026).
+    await feed(bot, callbackUpdate(encodeCallback("acc", "terms")));
 
     expect(api.of("answerCallbackQuery")[0]?.payload["text"]).toBe(en.common.staleButton);
   });
@@ -317,7 +236,7 @@ describe("/start", () => {
 describe("resume registry", () => {
   /** The access feature alone, as a flow of a later ticket plugs into it (V1-35). */
   function accessOnly() {
-    const prisma = fakePrisma({ user: ON_CHANNEL_SCREEN });
+    const prisma = fakePrisma({ user: NEW_USER });
     const bot = new Bot<BotContext>(TEST_ENV.BOT_TOKEN);
     interceptApi(bot);
     const access = createAccess({ env: TEST_ENV, prisma, api: bot.api, ui: createUi("devnet") });
@@ -326,7 +245,7 @@ describe("resume registry", () => {
 
     bot.use(session({ initial: initialSession, getSessionKey: () => "test" }));
     bot.use((ctx, next) => {
-      ctx.user = { ...TEST_USER, ...ON_CHANNEL_SCREEN };
+      ctx.user = { ...TEST_USER, ...NEW_USER };
       return next();
     });
     bot.use(router.middleware());
@@ -352,7 +271,7 @@ describe("resume registry", () => {
   });
 
   it("keeps the callback data of the gate within 64 bytes", () => {
-    for (const data of [ACCEPT_TERMS, joinedCallback("home"), joinedCallback("launch")]) {
+    for (const data of [joinedCallback("home"), joinedCallback("launch")]) {
       expect(isCallbackDataSize(data)).toBe(true);
     }
   });

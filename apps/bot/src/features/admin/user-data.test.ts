@@ -45,8 +45,6 @@ const TARGET: User = {
   firstName: "Alice",
   createdAt: new Date("2026-09-02T09:00:00Z"),
   lastActiveAt: new Date("2026-09-15T14:30:00Z"),
-  termsVersion: 1,
-  termsAcceptedAt: new Date("2026-09-02T09:01:00Z"),
 };
 const DEPOSIT = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
 // Shaped like a signature, built at runtime: no 88-character base58 literal in the sources.
@@ -273,8 +271,7 @@ describe("buildGetAllBlocks (V1-43)", () => {
         "┌ @alice · Alice",
         "├ 🆔 <code>555000111</code>",
         "├ Support code: <code>P-555000111</code>",
-        "├ Joined 2 Sep 2026 · Last active 15 Sep 2026, 14:30 UTC",
-        "└ Terms v1 accepted 2 Sep 2026",
+        "└ Joined 2 Sep 2026 · Last active 15 Sep 2026, 14:30 UTC",
       ].join("\n"),
       [
         "<b>⭐ SUBSCRIPTION</b>",
@@ -354,7 +351,7 @@ describe("buildGetAllBlocks (V1-43)", () => {
     expect(empty.join("\n")).toContain("<b>🧾 PURCHASES</b>\n└ No purchase yet.");
     expect(empty.join("\n")).toContain("<b>👛 WALLETS · 0</b>\nNo wallet yet.");
     expect(empty.join("\n")).toContain("<b>📤 RECENT WITHDRAWALS</b>\n└ No withdrawal yet.");
-    expect(empty.join("\n")).toContain("Terms v1 accepted");
+    expect(empty.join("\n")).toContain("└ Joined 2 Sep 2026 · Last active");
     expect(many).toContain("<b>🧾 PURCHASES · 20 of 34</b>");
   });
 

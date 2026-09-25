@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTIONS, ADJECTIVES, NOUNS, TAGLINES } from "./words.js";
 
-/** §10.4 and the Terms: no promise of gain, no financial advice. */
+/** §5 and §10.4: no promise of gain, no financial advice. */
 const FINANCIAL_BLACKLIST = [
   "100x",
   "profit",
@@ -13,7 +13,7 @@ const FINANCIAL_BLACKLIST = [
   "money",
   "lambo",
 ];
-/** Terms §11.2: a few brands and protected characters that memecoins borrow the most. */
+/** §5: a few brands and protected characters that memecoins borrow the most. */
 const BRAND_BLACKLIST = ["doge", "pepe", "shiba", "bitcoin", "elon", "pikachu", "mario", "disney"];
 
 const everything = [...ADJECTIVES, ...NOUNS, ...ACTIONS, ...TAGLINES].map((w) => w.toLowerCase());

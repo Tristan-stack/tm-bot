@@ -1,4 +1,3 @@
-import { acceptTerms } from "@launchbot/db";
 import type { PrismaClient } from "@launchbot/db";
 import { decodeCallback, en } from "@launchbot/shared";
 import type { CallbackDomain, Ui } from "@launchbot/shared";
@@ -12,15 +11,12 @@ import type { Block, ShowMode } from "../../navigation/show-screen.js";
 import type { CallbackRouter } from "../../router/callback-router.js";
 import { createMembershipCheck } from "../../services/channel-membership.js";
 import type { MembershipMode, MembershipStatus } from "../../services/channel-membership.js";
-import { buildChannelScreen, buildTermsScreen, joinedCallback } from "./screens.js";
+import { buildChannelScreen, joinedCallback } from "./screens.js";
 
-/** The buttons of the gate itself: the gate lets them through, this feature handles them. */
+/** The button of the gate itself: the gate lets it through, this feature handles it. */
 const DOMAIN: CallbackDomain = "acc";
 
-export type AccessEnv = Pick<
-  Env,
-  "TERMS_VERSION" | "WEBAPP_URL" | "CHANNEL_BOT_ID" | "CHANNEL_BOT_URL"
->;
+export type AccessEnv = Pick<Env, "CHANNEL_BOT_ID" | "CHANNEL_BOT_URL">;
 
 export type AccessDeps = {
   env: AccessEnv;
@@ -44,27 +40,21 @@ export type EnsureMembershipOptions = {
 
 export type Access = {
   /**
-   * No menu before the current Terms are accepted and the channel joined (§4.2). Goes before
-   * the conversations and every router; admin commands (V1-38) are registered after it.
+   * No menu before the channel is joined (§4.2). Goes before the conversations and every
+   * router; admin commands (V1-38) are registered after it.
    */
   gate: MiddlewareFn<BotContext>;
-  /** `true`: the user is in the channel, carry on. `false`: screen 2 is shown, stop there. */
+  /** `true`: the user is in the channel, carry on. `false`: the channel screen is shown, stop. */
   ensureChannelMembership: (ctx: BotContext, options: EnsureMembershipOptions) => Promise<boolean>;
   /** The flow "I've joined" resumes. It shows its screen with `showScreen`: a click edits. */
   registerResume: (key: string, handler: ResumeHandler) => void;
-  /** Takes the `acc` domain: "I accept" and "I've joined". */
+  /** Takes the `acc` domain: "I've joined". */
   register: (router: CallbackRouter) => void;
 };
 
 export function createAccess({ env, prisma, api, ui }: AccessDeps): Access {
   const check = createMembershipCheck({ api, prisma, channelId: env.CHANNEL_BOT_ID });
   const resumes = new Map<string, ResumeHandler>();
-
-  const termsAreCurrent = (ctx: BotContext) => ctx.user.termsVersion === env.TERMS_VERSION;
-
-  async function showTerms(ctx: BotContext): Promise<void> {
-    await showScreen(ctx, buildTermsScreen(ui, env));
-  }
 
   async function showChannel(ctx: BotContext, resume: string, mode?: ShowMode): Promise<void> {
     await showScreen(ctx, buildChannelScreen(ui, env, { resume }), { mode });
@@ -84,21 +74,7 @@ export function createAccess({ env, prisma, api, ui }: AccessDeps): Access {
     await handler(ctx);
   }
 
-  async function onAccept(ctx: BotContext): Promise<void> {
-    // A second click keeps the date of the first one.
-    if (!termsAreCurrent(ctx)) {
-      ctx.user = await acceptTerms(prisma, ctx.user.id, env.TERMS_VERSION);
-    }
-    // Proposal: someone already in the channel skips screen 2. A failed check is not reported
-    // here: screen 2 will run it again on "I've joined".
-    if ((await checkMembership(ctx, "fresh")) === "member") return resume(ctx, "home");
-    await showChannel(ctx, "home");
-  }
-
   async function onJoined(ctx: BotContext, [key = "home"]: string[]): Promise<void> {
-    // An old message can still carry this button after a new version of the Terms.
-    if (!termsAreCurrent(ctx)) return showTerms(ctx);
-
     const block = (pair: Block) =>
       blockWithFlag(ctx, pair, (flag) => buildChannelScreen(ui, env, { resume: key, flag }));
 
@@ -114,13 +90,12 @@ export function createAccess({ env, prisma, api, ui }: AccessDeps): Access {
     gate: async (ctx, next) => {
       // Other update types (my_chat_member…) show no screen: the gate has nothing to hide.
       if (ctx.message === undefined && ctx.callbackQuery === undefined) return next();
-      // Its own two buttons, or nobody could ever get through it.
+      // Its own button, or nobody could ever get through it.
       const data = ctx.callbackQuery?.data;
       if (data !== undefined && decodeCallback(data)?.domain === DOMAIN) return next();
 
       // Proposal: checked on every interaction, not only on /start. `ctx.user` is already
       // loaded by `userActivity`, so it costs nothing.
-      if (!termsAreCurrent(ctx)) return showTerms(ctx);
       if (ctx.user.channelCheckedAt === null) return showChannel(ctx, "home");
       await next();
     },
@@ -138,6 +113,6 @@ export function createAccess({ env, prisma, api, ui }: AccessDeps): Access {
       resumes.set(key, handler);
     },
 
-    register: (router) => router.register(DOMAIN, { terms: onAccept, join: onJoined }),
+    register: (router) => router.register(DOMAIN, { join: onJoined }),
   };
 }

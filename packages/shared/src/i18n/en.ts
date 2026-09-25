@@ -51,9 +51,6 @@ export const en = {
     continue: `${E.continue} Continue`,
     confirm: `${E.confirm} Confirm`,
     refresh: `${E.refresh} Refresh`,
-    // Both open a page of the Mini App: on the Terms screen and in the main menu.
-    terms: `${E.terms} Terms of Service`,
-    privacy: `${E.privacy} Privacy Policy`,
   },
 
   common: {
@@ -76,15 +73,8 @@ export const en = {
     part: (index: number, total: number) => `Part ${index}/${total}`,
   },
 
-  // First access (§4.2): the Terms, then the channel of the bot.
+  // First access (§4.2): the channel of the bot, nothing else since the decision of 25/09/2026.
   access: {
-    terms: {
-      title: `${E.launchBot} Welcome to Launch Bot`,
-      intro: "Create and simulate Solana memecoin launches, right from Telegram.",
-      network: `${E.info} This bot runs on Solana.`,
-      prompt: "Before you start, please read and accept our Terms of Service and Privacy Policy.",
-      btnAccept: `${E.confirm} I accept`,
-    },
     channel: {
       title: `${E.joinChannel} ONE LAST STEP`,
       description: "Join our channel to follow updates and new features.",
@@ -1002,8 +992,6 @@ export const en = {
       names: (username: string, firstName: string) => `${username} · ${firstName}`,
       joined: (joined: string, lastActive: string) =>
         `Joined ${joined} · Last active ${lastActive}`,
-      terms: (version: number, at: string) => `Terms v${version} accepted ${at}`,
-      noTerms: "Terms not accepted",
       subscription: `${E.plan} SUBSCRIPTION`,
       aiToday: (used: number, limit: number) => `AI Generate today: ${used}/${limit}`,
       history: "History:",

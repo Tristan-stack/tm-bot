@@ -16,7 +16,7 @@ export type SupportModel = {
   /** The plan active now; `null` without one (never subscribed, or expired). */
   plan: Plan | null;
   telegramId: bigint;
-  /** `SUPPORT_URL`: the account the Terms and the Privacy Policy name too (V1-41). */
+  /** `SUPPORT_URL`: the account of the human support. */
   supportUrl: string;
 };
 

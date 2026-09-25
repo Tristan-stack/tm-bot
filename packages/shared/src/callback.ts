@@ -8,7 +8,7 @@ import { utf8ByteLength } from "./format/text.js";
 export const CALLBACK_DOMAINS = [
   "nav", // nav:home: Back / Menu to the home screen
   "home", // home refresh
-  "acc", // first access: Terms, channel
+  "acc", // first access: the channel
   "wal", // wallets, import, withdrawal
   "tok", // Token screen
   "sim", // simulation

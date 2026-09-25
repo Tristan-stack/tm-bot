@@ -11,6 +11,6 @@ initTelegramWebApp();
 
 createRoot(container).render(
   <StrictMode>
-    <App path={window.location.pathname} />
+    <App />
   </StrictMode>,
 );

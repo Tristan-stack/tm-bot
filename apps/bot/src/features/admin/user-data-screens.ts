@@ -203,9 +203,6 @@ export function buildGetAllBlocks(ui: Ui, model: GetAllModel): string[] {
     en.home.id(code(user.telegramId.toString())),
     texts.whois.supportCode(code(supportCodeOf(data))),
     getall.joined(formatDate(user.createdAt), formatDateTime(user.lastActiveAt)),
-    user.termsVersion !== null && user.termsAcceptedAt !== null
-      ? getall.terms(user.termsVersion, formatDate(user.termsAcceptedAt))
-      : getall.noTerms,
   ]);
 
   const history = data.history.map((period) =>

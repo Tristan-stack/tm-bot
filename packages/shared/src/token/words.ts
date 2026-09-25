@@ -4,8 +4,8 @@
  * is A to Z. Nothing here is interface text: en.ts holds the screens, this file holds the
  * tokens.
  *
- * Content rules (Terms §11.2, §10.4): no brand, no protected character, nothing offensive, and
- * no promise of gain or financial advice. `words.test.ts` checks the last one with a blacklist.
+ * Content rules (§5, §10.4): no brand, no protected character, nothing offensive, and no
+ * promise of gain or financial advice. `words.test.ts` checks the last one with a blacklist.
  */
 
 export const ADJECTIVES = [

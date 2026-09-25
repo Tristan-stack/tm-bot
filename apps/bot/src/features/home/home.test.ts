@@ -152,7 +152,7 @@ describe("buildHomeScreen", () => {
     expect(text).toContain("└ ⭐ 1 active subscriber\n");
   });
 
-  it("lays the main menu out in six rows, without Stats or Referrals", () => {
+  it("lays the main menu out in five rows, without Stats, Referrals or legal pages", () => {
     const keyboard = buildHomeScreen(ui, TEST_ENV, home()).reply_markup.inline_keyboard;
 
     expect(keyboard).toEqual([
@@ -163,13 +163,9 @@ describe("buildHomeScreen", () => {
         { text: "👛 Wallets", callback_data: "wal:list" },
         { text: "🆘 Support", callback_data: "sup:open" },
       ],
-      [
-        { text: "📜 Terms of Service", web_app: { url: "https://launchbot.example.com/terms" } },
-        { text: "🔒 Privacy Policy", web_app: { url: "https://launchbot.example.com/privacy" } },
-      ],
       [{ text: "🔄 Refresh", callback_data: "home:refresh" }],
     ]);
-    expect(JSON.stringify(keyboard)).not.toMatch(/stats|referral/i);
+    expect(JSON.stringify(keyboard)).not.toMatch(/stats|referral|terms|privacy/i);
   });
 
   it("keeps every callback data of the menu within 64 bytes", () => {

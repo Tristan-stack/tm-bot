@@ -1,7 +1,6 @@
 import { writeSync } from "node:fs";
 import { z } from "zod";
 import { SOLANA_CLUSTERS } from "../cluster.js";
-import { DEFAULT_TERMS_VERSION } from "../legal.js";
 import { isValidSolanaAddress } from "../solana-address.js";
 import { withoutTrailingSlash } from "../url.js";
 import { loadDotenvOnce } from "./dotenv.js";
@@ -120,7 +119,6 @@ const envSchema = z.object({
       return ids;
     }),
   TREASURY_WALLET: required().refine(isValidSolanaAddress, REASON.treasury),
-  TERMS_VERSION: integer(REASON.positiveInt, 1).default(DEFAULT_TERMS_VERSION),
   // Optional: CoinGecko Simple Price by default (D11). Another URL must answer the same shape.
   SOL_PRICE_API_URL: httpUrl().optional(),
   // A key alone does not enable AI Generate: a provider must also be implemented (DEC-02).
