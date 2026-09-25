@@ -33,7 +33,7 @@ function harness(options: { maxActive?: number } = {}) {
       (call.payload["media"] as { caption?: string } | undefined)?.caption ??
         call.payload["caption"],
     );
-  /** The recap of a 5 SOL dev buy, then Start simulation on it. */
+  /** The recap of a 5 SOL bundle, then Start simulation on it. */
   const start = async () => {
     await feed(h.bot, callbackUpdate(SIM_CB.preset(5)));
     await feed(h.bot, callbackUpdate(SIM_CB.go("s1")));
@@ -185,7 +185,12 @@ describe("the buttons under the picture", () => {
     await feed(h.bot, callbackUpdate("sim:again:s1", { messageId: 100 }));
     expect(h.simulations.rows).toHaveLength(2);
     const [first, second] = h.simulations.rows;
-    expect(second).toMatchObject({ userId: first!.userId, tokenDraftId: "d1", devBuySol: "5" });
+    expect(second).toMatchObject({
+      userId: first!.userId,
+      tokenDraftId: "d1",
+      devBuySol: "1",
+      bundleSol: "5",
+    });
     expect(second!.seed).not.toBe(first!.seed);
     expect(simConfigSchema.parse(second!.params)).toEqual({
       ...simConfigSchema.parse(first!.params),

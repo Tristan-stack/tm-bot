@@ -1,17 +1,15 @@
 import { z } from "zod";
 import { isCallbackDataSize } from "./callback.js";
 import {
-  DEV_BUY_MAX_DECIMALS,
-  DEV_BUY_MAX_SOL,
-  DEV_BUY_MIN_SOL,
+  BUNDLE_LAMPORT_UNIT,
+  BUNDLE_MAX_LAMPORTS,
+  BUNDLE_MIN_LAMPORTS,
   DURATIONS,
-  LAMPORTS_PER_SOL,
   PLANS,
-  SOL_DECIMALS,
   TG,
   WALLET_NAME_MAX_CHARS,
 } from "./constants.js";
-import { parseSolToLamports } from "./format/sol.js";
+import { lamportsToSol, parseSolToLamports } from "./format/sol.js";
 import { codePointLength, collapseSpaces, hasControlChars } from "./format/text.js";
 
 /** Telegram ids fit in 52 bits: a safe integer. */
@@ -37,38 +35,26 @@ export const solAmountInputSchema = z
 
 export const httpsUrlSchema = z.url({ protocol: /^https$/ });
 
-const DEV_BUY_LAMPORT_UNIT = 10n ** BigInt(SOL_DECIMALS - DEV_BUY_MAX_DECIMALS);
-
 /**
- * A Custom dev buy typed by the user (§6, §15): the SOL grammar of `parseSolToLamports`
- * (`.` or `,`, an optional `sol` suffix, no sign, no exponent), from 1 to 20 SOL with 3
- * decimals at most (proposal). The amount is a number, as `SimConfig` holds it (§7.4).
+ * A Custom bundle typed by the user (§6, §15, decision of 25/09/2026): the SOL grammar of
+ * `parseSolToLamports` (`.` or `,`, an optional `sol` suffix, no sign, no exponent), from 3 to
+ * 20 SOL with 3 decimals at most (proposal). The amount as a number, as `SimConfig` holds it
+ * (§7.4), and as the exact lamports a launch pays (V1-36).
  */
-export function parseDevBuyAmount(text: string): { ok: true; sol: number } | { ok: false } {
+export function parseBundleAmount(
+  text: string,
+): { ok: true; sol: number; lamports: bigint } | { ok: false } {
   const lamports = parseSolToLamports(text);
   if (
     lamports === null ||
-    lamports % DEV_BUY_LAMPORT_UNIT !== 0n ||
-    lamports < BigInt(DEV_BUY_MIN_SOL) * LAMPORTS_PER_SOL ||
-    lamports > BigInt(DEV_BUY_MAX_SOL) * LAMPORTS_PER_SOL
+    lamports % BUNDLE_LAMPORT_UNIT !== 0n ||
+    lamports < BUNDLE_MIN_LAMPORTS ||
+    lamports > BUNDLE_MAX_LAMPORTS
   ) {
     return { ok: false };
   }
-  return { ok: true, sol: Number(lamports) / Number(LAMPORTS_PER_SOL) };
+  return { ok: true, sol: lamportsToSol(lamports), lamports };
 }
-
-/** `parseDevBuyAmount` as a schema: the typed text → SOL number (V1-36 reuses it). */
-export const devBuyAmountSchema = z.string().transform((text, ctx) => {
-  const parsed = parseDevBuyAmount(text);
-  if (!parsed.ok) {
-    ctx.addIssue({
-      code: "custom",
-      message: `Must be from ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL, ${DEV_BUY_MAX_DECIMALS} decimals max`,
-    });
-    return z.NEVER;
-  }
-  return parsed.sol;
-});
 
 const positive = z.number().finite().positive();
 
@@ -102,11 +88,14 @@ export const seedSchema = z.int().min(0).max(0xffffffff);
 /**
  * `SimConfig` of the engine (§7.4), as stored in `Simulation.params` (V1-22) and read back by
  * the bot to run the simulation (V1-26). `assertSimConfig` of the engine is the other half:
- * this schema is what crosses the JSON boundary of the database.
+ * this schema is what crosses the JSON boundary of the database, with the same rules, never
+ * the bounds of an input (those are `parseBundleAmount`'s), so a stored row stays readable.
  */
 export const simConfigSchema = z.object({
   seed: seedSchema,
-  devBuySol: z.number().min(DEV_BUY_MIN_SOL).max(DEV_BUY_MAX_SOL),
+  devBuySol: positive,
+  // No bundle in the rows made before it (decision of 25/09/2026).
+  bundleSol: z.number().finite().min(0).default(0),
   durationSec: z.int().positive(),
   curve: curveParamsSchema,
   preset: presetParamsSchema,

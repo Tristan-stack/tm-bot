@@ -4,17 +4,17 @@ import {
   MAX_TRADE_SOL,
   MIN_TRADE_SOL,
   PRESET_TABLE,
-  presetForDevBuy,
+  presetForAmount,
 } from "./presets.js";
 
-describe("presetForDevBuy", () => {
+describe("presetForAmount", () => {
   it("returns the exact table for 3, 5 and 10 SOL", () => {
     expect(PRESET_TABLE).toEqual([
-      { devBuySol: 3, lambda0: 0.8, pBuy: 0.56, medianSol: 0.2 },
-      { devBuySol: 5, lambda0: 1.2, pBuy: 0.58, medianSol: 0.25 },
-      { devBuySol: 10, lambda0: 2.0, pBuy: 0.6, medianSol: 0.3 },
+      { sol: 3, lambda0: 0.8, pBuy: 0.56, medianSol: 0.2 },
+      { sol: 5, lambda0: 1.2, pBuy: 0.58, medianSol: 0.25 },
+      { sol: 10, lambda0: 2.0, pBuy: 0.6, medianSol: 0.3 },
     ]);
-    expect(presetForDevBuy(3)).toEqual({
+    expect(presetForAmount(3)).toEqual({
       lambda0: 0.8,
       pBuy: 0.56,
       mu: expect.closeTo(-1.60944, 5) as number,
@@ -22,33 +22,33 @@ describe("presetForDevBuy", () => {
       minTrade: MIN_TRADE_SOL,
       maxTrade: MAX_TRADE_SOL,
     });
-    expect(presetForDevBuy(5)).toMatchObject({ lambda0: 1.2, pBuy: 0.58 });
-    expect(presetForDevBuy(5).mu).toBeCloseTo(-1.38629, 5);
-    expect(presetForDevBuy(10)).toMatchObject({ lambda0: 2.0, pBuy: 0.6 });
-    expect(presetForDevBuy(10).mu).toBeCloseTo(-1.20397, 5);
+    expect(presetForAmount(5)).toMatchObject({ lambda0: 1.2, pBuy: 0.58 });
+    expect(presetForAmount(5).mu).toBeCloseTo(-1.38629, 5);
+    expect(presetForAmount(10)).toMatchObject({ lambda0: 2.0, pBuy: 0.6 });
+    expect(presetForAmount(10).mu).toBeCloseTo(-1.20397, 5);
   });
 
-  it("interpolates a Custom dev buy on log(dev buy): the vectors d = 4 and d = 7", () => {
-    const four = presetForDevBuy(4);
+  it("interpolates a Custom amount on log(amount): the vectors d = 4 and d = 7", () => {
+    const four = presetForAmount(4);
     expect(four.lambda0).toBeCloseTo(1.02527, 5);
     expect(four.pBuy).toBeCloseTo(0.57126, 5);
     expect(four.mu).toBeCloseTo(-1.47771, 5);
-    const seven = presetForDevBuy(7);
+    const seven = presetForAmount(7);
     expect(seven.lambda0).toBeCloseTo(1.58834, 5);
     expect(seven.pBuy).toBeCloseTo(0.58971, 5);
     expect(seven.mu).toBeCloseTo(-1.29364, 5);
   });
 
   it("clamps to the 3 SOL preset below 3 SOL and to the 10 SOL preset above 10 SOL", () => {
-    expect(presetForDevBuy(1)).toEqual(presetForDevBuy(3));
-    expect(presetForDevBuy(2)).toEqual(presetForDevBuy(3));
-    expect(presetForDevBuy(20)).toEqual(presetForDevBuy(10));
+    expect(presetForAmount(1)).toEqual(presetForAmount(3));
+    expect(presetForAmount(2)).toEqual(presetForAmount(3));
+    expect(presetForAmount(20)).toEqual(presetForAmount(10));
   });
 
   it("is monotonic in λ0, pBuy and median on [1, 20]", () => {
-    let previous = presetForDevBuy(1);
+    let previous = presetForAmount(1);
     for (let d = 1.25; d <= 20; d += 0.25) {
-      const current = presetForDevBuy(d);
+      const current = presetForAmount(d);
       expect(current.lambda0).toBeGreaterThanOrEqual(previous.lambda0);
       expect(current.pBuy).toBeGreaterThanOrEqual(previous.pBuy);
       expect(current.mu).toBeGreaterThanOrEqual(previous.mu);
@@ -57,12 +57,12 @@ describe("presetForDevBuy", () => {
   });
 
   it("refuses 0, a negative number or NaN", () => {
-    for (const d of [0, -1, NaN, Infinity]) expect(() => presetForDevBuy(d)).toThrow(RangeError);
+    for (const d of [0, -1, NaN, Infinity]) expect(() => presetForAmount(d)).toThrow(RangeError);
   });
 });
 
 describe("assertPresetParams", () => {
-  const preset = presetForDevBuy(5);
+  const preset = presetForAmount(5);
 
   it("accepts a preset and names the field at fault otherwise", () => {
     expect(() => assertPresetParams(preset)).not.toThrow();

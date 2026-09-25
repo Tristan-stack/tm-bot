@@ -230,12 +230,12 @@ describe("AI Generate (V1-17)", () => {
     expect(h.draft()).toMatchObject({ ...PICKLE, imageFileId: "file-1" });
   });
 
-  it("serves both flows: an AI click on the launch flow is a stale button until V1-37", async () => {
+  it("serves both flows: an AI click on the launch flow fills the launch draft (V1-37)", async () => {
     const h = harness({ premium: true });
 
     await feed(h.bot, callbackUpdate(TOKEN_CB.ai("LAUNCH")));
 
-    expect(h.lastAlert()?.["text"]).toBe(en.common.staleButton);
-    expect(h.aiQuota.used.get(TEST_USER.id)).toBe(12);
+    expect(h.aiQuota.used.get(TEST_USER.id)).toBe(13);
+    expect(h.screen()).toContain("<b>🚀 LAUNCH · STEP 3/4</b>");
   });
 });

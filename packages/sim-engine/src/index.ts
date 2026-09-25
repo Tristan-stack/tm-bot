@@ -4,7 +4,7 @@
  * Bumped whenever an algorithm or a constant of the engine changes: a stored simulation
  * replays identically only with the version that produced it (proposal, V1-18).
  */
-export const SIM_ENGINE_VERSION = 1;
+export const SIM_ENGINE_VERSION = 2;
 
 // The public surface is what the cards V1-18 to V1-20 promise to the later tickets. The
 // schedule and the trader registry stay internal to the flow.
@@ -49,7 +49,7 @@ export {
   MIN_TRADE_SOL,
   PRESET_SIGMA,
   PRESET_TABLE,
-  presetForDevBuy,
+  presetForAmount,
 } from "./presets.js";
 export { DEFAULT_FLOW_PARAMS } from "./schedule.js";
 export type { FlowParams } from "./schedule.js";

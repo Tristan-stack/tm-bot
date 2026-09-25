@@ -1,5 +1,11 @@
 import { assertCurveParams, BondingCurve, settleTokens } from "./curve.js";
-import { checkPositive, isRecord, rangeError, SimulationEndedError } from "./errors.js";
+import {
+  checkNumber,
+  checkPositive,
+  isRecord,
+  rangeError,
+  SimulationEndedError,
+} from "./errors.js";
 import { createTradeFlow } from "./flow.js";
 import { assertPresetParams } from "./presets.js";
 import { isValidSeed } from "./rng.js";
@@ -18,7 +24,7 @@ const CLOCK_SNAP_SEC = 1e-9;
 const DEV = "dev";
 const BONDING_CURVE = "bonding_curve";
 
-/** The public run (§7.4), plus the clock and the dev buy event the screens need (proposal). */
+/** The public run (§7.4), plus the clock and the buys of the dev the screens need (proposal). */
 export interface SimulationRun extends SimRun {
   /**
    * Advances to an absolute simulated instant, never before the current one: what a clock
@@ -27,8 +33,11 @@ export interface SimulationRun extends SimRun {
   advanceTo(tSec: number): TradeEvent[];
   /** Simulated seconds; frozen at the end ("Time 2:14" of the PNL card). */
   time(): number;
-  /** The buy of the dev at t = 0, never returned by `step`. */
-  devBuy(): TradeEvent;
+  /**
+   * The buys of the dev at t = 0, never returned by `step`: the dev buy, then the bundle when
+   * there is one. What the first candle of a chart starts from.
+   */
+  openingBuys(): readonly [TradeEvent, ...TradeEvent[]];
 }
 
 /** A config as V1-22 stores it and V1-23 serves it: every field checked, RangeError naming it. */
@@ -36,6 +45,12 @@ export function assertSimConfig(config: unknown): asserts config is SimConfig {
   if (!isRecord(config)) throw rangeError("config", "an object");
   if (!isValidSeed(config.seed)) throw rangeError("seed", "an integer in [0, 4294967295]");
   checkPositive(config.devBuySol, "devBuySol");
+  checkNumber(
+    config.bundleSol,
+    "bundleSol",
+    "a finite number ≥ 0",
+    (n) => Number.isFinite(n) && n >= 0,
+  );
   checkPositive(config.durationSec, "durationSec");
   assertCurveParams(config.curve);
   assertPresetParams(config.preset);
@@ -47,6 +62,7 @@ const freezeConfig = (config: SimConfig): Readonly<SimConfig> =>
   Object.freeze({
     seed: config.seed,
     devBuySol: config.devBuySol,
+    bundleSol: config.bundleSol,
     durationSec: config.durationSec,
     curve: Object.freeze({ ...config.curve }),
     preset: Object.freeze({ ...config.preset }),
@@ -54,9 +70,9 @@ const freezeConfig = (config: SimConfig): Readonly<SimConfig> =>
   });
 
 /**
- * The engine behind one simulation (§7.4): the dev buy at t = 0, a simulated clock moved
- * by `step`, the sells of the dev through the curve, the position, the top holders and
- * the reason of the end. The only entry point of the web app and the bot.
+ * The engine behind one simulation (§7.4): the dev buy and the bundle at t = 0, a simulated
+ * clock moved by `step`, the sells of the dev through the curve, the position, the top holders
+ * and the reason of the end. The only entry point of the web app and the bot.
  */
 export function createSimulation(input: SimConfig): SimulationRun {
   assertSimConfig(input);
@@ -64,23 +80,30 @@ export function createSimulation(input: SimConfig): SimulationRun {
   const { totalSupply } = config.curve;
   const curve = new BondingCurve(config.curve);
 
-  // The dev buys at t = 0, before the first simulated trade (§7.1).
-  const devQuote = curve.buy(config.devBuySol);
-  const devBuyEvent: TradeEvent = Object.freeze({
-    t: 0,
-    side: "buy",
-    trader: DEV,
-    sol: devQuote.solUsed,
-    tokens: devQuote.tokensOut,
-    price: curve.price(),
-  });
-  let devTokens = devQuote.tokensOut;
-  const solIn = devQuote.solUsed;
+  const devBuyAt0 = (sol: number): TradeEvent => {
+    const quote = curve.buy(sol);
+    return Object.freeze({
+      t: 0,
+      side: "buy",
+      trader: DEV,
+      sol: quote.solUsed,
+      tokens: quote.tokensOut,
+      price: curve.price(),
+    });
+  };
+  // The dev buys at t = 0, then the bundle, both before the first simulated trade (§7.1); a
+  // dev buy that completes the curve leaves nothing to bundle.
+  const devBuy = devBuyAt0(config.devBuySol);
+  const opening: [TradeEvent, ...TradeEvent[]] =
+    config.bundleSol > 0 && !curve.isComplete() ? [devBuy, devBuyAt0(config.bundleSol)] : [devBuy];
+  const openingBuys = Object.freeze(opening);
+  let devTokens = openingBuys.reduce((sum, buy) => sum + buy.tokens, 0);
+  const solIn = openingBuys.reduce((sum, buy) => sum + buy.sol, 0);
   let solOut = 0;
   let time = 0;
   let end: EndReason | null = curve.isComplete() ? "curve_complete" : null;
 
-  // The envelope of the guard starts from the price after the dev buy.
+  // The envelope of the guard starts from the price after the buys of the dev.
   const flow = createTradeFlow({
     seed: config.seed,
     preset: config.preset,
@@ -177,6 +200,6 @@ export function createSimulation(input: SimConfig): SimulationRun {
 
     endReason: () => end,
     time: () => time,
-    devBuy: () => devBuyEvent,
+    openingBuys: () => openingBuys,
   };
 }

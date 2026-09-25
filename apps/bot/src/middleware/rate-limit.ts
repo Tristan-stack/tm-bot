@@ -27,7 +27,7 @@ export function tooManyActions(retryAfterMs: number): Block {
 
 /**
  * A Refresh button (§4.4) may skip the balance cache once per 10 s per user, whatever screen
- * it is on (home, wallet detail V1-10, Dev buy V1-36). Too soon, it reads the cache and says
+ * it is on (home, wallet detail V1-10, Bundle V1-36). Too soon, it reads the cache and says
  * nothing about it (proposal).
  */
 export const mayReadFreshBalances = (ctx: BotContext): boolean =>

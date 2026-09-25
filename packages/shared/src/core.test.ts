@@ -7,11 +7,11 @@ import {
   UnsupportedClusterError,
 } from "./cluster.js";
 import {
+  BUNDLE_MAX_SOL,
+  BUNDLE_MIN_SOL,
+  BUNDLE_PRESETS_SOL,
   CACHE_TTL_MS,
-  DEV_BUY_MAX_SOL,
-  DEV_BUY_MIN_SOL,
-  DEV_BUY_PRESETS_SOL,
-  FEE_MARGIN_LAMPORTS,
+  DEV_BUY_LAMPORTS,
   INACTIVITY_DELETE_MS,
   INVOICE_TTL_MS,
   LAMPORTS_PER_SOL,
@@ -53,9 +53,12 @@ describe("cluster", () => {
 });
 
 describe("constants", () => {
-  it("derives the ready-wallet minimum from 1 SOL + the fee margin (D13)", () => {
-    expect(WALLET_READY_MIN_LAMPORTS).toBe(LAMPORTS_PER_SOL + FEE_MARGIN_LAMPORTS);
-    expect(WALLET_READY_MIN_LAMPORTS).toBe(1_050_000_000n);
+  it("derives the ready-wallet minimum from the dev buy + the smallest bundle (D13)", () => {
+    expect(DEV_BUY_LAMPORTS).toBe(LAMPORTS_PER_SOL);
+    expect(WALLET_READY_MIN_LAMPORTS).toBe(
+      DEV_BUY_LAMPORTS + BigInt(BUNDLE_MIN_SOL) * LAMPORTS_PER_SOL,
+    );
+    expect(WALLET_READY_MIN_LAMPORTS).toBe(4_000_000_000n);
   });
 
   it("holds the prices, limits and delays of the context", () => {
@@ -71,10 +74,10 @@ describe("constants", () => {
     expect(CACHE_TTL_MS.solPriceMaxStale).toBe(600_000);
   });
 
-  it("keeps dev buy presets inside the allowed range", () => {
-    for (const preset of DEV_BUY_PRESETS_SOL) {
-      expect(preset).toBeGreaterThanOrEqual(DEV_BUY_MIN_SOL);
-      expect(preset).toBeLessThanOrEqual(DEV_BUY_MAX_SOL);
+  it("keeps the bundle presets inside the allowed range", () => {
+    for (const preset of BUNDLE_PRESETS_SOL) {
+      expect(preset).toBeGreaterThanOrEqual(BUNDLE_MIN_SOL);
+      expect(preset).toBeLessThanOrEqual(BUNDLE_MAX_SOL);
     }
   });
 

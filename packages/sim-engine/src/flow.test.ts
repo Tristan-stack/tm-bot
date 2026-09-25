@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BondingCurve, DUST_TOKENS, FALLBACK_CURVE_PARAMS } from "./curve.js";
 import { createTradeFlow } from "./flow.js";
 import type { TradeFlow } from "./flow.js";
-import { presetForDevBuy } from "./presets.js";
+import { presetForAmount } from "./presets.js";
 import { DEFAULT_FLOW_PARAMS } from "./schedule.js";
 import { BASE58_ALPHABET } from "./traders.js";
 import type { TradeEvent } from "./types.js";
@@ -20,7 +20,7 @@ function setup(
   const curve = new BondingCurve(params);
   const devTokens = curve.buy(devBuySol).tokensOut;
   const priceAfterDevBuy = curve.price();
-  const flow = createTradeFlow({ seed, preset: presetForDevBuy(devBuySol), curve, durationSec });
+  const flow = createTradeFlow({ seed, preset: presetForAmount(devBuySol), curve, durationSec });
   return { curve, flow, devTokens, priceAfterDevBuy };
 }
 
@@ -167,7 +167,7 @@ describe("createTradeFlow", () => {
     flow.advanceTo(10);
     expect(() => flow.advanceTo(9)).toThrow(RangeError);
     expect(() => flow.advanceTo(NaN)).toThrow(RangeError);
-    const preset = presetForDevBuy(3);
+    const preset = presetForAmount(3);
     expect(() => createTradeFlow({ seed: 1, preset, curve, durationSec: 0 })).toThrow(RangeError);
     expect(() =>
       createTradeFlow({ seed: 1, preset: { ...preset, pBuy: 2 }, curve, durationSec: 180 }),
@@ -186,7 +186,7 @@ describe("createTradeFlow", () => {
   it("handles a curve already complete or a trader left with dust", () => {
     const curve = new BondingCurve(P);
     curve.buy(200);
-    const flow = createTradeFlow({ seed: 1, preset: presetForDevBuy(3), curve, durationSec: 10 });
+    const flow = createTradeFlow({ seed: 1, preset: presetForAmount(3), curve, durationSec: 10 });
     expect(flow.done()).toBe(true);
     expect(flow.advanceTo(10)).toEqual([]);
     for (const trader of setup(15).flow.traders()) {

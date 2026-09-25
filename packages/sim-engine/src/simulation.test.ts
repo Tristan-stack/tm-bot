@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FALLBACK_CURVE_PARAMS } from "./curve.js";
 import { SimulationEndedError } from "./errors.js";
-import { presetForDevBuy } from "./presets.js";
+import { presetForAmount } from "./presets.js";
 import { assertSimConfig, createSimulation, DEV_DUMP_PANIC_SHARE } from "./simulation.js";
 import type { SimulationRun } from "./simulation.js";
 import { expectClose, simConfig as config } from "./test-helpers.js";
@@ -72,7 +72,7 @@ describe("createSimulation", () => {
   it("buys for the dev at t = 0 before any simulated trade, without mutating the config", () => {
     const input = config();
     const sim = createSimulation(input);
-    const devBuy = sim.devBuy();
+    const [devBuy] = sim.openingBuys();
     expect(devBuy).toMatchObject({ t: 0, side: "buy", trader: "dev", sol: 3 });
     expectClose(devBuy.tokens, 96_657_870.79);
     expect(sim.time()).toBe(0);
@@ -81,6 +81,34 @@ describe("createSimulation", () => {
     expect(events.every((e) => e.t > 0 && e.trader !== "dev")).toBe(true);
     expect(input).toEqual(config());
     expect(sim.position()).toMatchObject({ solIn: 3, solOut: 0 });
+  });
+
+  it("a bundle (25/09/2026): the second buy of the dev at t = 0, before any trader", () => {
+    const sim = createSimulation(
+      config({ devBuySol: 1, bundleSol: 3, preset: presetForAmount(3) }),
+    );
+    const [devBuy, bundle, ...rest] = sim.openingBuys();
+    expect(rest).toEqual([]);
+    expect(devBuy).toMatchObject({ t: 0, side: "buy", trader: "dev", sol: 1 });
+    expect(bundle).toMatchObject({ t: 0, side: "buy", trader: "dev", sol: 3 });
+    expect(bundle?.price).toBeGreaterThan(devBuy?.price ?? Infinity);
+
+    // One wallet, one position: both buys, as one buy of 4 SOL would give (fees are linear).
+    const single = createSimulation(config({ devBuySol: 4, preset: presetForAmount(3) }));
+    expectClose(sim.position().tokens, single.position().tokens);
+    expect(sim.position()).toMatchObject({ solIn: 4, solOut: 0 });
+    expectClose(sim.state().price, single.state().price);
+    expect(sim.step(180).every((e) => e.t > 0 && e.trader !== "dev")).toBe(true);
+  });
+
+  it("without a bundle, the dev buy alone: the runs made before the bundle replay the same", () => {
+    const sim = createSimulation(config());
+    expect(sim.openingBuys()).toHaveLength(1);
+    // A dev buy that completes the curve leaves nothing to bundle.
+    const tiny = { ...FALLBACK_CURVE_PARAMS, realTokens: 10_000_000 };
+    const complete = createSimulation(config({ devBuySol: 20, bundleSol: 3, curve: tiny }));
+    expect(complete.openingBuys()).toHaveLength(1);
+    expect(complete.endReason()).toBe("curve_complete");
   });
 
   it("sells the dev's tokens through the curve: the vectors of the card", () => {
@@ -215,8 +243,8 @@ describe("createSimulation", () => {
     const sim = createSimulation(config({ devBuySol: 20, curve: tiny }));
     expect(sim.endReason()).toBe("curve_complete");
     expect(sim.time()).toBe(0);
-    expect(sim.devBuy().tokens).toBe(10_000_000);
-    expect(sim.devBuy().sol).toBeLessThan(20);
+    expect(sim.openingBuys()[0].tokens).toBe(10_000_000);
+    expect(sim.openingBuys()[0].sol).toBeLessThan(20);
     expect(sim.step(10)).toEqual([]);
     expect(() => sim.sellDev(1)).toThrow(SimulationEndedError);
     expect(sim.topHolders(5).map((h) => h.address)).toEqual(["bonding_curve", "dev"]);
@@ -258,7 +286,9 @@ describe("createSimulation", () => {
     expect(() => createSimulation(config({ seed: 2 ** 32 }))).toThrow(/seed/);
     expect(() => createSimulation(config({ durationSec: 0 }))).toThrow(/durationSec/);
     expect(() => createSimulation(config({ solUsdPrice: NaN }))).toThrow(/solUsdPrice/);
-    expect(() => createSimulation(config({ devBuySol: -1 }))).toThrow(/devBuySol/);
+    expect(() => createSimulation({ ...config(), devBuySol: -1 })).toThrow(/devBuySol/);
+    expect(() => createSimulation(config({ bundleSol: -1 }))).toThrow(/bundleSol/);
+    expect(() => createSimulation(config({ bundleSol: NaN }))).toThrow(/bundleSol/);
     expect(() => createSimulation(config({ solUsdPrice: null }))).not.toThrow();
   });
 });
@@ -271,7 +301,7 @@ describe("assertSimConfig", () => {
       assertSimConfig({ ...config(), curve: { ...FALLBACK_CURVE_PARAMS, feeRate: 2 } }),
     ).toThrow(/feeRate/);
     expect(() =>
-      assertSimConfig({ ...config(), preset: { ...presetForDevBuy(3), pBuy: -1 } }),
+      assertSimConfig({ ...config(), preset: { ...presetForAmount(3), pBuy: -1 } }),
     ).toThrow(/pBuy/);
     expect(() => assertSimConfig({ ...config(), solUsdPrice: "150" })).toThrow(/solUsdPrice/);
   });
@@ -284,7 +314,7 @@ describe("acceptance (§15) through the public API", () => {
       let above = 0;
       for (let seed = 1; seed <= 1_000; seed += 1) {
         const sim = createSimulation(config({ seed, devBuySol }));
-        const reference = sim.devBuy().price;
+        const reference = sim.openingBuys()[0].price;
         sim.step(180);
         expect(sim.endReason()).not.toBeNull();
         if (sim.state().price > reference) above += 1;

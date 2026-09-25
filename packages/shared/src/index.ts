@@ -19,6 +19,7 @@ export { E } from "./i18n/emoji.js";
 export type { EmojiName } from "./i18n/emoji.js";
 export { enWebapp } from "./i18n/en-webapp.js";
 export { en, warn } from "./i18n/en.js";
+export * from "./launch/funds.js";
 export { DEFAULT_TERMS_VERSION, LEGAL_UPDATED_AT, resolveTermsVersion } from "./legal.js";
 export * from "./schemas.js";
 export * from "./solana-address.js";

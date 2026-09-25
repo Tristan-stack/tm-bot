@@ -275,6 +275,8 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("schema constraints (db)", () => {
       where: { id: simulation.id },
     });
     expect(storedSimulation.devBuySol.toString()).toBe("5.000000001");
+    // A row made before the bundle (25/09/2026) has none.
+    expect(storedSimulation.bundleSol.toString()).toBe("0");
     expect(storedSimulation.seed).toBe(2_147_483_647);
     expect(storedSimulation.params).toEqual(params);
   });

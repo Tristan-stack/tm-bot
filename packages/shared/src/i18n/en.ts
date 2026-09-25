@@ -1,8 +1,9 @@
 import type { Duration, ImportFormat, Plan, TxFailureCode } from "../constants.js";
 import {
-  DEV_BUY_MAX_DECIMALS,
-  DEV_BUY_MAX_SOL,
-  DEV_BUY_MIN_SOL,
+  BUNDLE_MAX_DECIMALS,
+  BUNDLE_MAX_SOL,
+  BUNDLE_MIN_SOL,
+  DEV_BUY_SOL,
   TOKEN_DESCRIPTION_MAX_CHARS,
   TOKEN_DESCRIPTION_MAX_SENTENCES,
   TOKEN_IMAGE_MAX_MB,
@@ -149,11 +150,6 @@ export const en = {
     // proposed text (D19)
     flag: `${E.construction} Coming soon: this section isn't available yet.`,
     sections: {
-      launch: {
-        title: `${E.launchCoin} LAUNCH COIN`,
-        // proposed text (D19)
-        description: "Create your memecoin on pump.fun: wallet, dev buy, token, recap.",
-      },
       simulate: {
         title: `${E.simulate} SIMULATE A LAUNCH`,
         // proposed text (D19)
@@ -404,9 +400,14 @@ export const en = {
     x: (value: string) => `${E.x} X: ${value}`,
     telegram: (value: string) => `${E.telegram} Telegram: ${value}`,
     imageAdded: `${E.confirm} Added`,
-    /** The summary lines of a launch (§10.1), before the block: `👛 Wallet: Main · 4.200 SOL`. */
+    /**
+     * The choices already made (§10.1, §15), before the block: `👛 Wallet: Main · 4.200 SOL`,
+     * `💰 Dev buy: 1 SOL`, `📦 Bundle: 3 SOL`. The steps of a simulation show the last two.
+     */
     summaryWallet: (line: string) => `${E.wallets} Wallet: ${line}`,
-    summaryDevBuy: (amount: string) => `${E.devBuy} Dev buy: ${amount}`,
+    /** The dev buy is fixed (decision of 25/09/2026). */
+    summaryDevBuy: `${E.devBuy} Dev buy: ${DEV_BUY_SOL} SOL`,
+    summaryBundle: (amount: string) => `${E.bundle} Bundle: ${amount}`,
     /** `fields` are the labels below, in the order of the block: `⚠️ Missing: name, ticker`. */
     missing: (fields: string[]) => `${E.warning} Missing: ${fields.join(", ")}`,
     missingAlert: "Add a name and ticker first.",
@@ -502,23 +503,24 @@ export const en = {
     },
   },
 
-  // Simulate a Launch (§6, V1-22): the Dev buy and Recap steps. The mockups give the
-  // description of the Dev buy, the lines of the recap and the DEMO mention; the rest is
-  // proposed (D19). Values arrive escaped, the ticker with its `$`, amounts formatted.
+  // Simulate a Launch (§6, V1-22): the Bundle and Recap steps. The mockups give the lines of
+  // the recap and the DEMO mention; the bundle texts follow the decision of 25/09/2026, the rest
+  // is proposed (D19). Values arrive escaped, the ticker with its `$`, amounts formatted.
   sim: {
-    /** `🪙 Moon Otter · $OTTR`: the token chosen, on the Dev buy and Custom screens. */
+    /** `🪙 Moon Otter · $OTTR`: the token chosen, on the Bundle and Custom screens. */
     token: (name: string, ticker: string) => `${E.token} ${name} · ${ticker}`,
-    devBuy: {
-      description: "How much SOL should the dev buy at launch?",
-      notSelected: `${E.devBuy} Dev buy: not selected yet`,
-      selected: (amount: string) => `${E.devBuy} Dev buy: ${amount}`,
+    // The bundle (decision of 25/09/2026): the dev buys 1 SOL, then the bundle buys in the next
+    // block. The screens of a launch say it too; their chosen lines are `token.summary*`.
+    bundle: {
+      description: `The dev buys ${DEV_BUY_SOL} SOL at launch, then the bundle buys in the next block. How much SOL should the bundle buy?`,
+      notSelected: `${E.bundle} Bundle: not selected yet`,
       btnPreset: (sol: number) => `${sol} SOL`,
       btnCustom: `${E.edit} Custom`,
     },
     custom: {
-      prompt: "Send the dev buy amount in SOL.",
-      rules: `Allowed: ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL, up to ${DEV_BUY_MAX_DECIMALS} decimals.`,
-      invalid: `${E.warning} Invalid amount. Send a number from ${DEV_BUY_MIN_SOL} to ${DEV_BUY_MAX_SOL} SOL.`,
+      prompt: "Send the bundle amount in SOL.",
+      rules: `Allowed: ${BUNDLE_MIN_SOL} to ${BUNDLE_MAX_SOL} SOL, up to ${BUNDLE_MAX_DECIMALS} decimals.`,
+      invalid: `${E.warning} Invalid amount. Send a number from ${BUNDLE_MIN_SOL} to ${BUNDLE_MAX_SOL} SOL.`,
     },
     recap: {
       description: "Check your simulation, then tap Start simulation.",
@@ -531,8 +533,12 @@ export const en = {
       linkLabels: { website: "Website", x: "X", telegram: "Telegram" },
       /** `5 SOL (≈ 15.2% of supply)`: `share` comes from `formatPct(share, 1)`. */
       withShare: (amount: string, share: string) => `${amount} (≈ ${share} of supply)`,
-      /** `💰 Dev buy: 5 SOL (≈ 15.2% of supply)` */
+      /** `💰 Dev buy: 1 SOL (≈ 3.4% of supply)` */
       devBuy: (amountWithShare: string) => `${E.devBuy} Dev buy: ${amountWithShare}`,
+      /** `📦 Bundle: 3 SOL (≈ 9.1% of supply)`: what it adds after the dev buy. */
+      bundle: (amountWithShare: string) => `${E.bundle} Bundle: ${amountWithShare}`,
+      /** `🧮 Total: 4 SOL (≈ 12.5% of supply)` */
+      total: (amountWithShare: string) => `${E.total} Total: ${amountWithShare}`,
       duration: (minutes: number) => `${E.duration} Duration: ${minutes} min max`,
       btnStart: `${E.startSim} Start simulation`,
     },
@@ -592,6 +598,65 @@ export const en = {
       invested: (amount: string) => `${E.invested} Invested: ${amount}`,
       sell: (amount: string) => `${E.sell} Sell: ${amount}`,
       profit: (amount: string) => `${E.profit} Profit: ${amount}`,
+    },
+  },
+
+  // Launch Coin (§10.1, V1-35 to V1-37). The mockups give the descriptions, the lines of the
+  // steps and of the recap; the notes and the failure lines are proposed (D19). Names arrive
+  // escaped, amounts formatted. The dev buy (1 SOL) and the bundle leave the same wallet
+  // (decision of 25/09/2026): the texts say it. Reused: the Custom input and the lines of `sim`
+  // and `token`, the wallet lines and the no-wallet state of `subscribe.payFromWallet`, the fee
+  // line of `wallets.withdraw`.
+  launch: {
+    wallet: {
+      description: "Choose the wallet that creates the token and pays the dev buy and the bundle.",
+      /** The smallest launch (D13): the dev buy and the smallest bundle, nothing on top. */
+      minimum: `The smallest launch needs ${DEV_BUY_SOL + BUNDLE_MIN_SOL} SOL (${DEV_BUY_SOL} SOL dev buy + ${BUNDLE_MIN_SOL} SOL bundle).`,
+      // proposed text (D19)
+      unknown: (name: string) => `${name} · balance unavailable`,
+      // proposed text (D19): the name, the missing amount and the address to fund (§10.1)
+      insufficient: (name: string, missing: string, address: string) =>
+        [
+          `${E.warning} INSUFFICIENT FUNDS`,
+          `${name} can't cover the smallest launch: ${missing} missing.`,
+          `Send SOL to this address, then tap ${name} again:`,
+          address,
+        ].join("\n"),
+      // proposed texts (D19)
+      unreadable: (name: string) =>
+        `${E.warning} Couldn't read the balance of ${name}. Try again in a moment.`,
+      gone: `${E.warning} This wallet no longer exists. Choose another one.`,
+    },
+    bundle: {
+      description: `The dev buys ${DEV_BUY_SOL} SOL at launch, then the bundle buys in the next block. Both are paid from this wallet. Choose the bundle amount.`,
+      ok: (amount: string) => `${amount} · ${E.ok} OK`,
+      short: (amount: string, missing: string) =>
+        `${amount} · ${E.warning} Insufficient funds (${missing} missing)`,
+      custom: (max: string) => `Custom · ${BUNDLE_MIN_SOL} to ${max} with this wallet`,
+      // proposed text (D19): under the smallest bundle, the Custom line says what it lacks
+      customShort: (missing: string) =>
+        `Custom · ${E.warning} Insufficient funds (${missing} missing)`,
+      // proposed text (D19)
+      unreadable: `${E.warning} Couldn't read this wallet's balance. Tap Refresh.`,
+      /** `5 SOL`: the bundle clicked. */
+      insufficient: (name: string, bundle: string, missing: string) =>
+        [
+          `${E.warning} INSUFFICIENT FUNDS`,
+          `${name} can't cover the ${DEV_BUY_SOL} SOL dev buy and a ${bundle} bundle: ${missing} missing.`,
+          `Send SOL to ${name}, then tap Refresh, or pick a smaller bundle.`,
+        ].join("\n"),
+      // proposed text (D19): the rule of the simulation, with the balance of the wallet
+      rules: (max: string) =>
+        `Allowed: ${BUNDLE_MIN_SOL} to ${max} with this wallet, up to ${BUNDLE_MAX_DECIMALS} decimals.`,
+    },
+    recap: {
+      description: "Check everything before creating the token.",
+      /** `link` is `successLabel`, already an <a> of the caller (proposal). */
+      success: (link: string) => `${E.success} Your launch will be posted in the ${link}.`,
+      successLabel: "Success channel",
+      /** §10.1, D6: the line of the recap, and the alert of Create token, while creation is off. */
+      v2Notice: `${E.construction} Token creation arrives in V2.`,
+      btnCreate: `${E.createToken} Create token`,
     },
   },
 
@@ -803,11 +868,12 @@ export const en = {
   flows: {
     SIMULATION: {
       title: `${E.simulate} SIMULATION`,
-      steps: ["Token", "Dev buy", "Recap"],
+      // The step where the bundle is chosen (decision of 25/09/2026), after the fixed dev buy.
+      steps: ["Token", "Bundle", "Recap"],
     },
     LAUNCH: {
       title: `${E.launchCoin} LAUNCH`,
-      steps: ["Wallet", "Dev buy", "Token", "Recap"],
+      steps: ["Wallet", "Bundle", "Token", "Recap"],
     },
     // Withdraw (§9.5, proposal: the context has no mockup of its header).
     WITHDRAW: {

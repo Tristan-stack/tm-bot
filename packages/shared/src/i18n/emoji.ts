@@ -65,6 +65,9 @@ export const E = {
 
   // Flows
   devBuy: "💰",
+  bundle: "📦",
+  /** 📊 is Simulate: the total of the dev buy and the bundle takes the abacus. */
+  total: "🧮",
   fees: "⛽",
   duration: "⏱",
   startSim: "▶️",

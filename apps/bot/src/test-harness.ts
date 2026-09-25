@@ -763,7 +763,7 @@ export function fakeSimulations(
   const now = options.now ?? Date.now;
   const draftOf = options.draftOf ?? (() => undefined);
   const store: SimulationStore = {
-    findLatest: ({ userId, tokenDraftId, devBuySol }, since) =>
+    findLatest: ({ userId, tokenDraftId, devBuySol, bundleSol }, since) =>
       Promise.resolve(
         rows
           .filter(
@@ -771,16 +771,18 @@ export function fakeSimulations(
               row.userId === userId &&
               row.tokenDraftId === tokenDraftId &&
               Number(row.devBuySol) === devBuySol &&
+              Number(row.bundleSol) === bundleSol &&
               row.createdAt > since,
           )
           .at(-1) ?? null,
       ),
-    create: ({ userId, tokenDraftId, devBuySol, seed, params }) => {
+    create: ({ userId, tokenDraftId, devBuySol, bundleSol, seed, params }) => {
       const row = {
         id: `s${rows.length + 1}`,
         userId,
         tokenDraftId,
         devBuySol: devBuySol.toString(),
+        bundleSol: bundleSol.toString(),
         seed,
         params,
         createdAt: new Date(now()),

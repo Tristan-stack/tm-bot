@@ -3,7 +3,7 @@ import type { PrismaClient } from "../generated/prisma/client.js";
 import { createSimulationStore } from "./simulations.js";
 
 const SINCE = new Date("2026-09-23T11:00:00Z");
-const KEY = { userId: "u1", tokenDraftId: "d1", devBuySol: 2.5 };
+const KEY = { userId: "u1", tokenDraftId: "d1", devBuySol: 1, bundleSol: 3.5 };
 
 function harness() {
   const prisma = {
@@ -38,20 +38,33 @@ describe("createSimulationStore", () => {
 
     expect(await store.findLatest(KEY, SINCE)).toBeNull();
     expect(prisma.simulation.findFirst).toHaveBeenCalledWith({
-      where: { userId: "u1", tokenDraftId: "d1", devBuySol: "2.5", createdAt: { gt: SINCE } },
+      where: {
+        userId: "u1",
+        tokenDraftId: "d1",
+        devBuySol: "1",
+        bundleSol: "3.5",
+        createdAt: { gt: SINCE },
+      },
       orderBy: { createdAt: "desc" },
     });
   });
 
   it("creates the row with the seed and the params as given", async () => {
     const { prisma, store } = harness();
-    const params = { seed: 7, devBuySol: 2.5 };
+    const params = { seed: 7, devBuySol: 1, bundleSol: 3.5 };
 
     const row = await store.create({ ...KEY, seed: 7, params });
 
     expect(row.id).toBe("s1");
     expect(prisma.simulation.create).toHaveBeenCalledWith({
-      data: { userId: "u1", tokenDraftId: "d1", devBuySol: "2.5", seed: 7, params },
+      data: {
+        userId: "u1",
+        tokenDraftId: "d1",
+        devBuySol: "1",
+        bundleSol: "3.5",
+        seed: 7,
+        params,
+      },
     });
   });
 });

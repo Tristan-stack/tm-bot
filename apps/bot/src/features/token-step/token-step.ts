@@ -52,7 +52,7 @@ export type TokenStepConfig = {
   flow: TokenFlow;
   /** The menu for a simulation, step 2 for a launch: a button that only navigates (§4.4). */
   backData: CallbackData;
-  /** LAUNCH: the wallet and the dev buy already chosen (§15). */
+  /** LAUNCH: the wallet, the dev buy and the bundle already chosen (§15). */
   summaryLines?: (ctx: BotContext) => Promise<string[]>;
   onContinue: (ctx: BotContext, draft: ReadyTokenDraft) => Promise<unknown>;
 };
@@ -81,6 +81,8 @@ export type ShowTokenStepOptions = {
   block?: Block;
   /** The draft just written: spares the read the screen would do again. */
   draft?: TokenDraft | null;
+  /** The lines of `summaryLines` the caller already has: spares their read. */
+  summaryLines?: string[];
 };
 
 /** The text of a refused input (§4.5), from the typed error of V1-15. */
@@ -189,7 +191,7 @@ export function createTokenStep({
     const [draft, isPremium, summaryLines] = await Promise.all([
       options.draft === undefined ? loadDraft(ctx, flow) : options.draft,
       data.hasActivePremium(ctx.user.id),
-      config.summaryLines?.(ctx) ?? Promise.resolve([]),
+      options.summaryLines ?? config.summaryLines?.(ctx) ?? [],
     ]);
     const view = draft ?? EMPTY_DRAFT;
     const missingFlag =
@@ -294,23 +296,20 @@ export function createTokenStep({
     await configOf(flow).onContinue(ctx, draft);
   }
 
-  /** A handler of `tok:<op>:<flow>[:<field>]`: the flow of a registered config, or a stale button. */
+  /** A handler of `tok:<op>:<flow>[:<field>]`: the flow of its code, or a stale button. */
   const withFlow =
     (
       run: (ctx: BotContext, flow: TokenFlow, arg: string | undefined) => Promise<unknown>,
     ): CallbackHandler =>
     (ctx, [flowCode, arg]) => {
       const flow = tokenFlowOf(flowCode);
-      return flow === undefined || !configs.has(flow)
-        ? notify(ctx, en.common.staleButton)
-        : run(ctx, flow, arg);
+      return flow === undefined ? notify(ctx, en.common.staleButton) : run(ctx, flow, arg);
     };
 
   /** The message that answers an input: a text for six fields, a photo or a file for the image. */
   const input: InputHandler<"token_field"> = async (ctx, pending, text) => {
     const mode = "edit";
     const { flow, field } = pending;
-    if (!configs.has(flow)) return;
     if (now() - pending.since > TOKEN_INPUT_TIMEOUT_MS) {
       return showTokenStep(ctx, flow, { flags: [en.token.inputExpired], mode });
     }
@@ -332,7 +331,7 @@ export function createTokenStep({
   };
 
   return {
-    /** The flow of a config: called by V1-22 and V1-37 (provisionally by V1-16). */
+    /** The flow of a config: V1-22 and V1-37, both at startup, before any update. */
     registerFlow(config: TokenStepConfig): void {
       configs.set(config.flow, config);
     },

@@ -63,8 +63,7 @@ export function createLiveHandlers(deps: LiveDeps): Record<string, CallbackHandl
 
   const recapOf = (sim: ReadySim, config: SimConfig): RecapView => ({
     draft: sim.tokenDraft,
-    devBuySol: Number(sim.devBuySol),
-    curve: config.curve,
+    config,
     simId: sim.id,
   });
 

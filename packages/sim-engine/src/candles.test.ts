@@ -19,7 +19,7 @@ describe("createCandleAggregator", () => {
   it("opens the first candle at the initial price and includes the jump of the dev buy", () => {
     const sim = createSimulation(simConfig({ seed: 1, solUsdPrice: null }));
     const aggregator = createCandleAggregator({ initialPrice: INITIAL, durationSec: 180 });
-    const [first] = aggregator.push([sim.devBuy()], 0);
+    const [first] = aggregator.push(sim.openingBuys(), 0);
     expect(first).toMatchObject({
       time: 0,
       open: INITIAL,
@@ -28,8 +28,8 @@ describe("createCandleAggregator", () => {
       sells: 0,
       volumeSol: 3,
     });
-    expect(first?.close).toBe(sim.devBuy().price);
-    expect(first?.high).toBe(sim.devBuy().price);
+    expect(first?.close).toBe(sim.openingBuys()[0].price);
+    expect(first?.high).toBe(sim.openingBuys()[0].price);
     expect(CANDLE_INTERVAL_SEC).toBe(5);
   });
 
@@ -122,9 +122,9 @@ describe("createCandleAggregator", () => {
   it("follows a whole simulation frame by frame with strictly increasing times", () => {
     const sim = createSimulation(simConfig({ seed: 5, devBuySol: 5, solUsdPrice: null }));
     const aggregator = createCandleAggregator({ initialPrice: INITIAL, durationSec: 180 });
-    aggregator.push([sim.devBuy()], 0);
+    aggregator.push(sim.openingBuys(), 0);
     let trades = 1;
-    let volume = sim.devBuy().sol;
+    let volume = sim.openingBuys()[0].sol;
     while (sim.endReason() === null) {
       const events = sim.step(1 / 30);
       trades += events.length;

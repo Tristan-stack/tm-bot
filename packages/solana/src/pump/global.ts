@@ -1,4 +1,9 @@
-import { DEV_BUY_MAX_SOL, LAMPORTS_PER_SOL } from "@launchbot/shared";
+import {
+  BUNDLE_MAX_SOL,
+  DEV_BUY_SOL,
+  LAMPORTS_PER_SOL,
+  MAX_OPENING_BUY_SOL,
+} from "@launchbot/shared";
 import { assertCurveParams, devBuySupplyShare, TOKEN_DECIMALS } from "@launchbot/sim-engine";
 import type { CurveParams } from "@launchbot/sim-engine";
 import type { Global as PumpGlobal } from "@pump-fun/pump-sdk";
@@ -201,9 +206,9 @@ export function pumpGlobalToCurveParams(raw: PumpGlobalRaw): CurveParams {
   if (params.feeRate >= MAX_FEE_RATE) {
     throw invalid(`feeRate ${params.feeRate} is ${MAX_FEE_RATE * 100} % or more`);
   }
-  if (devBuySupplyShare(params, DEV_BUY_MAX_SOL).capped) {
+  if (devBuySupplyShare(params, MAX_OPENING_BUY_SOL).capped) {
     throw invalid(
-      `a ${DEV_BUY_MAX_SOL} SOL dev buy completes the curve at t = 0 (virtualSol ${params.virtualSol})`,
+      `a ${DEV_BUY_SOL} SOL dev buy and a ${BUNDLE_MAX_SOL} SOL bundle complete the curve at t = 0 (virtualSol ${params.virtualSol})`,
     );
   }
   return params;

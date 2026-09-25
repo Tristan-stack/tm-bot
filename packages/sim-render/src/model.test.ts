@@ -132,7 +132,6 @@ describe("buildPnlCardModel", () => {
   it("follows the real engine: a Sell 100% is worth what the sale gave", () => {
     const config = simConfig();
     const sold = createSimulation(config);
-    sold.devBuy();
     sold.step(10);
     const sale = sold.sellDev(1).event;
     const closed = buildPnlCardModel({ position: sold.position(), config, token });

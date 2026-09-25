@@ -1,9 +1,9 @@
 import type { TokenDraftFields } from "@launchbot/db";
 import {
   a,
+  BUNDLE_PRESETS_SOL,
   cancelBtn,
   cbBtn,
-  DEV_BUY_PRESETS_SOL,
   en,
   encodeCallback,
   escapeHtml,
@@ -18,7 +18,7 @@ import {
 } from "@launchbot/shared";
 import type { OptionalLine, Screen, SimSpeed, Ui } from "@launchbot/shared";
 import { devBuySupplyShare } from "@launchbot/sim-engine";
-import type { CurveParams } from "@launchbot/sim-engine";
+import type { CurveParams, SimConfig } from "@launchbot/sim-engine";
 
 /** The three sales of §6.1, in percent of the tokens still held. */
 export const SELL_PCTS = [25, 50, 100] as const;
@@ -31,11 +31,11 @@ export type SellPct = (typeof SELL_PCTS)[number];
  */
 export const SIM_CB = {
   open: encodeCallback("sim", "open"),
-  preset: (sol: number) => encodeCallback("sim", "dev", sol),
-  custom: encodeCallback("sim", "dev", "c"),
+  preset: (sol: number) => encodeCallback("sim", "b", sol),
+  custom: encodeCallback("sim", "b", "c"),
   cancelCustom: encodeCallback("sim", "cc"),
   backToToken: encodeCallback("sim", "bk", "tok"),
-  backToDevBuy: encodeCallback("sim", "bk", "dev"),
+  backToBundle: encodeCallback("sim", "bk", "b"),
   /** ▶️ Start simulation: the click runs the row the recap was built on (D14, D21). */
   go: (simId: string) => encodeCallback("sim", "go", simId),
   sell: (simId: string, pct: SellPct) => encodeCallback("sim", "sell", simId, pct),
@@ -54,34 +54,37 @@ const { sim } = en;
 export const tokenLine = (name: string, ticker: string): string =>
   sim.token(escapeHtml(name), formatTicker(ticker));
 
-const devBuyLine = (devBuySol: number | undefined): string =>
-  devBuySol === undefined
-    ? sim.devBuy.notSelected
-    : sim.devBuy.selected(formatSolNumber(devBuySol));
+/** The choices of step 2: the fixed dev buy, and the bundle or "not selected yet". */
+const choiceLines = (bundleSol: number | undefined): string[] => [
+  en.token.summaryDevBuy,
+  bundleSol === undefined
+    ? sim.bundle.notSelected
+    : en.token.summaryBundle(formatSolNumber(bundleSol)),
+];
 
-/** Step 2/3 (§6): presets, Custom, Back to the Token screen. */
-export function buildDevBuyScreen(
+/** Step 2/3 (§6, 25/09/2026): the dev buy of 1 SOL, then the bundle: presets, Custom, Back. */
+export function buildBundleScreen(
   ui: Ui,
-  view: { draft: ReadyToken; devBuySol?: number },
+  view: { draft: ReadyToken; bundleSol?: number },
   options: { flags?: OptionalLine[] } = {},
 ): Screen {
   return renderScreen({
     header: ui.flowHeader({ flow: "SIMULATION", step: 2 }),
-    description: sim.devBuy.description,
-    info: [tokenLine(view.draft.name, view.draft.symbol), devBuyLine(view.devBuySol)],
+    description: sim.bundle.description,
+    info: [tokenLine(view.draft.name, view.draft.symbol), ...choiceLines(view.bundleSol)],
     flags: options.flags,
     keyboard: [
-      DEV_BUY_PRESETS_SOL.map((sol) => cbBtn(sim.devBuy.btnPreset(sol), SIM_CB.preset(sol))),
-      [cbBtn(sim.devBuy.btnCustom, SIM_CB.custom)],
+      BUNDLE_PRESETS_SOL.map((sol) => cbBtn(sim.bundle.btnPreset(sol), SIM_CB.preset(sol))),
+      [cbBtn(sim.bundle.btnCustom, SIM_CB.custom)],
       [cbBtn(en.btn.back, SIM_CB.backToToken)],
     ],
   });
 }
 
-/** The Custom input of step 2 (§4.5): the current choice and the bounds above Cancel. */
+/** The Custom input of step 2 (§4.5): the current choices and the bounds above Cancel. */
 export function buildCustomAmountScreen(
   ui: Ui,
-  view: { draft: ReadyToken; devBuySol?: number },
+  view: { draft: ReadyToken; bundleSol?: number },
   options: { flags?: OptionalLine[] } = {},
 ): Screen {
   return renderInputScreen({
@@ -89,7 +92,7 @@ export function buildCustomAmountScreen(
     prompt: sim.custom.prompt,
     rules: [
       tokenLine(view.draft.name, view.draft.symbol),
-      devBuyLine(view.devBuySol),
+      ...choiceLines(view.bundleSol),
       sim.custom.rules,
     ],
     flags: options.flags,
@@ -97,10 +100,27 @@ export function buildCustomAmountScreen(
   });
 }
 
-/** `5 SOL (≈ 15.2% of supply)`: the share the curve gives (§7.1), never dev buy / supply. */
-export function formatDevBuyWithShare(devBuySol: number, curve: CurveParams): string {
-  const { share } = devBuySupplyShare(curve, devBuySol);
-  return sim.recap.withShare(formatSolNumber(devBuySol), formatPct(share, 1));
+/** `5 SOL (≈ 15.2% of supply)` */
+const withShare = (sol: number, share: number): string =>
+  sim.recap.withShare(formatSolNumber(sol), formatPct(share, 1));
+
+/**
+ * The buys of a launch (§6, §10.1, decision of 25/09/2026): the dev buy, the bundle and their
+ * total, each with the share of the supply the curve gives at t = 0 (§7.1), never amount /
+ * supply; the bundle's is what it adds after the dev buy. Shared with the recap of a launch
+ * (V1-37). Without a bundle (a simulation made before it, and its Run again), the dev buy alone.
+ */
+export function renderBuyLines(curve: CurveParams, devBuySol: number, bundleSol: number): string[] {
+  const devShare = devBuySupplyShare(curve, devBuySol).share;
+  const devLine = sim.recap.devBuy(withShare(devBuySol, devShare));
+  if (bundleSol === 0) return [devLine];
+  const total = devBuySol + bundleSol;
+  const totalShare = devBuySupplyShare(curve, total).share;
+  return [
+    devLine,
+    sim.recap.bundle(withShare(bundleSol, totalShare - devShare)),
+    sim.recap.total(withShare(total, totalShare)),
+  ];
 }
 
 /** The link columns of the draft, in the order of the line, with their label. */
@@ -130,9 +150,8 @@ export function renderTokenRecapBlock(draft: TokenDraftFields & ReadyToken): str
 
 export type RecapView = {
   draft: TokenDraftFields & ReadyToken;
-  devBuySol: number;
-  /** The curve stored in the Simulation: the run computes the position on the same one. */
-  curve: CurveParams;
+  /** The config stored in the Simulation: the run computes the position on the same curve. */
+  config: Pick<SimConfig, "devBuySol" | "bundleSol" | "curve">;
   simId: string;
 };
 
@@ -148,14 +167,14 @@ export function buildRecapScreen(
     info: [
       renderTokenRecapBlock(view.draft),
       [
-        sim.recap.devBuy(formatDevBuyWithShare(view.devBuySol, view.curve)),
+        ...renderBuyLines(view.config.curve, view.config.devBuySol, view.config.bundleSol),
         sim.recap.duration(SIM_DURATION_SEC / 60),
       ].join("\n"),
     ].join("\n\n"),
     flags: [sim.demoBanner, ...(options.flags ?? [])],
     keyboard: [
       [cbBtn(sim.recap.btnStart, SIM_CB.go(view.simId))],
-      navRow(SIM_CB.backToDevBuy, { menu: true }),
+      navRow(SIM_CB.backToBundle, { menu: true }),
     ],
   });
 }

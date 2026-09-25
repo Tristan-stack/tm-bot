@@ -79,12 +79,16 @@ export function parseSolToLamports(input: string): bigint | null {
   return BigInt(integer) * LAMPORTS_PER_SOL + BigInt(fraction.padEnd(SOL_DECIMALS, "0"));
 }
 
-/** A SOL amount held as a number (the engine, a dev buy) to lamports, rounded to the lamport. */
+/** A SOL amount held as a number (the engine, a bundle) to lamports, rounded to the lamport. */
 export const solToLamports = (sol: number): bigint =>
   BigInt(Math.round(sol * Number(LAMPORTS_PER_SOL)));
 
+/** Lamports as a SOL number, for a computation or a USD value only: a balance stays lamports. */
+export const lamportsToSol = (lamports: bigint): number =>
+  Number(lamports) / Number(LAMPORTS_PER_SOL);
+
 /**
- * A SOL amount held as a number, 3 decimals at most (a dev buy, V1-22): `5 SOL`, `2.5 SOL`,
+ * A SOL amount held as a number, 3 decimals at most (a bundle, V1-22): `5 SOL`, `2.5 SOL`,
  * `1.125 SOL`. Never for a balance, which is lamports.
  */
 export const formatSolNumber = (sol: number): string =>
@@ -99,7 +103,7 @@ export const formatUsd = (value: number, options: { decimals?: number } = {}): s
 
 /** USD value of a SOL amount, for display only. `null` when the SOL price is unknown (§4.3). */
 export const usdOf = (lamports: bigint, solUsd: number | null): number | null =>
-  solUsd === null ? null : (Number(lamports) / Number(LAMPORTS_PER_SOL)) * solUsd;
+  solUsd === null ? null : lamportsToSol(lamports) * solUsd;
 
 /** `2.500 SOL ($258.40)`, or `2.500 SOL` when the SOL price is unknown: USD amounts are hidden. */
 export const withUsd = (solText: string, usd: number | null): string =>

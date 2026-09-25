@@ -320,53 +320,67 @@ Sessions et conversations partagent la table `Session` (préfixe `conversation-`
 Une session que la version en place ne sait pas lire est jetée et reconstruite, donc un déploiement
 ne casse aucune conversation. **Aucun secret en session** : les lignes sont en clair.
 
-### Simulate a Launch : dev buy, récap et création de la simulation (V1-22)
+### Simulate a Launch : bundle, récap et création de la simulation (V1-22)
 
 `registerSimulation` ([apps/bot/src/features/simulation/simulation.ts](apps/bot/src/features/simulation/simulation.ts))
 branche « 📊 Simulate a Launch » sur le parcours complet : étape 1/3 Token (V1-16, Back = menu),
-étape 2/3 Dev buy, étape 3/3 Récap. Écrans dans
+étape 2/3 Bundle, étape 3/3 Récap. Écrans dans
 [screens.ts](apps/bot/src/features/simulation/screens.ts), logique dans
 [apps/bot/src/services/simulation.ts](apps/bot/src/services/simulation.ts) (`buildSimConfig`,
 `prepare`), lignes `Simulation` via `createSimulationStore` (`@launchbot/db`). Le parcours
 provisoire de V1-16 est remplacé.
 
-- **Dev buy** : `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, `✏️ Custom`, `⬅️ Back` (vers Token). Description
-  puis infos (`🪙 Moon Otter · $OTTR`, `💰 Dev buy: not selected yet` ou le montant), ordre §4.5.
-  Custom : écran de saisie avec la valeur actuelle, `Allowed: 1 to 20 SOL, up to 3 decimals.` et
-  `❌ Cancel` ; `parseDevBuyAmount` (`@launchbot/shared`, la grammaire SOL de `parseSolToLamports`)
-  accepte « 2.5 », « 2,5 », « 5 sol », 3 décimales max, ni signe ni exposant ; refus → flag `⚠️ Invalid amount…`, la saisie reste ouverte
-  (message de l'utilisateur supprimé, écran édité, V1-04).
+**Décision du 25/09/2026** : le dev achète toujours **1 SOL** (`DEV_BUY_SOL`), puis le **bundle**
+choisi achète au bloc suivant, depuis le même wallet. La simulation suit le même modèle que Launch
+Coin : l'étape 2 choisit le bundle (3 / 5 / 10 SOL, Custom de 3 à 20 SOL), plus le dev buy.
+
+- **Bundle** : `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, `✏️ Custom`, `⬅️ Back` (vers Token). Description
+  (« The dev buys 1 SOL at launch, then the bundle buys in the next block… ») puis infos
+  (`🪙 Moon Otter · $OTTR`, `💰 Dev buy: 1 SOL`, `📦 Bundle: not selected yet` ou le montant).
+  Custom : écran de saisie avec les valeurs actuelles, `Allowed: 3 to 20 SOL, up to 3 decimals.` et
+  `❌ Cancel` ; `parseBundleAmount` (`@launchbot/shared`, la grammaire SOL de `parseSolToLamports`)
+  accepte « 3.5 », « 3,5 », « 5 sol », 3 décimales max, ni signe ni exposant, et rend le montant
+  en SOL et en lamports exacts (Launch Coin) ; refus → flag `⚠️ Invalid amount…`, la saisie reste
+  ouverte (message de l'utilisateur supprimé, écran édité, V1-04).
 - **Récap** : bloc TOKEN (`renderTokenRecapBlock`, repris par V1-37 : nom · ticker, description si
   présente, `🖼 Image: ✅` ou `—`, `🔗 Links: none` ou `Website · X · Telegram` en liens `<a>`),
-  `💰 Dev buy: 5 SOL (≈ 15.2% of supply)` (`formatDevBuyWithShare` sur `devBuySupplyShare` du
-  moteur, calculé sur la courbe **stockée** dans la Simulation, jamais sur une relecture),
-  `⏱ Duration: 3 min max`, mention `⚠️ DEMO — Bullish scenario…` (`en.sim.demoBanner`, reprise
-  par le message de simulation). Clavier : `▶️ Start simulation` en callback `sim:go:<simId>`
-  (V1-26, D21 : il démarre la simulation dans le chat ; jusqu'au 24/09/2026 c'était un bouton
-  `web_app` vers la Mini App), puis `⬅️ Back` / `🏠 Menu`. La création de la Simulation à
-  l'affichage du récap (D14) est conservée : le clic lit la ligne et la joue.
-- **Création de la Simulation (D14)** : à l'affichage du récap, pas au clic (un bouton `web_app`
-  ne passe pas par le bot). La plus récente du même utilisateur, brouillon et dev buy est reprise
-  si elle a moins d'1 h (`SIMULATION_REUSE_MS`, proposition) ; sinon contrôle de la limite
-  (`RATE_LIMITS.simulation`, 10 par 10 min, D17 ; une reprise ne compte pas) puis création : seed
-  `crypto.randomInt(0, 2^31)`, `params` = SimConfig complet (`buildSimConfig` : `presetForDevBuy`,
-  `durationSec` 180, courbe de `getCurveParams()` V1-21, `solUsdPrice` V1-07 ou `null`), validé
-  par `assertSimConfig` et `simConfigSchema`. Un brouillon édité devient un nouveau
-  `tokenDraftId` (copie à l'écriture V1-16), donc une nouvelle Simulation.
-- **Blocages écrits à l'écran** : limite → alerte + flag `⚠️ Too many simulations…` sur le Dev
-  buy, aucune ligne créée ; nom ou ticker manquant, brouillon disparu → écran Token avec
+  puis `renderBuyLines` (repris par V1-37) : `💰 Dev buy: 1 SOL (≈ 3.4% of supply)`,
+  `📦 Bundle: 5 SOL (≈ 14.3% of supply)` (ce que le bundle ajoute après le dev buy) et
+  `🧮 Total: 6 SOL (≈ 17.7% of supply)`, sur `devBuySupplyShare` du moteur, calculé sur la courbe
+  **stockée** dans la Simulation, jamais sur une relecture ; une Simulation stockée avant le
+  bundle n'affiche que son dev buy. Puis `⏱ Duration: 3 min max`, mention
+  `⚠️ DEMO — Bullish scenario…` (`en.sim.demoBanner`, reprise par le message de simulation).
+  Clavier : `▶️ Start simulation` en callback `sim:go:<simId>` (V1-26, D21 : il démarre la
+  simulation dans le chat ; jusqu'au 24/09/2026 c'était un bouton `web_app` vers la Mini App),
+  puis `⬅️ Back` / `🏠 Menu`. La création de la Simulation à l'affichage du récap (D14) est
+  conservée : le clic lit la ligne et la joue.
+- **Création de la Simulation (D14)** : à l'affichage du récap, pas au clic. La plus récente du
+  même utilisateur, brouillon, dev buy et bundle est reprise si elle a moins d'1 h
+  (`SIMULATION_REUSE_MS`, proposition) ; sinon contrôle de la limite (`RATE_LIMITS.simulation`,
+  10 par 10 min, D17 ; une reprise ne compte pas) puis création : seed `crypto.randomInt(0, 2^31)`,
+  `params` = SimConfig complet (`buildSimConfig` : dev buy de 1 SOL, `bundleSol`,
+  `presetForAmount(bundleSol)`, `durationSec` 180, courbe de
+  `getCurveParams()` V1-21, `solUsdPrice` V1-07 ou `null`), validé par `assertSimConfig` et
+  `simConfigSchema` ; les colonnes `devBuySol` et `bundleSol` sont tirées de ce config, comme le
+  seed. `prepare` est le seul endroit qui connaît le dev buy fixe ; Run again recopie le config.
+  Un brouillon édité devient un nouveau `tokenDraftId` (copie à l'écriture V1-16), donc une
+  nouvelle Simulation.
+- **Blocages écrits à l'écran** : limite → alerte + flag `⚠️ Too many simulations…` sur le
+  Bundle, aucune ligne créée ; nom ou ticker manquant, brouillon disparu → écran Token avec
   `⚠️ Missing: …` (`tokenStep.requireReadyDraft`, le brouillon accepté par Continue est passé
   d'écran en écran sans relecture) ; erreur inattendue → flag générique de V1-04, détail dans les logs seulement.
 - **Schémas partagés** (`@launchbot/shared`, qui ne dépend pas du moteur) : `curveParamsSchema`,
-  `presetParamsSchema`, `simConfigSchema` (V1-23 et V1-24 valident avec), `devBuyAmountSchema`,
-  `seedSchema` ; `formatSolNumber(sol)` (« 5 SOL », « 2.5 SOL »).
-- **Session** : `sim.devBuySol` (Back depuis le récap réaffiche le montant) ; le brouillon reste
+  `presetParamsSchema`, `simConfigSchema` (les règles de `assertSimConfig`, jamais les bornes d'une
+  saisie, pour qu'une ligne stockée reste lisible ; `bundleSol` vaut 0 par défaut : les lignes d'avant
+  le bundle se relisent), `seedSchema` ; `formatSolNumber(sol)` (« 5 SOL »,
+  « 3.5 SOL »).
+- **Session** : `sim.bundleSol` (Back depuis le récap réaffiche le montant) ; le brouillon reste
   dans `tokenStep.SIMULATION`, la Simulation est retrouvée par la règle de reprise (pas d'id en
   session). Saisie en attente : `pendingInput.kind = "sim_amount"`.
-- Callback data : `sim:open`, `sim:dev:3|5|10`, `sim:dev:c`, `sim:cc`, `sim:bk:tok`,
-  `sim:bk:dev` (test ≤ 64 octets).
+- Callback data : `sim:open`, `sim:b:3|5|10`, `sim:b:c`, `sim:cc`, `sim:bk:tok`, `sim:bk:b`
+  (test ≤ 64 octets ; un ancien bouton `sim:dev:*` reçoit le toast « bouton expiré » du routeur).
 - Pas de verrou anti double clic (proposition de la carte non retenue) : grammY traite les updates
-  d'un chat en séquence, et la reprise absorbe le second clic. `formatDevBuyWithShare` et
+  d'un chat en séquence, et la reprise absorbe le second clic. `renderBuyLines` et
   `renderTokenRecapBlock` vivent dans `apps/bot`, pas dans `packages/shared` qui ne peut pas
   importer le moteur.
 
@@ -419,7 +433,8 @@ L'étape Token (§5) est un composant unique, `createTokenStep({ ui, drafts, dat
 fois le domaine `tok` et la saisie `token_field` ; chaque parcours appelle
 `tokenStep.registerFlow(config)` avec la cible de son Back (`backData` : `nav:home` pour la
 simulation, l'étape 2 pour le launch — un bouton qui ne fait que naviguer, comme partout), ses
-lignes de résumé (`summaryLines`, LAUNCH : wallet et dev buy) et son `onContinue(ctx, draft)` — qui
+lignes de résumé (`summaryLines`, LAUNCH : wallet, dev buy et bundle ; un appelant qui les a déjà les passe
+à `showTokenStep(ctx, flow, { summaryLines })`) et son `onContinue(ctx, draft)` — qui
 reçoit toujours un brouillon avec `name` et `symbol` non nuls. L'id du brouillon vit dans la session
 du step, par parcours. Les hooks d'AI Generate (V1-17, lignes d'info et de notes sur l'écran, et le
 clic) sont construits par le step à partir de `ai` et `providers` ; le libellé du bouton vient de
@@ -881,7 +896,7 @@ le Refresh et la reprise `home` du premier accès.
   **exactement** ces valeurs.
 - Sections pas encore livrées : `registerComingSoon` enregistre un écran **provisoire** sur leur
   domaine (`router.registerProvisional`). Le `router.register` du ticket d'une section le remplace,
-  sans rien retirer nulle part (`sim` est sorti de la liste avec V1-16). `showComingSoon(ctx, ui,
+  sans rien retirer nulle part (`sim` est sorti de la liste avec V1-16, `lc` avec V1-35). `showComingSoon(ctx, ui,
 section)` ([coming-soon.ts](apps/bot/src/features/home/coming-soon.ts)) sert aussi pour un
   bouton laissé à un ticket ultérieur.
 
@@ -1120,7 +1135,8 @@ coming soon)` tant que `isAiModelAvailable(providers)` est faux et « Up to 10 w
   prolongation) → la facture (V1-30).
 - Aucune session : l'offre voyage dans la callback data (`C2D`, `C1M`, `P2D`, `P1M`, lus par
   `parseOfferCode` ; un code inconnu ramène aux offres).
-- Fournit : `showOffersScreen(ctx, { mode?, flags? })`, `chooseOffer` (le « New invoice » de
+- Fournit : `showOffersScreen(ctx, { flags?, status? })` (`status` : le plan que le même clic vient
+  de lire, Launch Coin), `chooseOffer` (le « New invoice » de
   V1-30), `continueUpgrade`, `invoices` (V1-30).
 
 ### Factures (V1-28)
@@ -1170,6 +1186,52 @@ ont pas.
   24/09/2026). Index unique partiel `Subscription_userId_key` : au plus une ligne ACTIVE par
   utilisateur. Le client Prisma accepte `userId` comme clé unique (`findUnique`, `update`,
   `upsert`, `delete`) mais ignore la condition : ne jamais s'en servir.
+
+## Launch Coin
+
+### Parcours Wallet → Bundle → Token → Récap (V1-35 à V1-37)
+
+`registerLaunch(router, inputs, deps)` ([launch.ts](apps/bot/src/features/launch/launch.ts)),
+écrans purs dans [screens.ts](apps/bot/src/features/launch/screens.ts), calculs en lamports dans
+`@launchbot/shared` ([launch/funds.ts](packages/shared/src/launch/funds.ts) :
+`launchShortfallLamports`, `bundleStatuses`, `customMaxLamports`, `parseLaunchBundleInput`). Rien
+n'est créé en V1 : « 🚀 Create token » (`lc:create`) répond par une alerte (D6) ;
+`TOKEN_CREATION_ENABLED = false` affiche la ligne « Token creation arrives in V2. » du récap.
+V2-04 passera la constante à `true` et remplacera le handler de `lc:create` par la création.
+
+**Décision du 25/09/2026** : le dev achète toujours **1 SOL** (`DEV_BUY_SOL`), puis le **bundle**
+choisi à l'étape 2 (3 / 5 / 10 SOL, Custom de 3 à 20 SOL) achète au bloc suivant ; les deux
+partent du même wallet, et les textes le disent. Le minimum d'un launch est **4 SOL pile**
+(1 + 3), sans marge de frais ; le récap garde la ligne indicative « ⛽ Fees: ≈ 0.05 SOL ».
+
+- **Entrée** (`lc:open` : bouton du menu et de « Payment received ») : canal revérifié **sans
+  cache** (`ensureChannelMembership`, `resume: "launch"` : « I've joined » vérifié reprend le
+  parcours sans second `getChatMember`), puis **abonnement actif** (`getPlanStatus`), sinon les
+  offres avec « ⭐ Launch Coin needs an active subscription. ». Chaque clic `lc:` suivant revérifie
+  l'abonnement (il peut finir en plein parcours), comme le Continue de l'étape Token.
+- **Session** `launch = { walletId?, bundleLamports?, blockedLamports? }` (lamports en chaîne) :
+  wallet et bundle remis à zéro à chaque entrée (§9), le brouillon du token reste dans
+  `tokenStep.LAUNCH`. Saisie Custom : `pendingInput = { kind: "launch_amount" }`.
+- **Étape 1** (`lc:w:<walletId>`) : tous les wallets, du plus ancien au plus récent, ✅ dès
+  4 SOL (`WALLET_READY_MIN_LAMPORTS` = dev buy + plus petit bundle, la règle de l'accueil, D13),
+  sinon le manque arrondi au millième supérieur. Clic sur un wallet : solde relu sans cache si la
+  limite du Refresh le permet ; insuffisant → note avec l'adresse en `<code>`, rien n'est gardé ;
+  wallet disparu ou d'un autre → « This wallet no longer exists. ». Changer de wallet efface le
+  bundle.
+- **Étape 2 Bundle** (`lc:b:3|5|10|c|cx|r`, Back `lc:s1`) : le dev buy de 1 SOL, puis une ligne
+  par bundle, toujours (couvert, ou manque de 1 SOL + bundle), et Custom jusqu'à min(20 SOL,
+  solde − 1 SOL) arrondi au millième inférieur. Un bundle non couvert n'est pas gardé : note
+  « INSUFFICIENT FUNDS » + Refresh (lecture forcée, 1 par 10 s, ligne « Updated »), retirés dès
+  que le solde couvre. Custom : parser de la simulation (3 à 20 SOL), puis le solde du wallet.
+- **Étape 3** : l'écran Token de V1-16 en mode LAUNCH (brouillon propre au parcours), avec les
+  lignes Wallet, Dev buy et Bundle au-dessus du bloc (passées à `showTokenStep` par le clic qui
+  vient de lire le solde, relues par `summaryLines` pour les clics du step) ; Back → étape 2
+  (`lc:s2`).
+- **Étape 4** (Back `lc:s3`, Menu) : bloc TOKEN du récap de simulation, wallet (avec son manque si
+  le solde a baissé depuis), dev buy, bundle et total avec leur part de la supply calculée sur la
+  curve du moment (`renderBuyLines` de la simulation, `getCurveParams`, 1 décimale), frais
+  « ≈ 0.05 SOL », lien vers le canal Succès, et « 🚧 Token creation arrives in V2. ». Wallet,
+  bundle et nom + ticker sont revérifiés avant l'affichage ; ce qui manque renvoie à son étape.
 
 ## Mini App
 
@@ -1340,7 +1402,8 @@ JavaScriptCore peuvent différer au dernier bit, puis la simulation diverge). Le
 comparer à `Math.*`.
 
 `SIM_ENGINE_VERSION` (proposition) est incrémentée à chaque changement d'algorithme ou de constante :
-une simulation enregistrée ne se rejoue à l'identique qu'avec la version qui l'a produite.
+une simulation enregistrée ne se rejoue à l'identique qu'avec la version qui l'a produite. Version 2
+(25/09/2026) : le bundle, second achat du dev ; un config sans bundle rejoue comme en version 1.
 
 ### API de la simulation : GET /api/simulations/:id et image du token (V1-23, retirée)
 
@@ -1376,8 +1439,9 @@ relecture ultérieure ne change jamais une simulation existante.
 - **Conversion** (`pumpGlobalToCurveParams`) : lamports / 1e9, unités de base / 10^6
   (`TOKEN_DECIMALS` du moteur), `feeRate = (fee_basis_points + creator_fee_basis_points) / 10 000`
   (proposition : ce que paie le trader, 95 + 5 bps = 1 %), puis `assertCurveParams` du moteur,
-  `feeRate < 10 %` (proposition) et un dev buy de 20 SOL (`DEV_BUY_MAX_SOL`) qui ne complète pas la
-  curve à t = 0 (proposition, ci-dessous). Échec → `invalid_values`.
+  `feeRate < 10 %` (proposition) et le plus gros achat du dev à t = 0, 1 SOL de dev buy + 20 SOL
+  de bundle (`MAX_OPENING_BUY_SOL`, 25/09/2026), qui ne complète pas la curve
+  (proposition, ci-dessous). Échec → `invalid_values`.
 - **Le `Global` du devnet n'est pas celui du mainnet** : 1 SOL de réserves virtuelles au lieu de
   30 (le reste est identique). Avec 1 SOL, un dev buy de 3 SOL complète la curve avant le premier
   trade : toute simulation serait finie à t = 0. Le contrôle le rejette et le tableau §7.1 sert :
@@ -1405,14 +1469,19 @@ relecture ultérieure ne change jamais une simulation existante.
 ### API SimRun et bougies (V1-20)
 
 `createSimulation(config)` est le seul point d'entrée du bot (V1-22, puis le runner de simulation
-V1-26). `assertSimConfig` vérifie chaque champ (seed uint32, dev buy et durée finis > 0, curve et
+V1-26). `assertSimConfig` vérifie chaque champ (seed uint32, dev buy et durée finis > 0, bundle
+fini ≥ 0, curve et
 preset par leurs validateurs, `solUsdPrice` `null` ou > 0) avec une `RangeError` qui nomme le champ,
 puis le moteur travaille sur une copie gelée : l'objet reçu n'est jamais modifié, et un config passé
 par `JSON.parse(JSON.stringify())` rejoue le même run.
 
-- **Dev buy à t = 0**, avant le premier trade simulé : `devBuy()` renvoie son événement
-  (`trader: "dev"`, `sol` = SOL payés frais inclus), jamais renvoyé par `step`. S'il complète la
-  curve, fin immédiate `curve_complete` à `time() = 0`.
+- **Dev buy puis bundle à t = 0**, avant le premier trade simulé (décision du 25/09/2026 :
+  `SimConfig.bundleSol`, le second achat du dev, même wallet ; le moteur n'a pas de blocs, le
+  « bloc suivant » est « avant tout trader ») : `openingBuys()` renvoie le dev buy puis le bundle
+  (`trader: "dev"`, `sol` = SOL payés frais inclus), jamais renvoyés par `step`. La position cumule
+  les deux, comme un seul achat du total (frais linéaires). Sans bundle (`bundleSol` 0 : les
+  Simulations d'avant et leur Run again), le dev buy seul, comme en version 1. Si le dev buy
+  complète la curve, pas de bundle et fin immédiate `curve_complete` à `time() = 0`.
 - **`step(dtSec)`** avance l'horloge simulée jusqu'à `min(time + dt, durationSec)` et renvoie les
   trades du flux (V1-19) dans l'ordre. Le résultat ne dépend pas du découpage : `step(180)` =
   180 × `step(1)` = 11 520 × `step(1/64)`. Les pas non dyadiques dérivent (0.016 × 11 250 =
@@ -1438,7 +1507,7 @@ par `JSON.parse(JSON.stringify())` rejoue le même run.
 Bougies : `createCandleAggregator({ initialPrice, durationSec })` agrège les trades sur
 `CANDLE_INTERVAL_SEC` = 5 s simulées (seaux 0, 5, 10… ; un trade à t = 180 va dans le seau 175).
 `initialPrice` est le prix **avant** dev buy, donc la première bougie inclut son saut si l'appelant
-pousse `devBuy()` en premier. `open` = `close` précédent, `high`/`low` incluent `open`,
+pousse `openingBuys()` en premier. `open` = `close` précédent, `high`/`low` incluent `open`,
 `volumeSol`, `buys` et `sells` sont des sommes. Un intervalle sans trade jusqu'à `nowSec` donne une
 bougie plate (proposition) : le graphique avance même sans trade. `push` renvoie les bougies créées
 ou modifiées, en copies, pour un rendu incrémental (le rendu image V1-25 redessine tout à chaque
@@ -1450,8 +1519,9 @@ via l'API publique : 1 000 seeds par preset, prix final au-dessus du prix après
 
 ### Flux de trades, presets et garde-fou (V1-19)
 
-`presetForDevBuy(devBuySol)` renvoie les `PresetParams` du §7.3 : table exacte pour 3 / 5 / 10 SOL,
-interpolation sur log(dev buy) entre deux presets pour Custom, preset le plus proche hors de
+`presetForAmount(sol)` renvoie les `PresetParams` du §7.3 : table exacte pour 3 / 5 / 10 SOL
+(dressée pour des dev buys de ces montants ; le bot la lit avec le bundle depuis le 25/09/2026),
+interpolation sur log(montant) entre deux presets pour Custom, preset le plus proche hors de
 [3, 10]. `mu = ln(médiane)`, `sigma` 1, bornes de taille `MIN_TRADE_SOL` 0.01 et `MAX_TRADE_SOL` 5
 (propositions, absentes du contexte). `assertPresetParams` valide un preset stocké.
 
@@ -1591,3 +1661,4 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 25/09/2026 | **pg-boss 12.34.0 pour les jobs du worker, une boucle à part pour les paiements** (V1-32). Le cron de pg-boss descend à la minute : la détection toutes les 15 s est une boucle `runEvery` dans le process, tenue par une seule instance grâce à un verrou advisory de session sur une connexion `pg` dédiée (le pool de Prisma et celui de pg-boss prêtent une connexion par requête, un verrou de session n'y tiendrait pas). Les files sont `exclusive` : l'id de la facture en `singletonKey` dédoublonne les envois, un cron ne se chevauche pas. |
 | 25/09/2026 | **Les transferts d'un dépôt vers la trésorerie sont des lignes `Withdrawal` de type `DEPOSIT_SWEEP`** (V1-33, migration `payment_deposit_key_lifecycle`), plutôt que des colonnes de plus sur `Payment`. La ligne est écrite avant la signature et reçoit la signature avant la confirmation : un résultat inconnu est relu avant tout nouvel essai, par le même code que le retrait (`sendRecorded`, `settleTransfer`), et chaque transfert reste en comptabilité avec ses frais. `Payment.sweepSignature` garde le dernier transfert confirmé. |
 | 24/09/2026 | **Limite de création de factures comptée en base** (V1-28), pas dans le compteur mémoire du bot : les factures créées par l'utilisateur depuis 10 minutes, sous un verrou advisory par utilisateur qui sérialise aussi la réutilisation d'une facture ouverte. La limite tient aux redémarrages et le service reste utilisable hors du bot. |
+| 25/09/2026 | **Dev buy fixe de 1 SOL puis bundle choisi, depuis le même wallet** (décision de Tristan après les tests de V1-35 à V1-37) : le bundle vaut 3 / 5 / 10 SOL ou Custom de 3 à 20 SOL et achète au bloc suivant ; le minimum d'un launch est 4 SOL pile, sans marge de frais (même seuil pour l'accueil, D13) ; la simulation suit le même modèle (`SimConfig.bundleSol`, colonne `Simulation.bundleSol` par la migration `simulation_bundle`, 0 pour les lignes d'avant, qui rejouent à l'identique). Le preset d'activité suit le bundle (la table 3 / 5 / 10 reste la même). |

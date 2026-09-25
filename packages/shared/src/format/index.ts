@@ -14,6 +14,7 @@ export {
   formatSolPrice,
   formatSolWithUsd,
   formatUsd,
+  lamportsToSol,
   parseSolToLamports,
   solToLamports,
   usdOf,

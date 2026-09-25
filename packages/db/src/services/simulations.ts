@@ -16,7 +16,13 @@ const DRAFT_FIELDS = {
   telegram: true,
 } as const satisfies Record<keyof TokenDraftFields, true>;
 
-export type SimulationKey = { userId: string; tokenDraftId: string; devBuySol: number };
+/** A simulation is found again by its user, draft, dev buy and bundle (decision of 25/09/2026). */
+export type SimulationKey = {
+  userId: string;
+  tokenDraftId: string;
+  devBuySol: number;
+  bundleSol: number;
+};
 
 export type NewSimulation = SimulationKey & {
   seed: number;
@@ -26,7 +32,7 @@ export type NewSimulation = SimulationKey & {
 
 /** The rows of `Simulation` (§13). The rules of reuse and the seed are the bot's (V1-22). */
 export type SimulationStore = {
-  /** The latest simulation of this user, draft and dev buy, created after `since`. */
+  /** The latest simulation of this user, draft, dev buy and bundle, created after `since`. */
   findLatest: (key: SimulationKey, since: Date) => Promise<Simulation | null>;
   create: (data: NewSimulation) => Promise<Simulation>;
   /** This user's simulation by id, with its draft: null when not theirs, unknown or purged. */
@@ -35,20 +41,33 @@ export type SimulationStore = {
 
 export type SimulationsDeps = { prisma: PrismaClient };
 
-/** `devBuySol` is a Decimal column: the number goes through its decimal text, never a float. */
+/** The amounts are Decimal columns: a number goes through its decimal text, never a float. */
 const decimalOf = (sol: number): string => sol.toString();
 
 export function createSimulationStore({ prisma }: SimulationsDeps): SimulationStore {
   return {
-    findLatest: ({ userId, tokenDraftId, devBuySol }, since) =>
+    findLatest: ({ userId, tokenDraftId, devBuySol, bundleSol }, since) =>
       prisma.simulation.findFirst({
-        where: { userId, tokenDraftId, devBuySol: decimalOf(devBuySol), createdAt: { gt: since } },
+        where: {
+          userId,
+          tokenDraftId,
+          devBuySol: decimalOf(devBuySol),
+          bundleSol: decimalOf(bundleSol),
+          createdAt: { gt: since },
+        },
         orderBy: { createdAt: "desc" },
       }),
 
-    create: ({ userId, tokenDraftId, devBuySol, seed, params }) =>
+    create: ({ userId, tokenDraftId, devBuySol, bundleSol, seed, params }) =>
       prisma.simulation.create({
-        data: { userId, tokenDraftId, devBuySol: decimalOf(devBuySol), seed, params },
+        data: {
+          userId,
+          tokenDraftId,
+          devBuySol: decimalOf(devBuySol),
+          bundleSol: decimalOf(bundleSol),
+          seed,
+          params,
+        },
       }),
 
     findOwnedWithDraft: (userId, simId) =>

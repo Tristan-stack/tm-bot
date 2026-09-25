@@ -29,8 +29,7 @@ export async function showComingSoon(
 
 /** The sections of the main menu, by the router domain their ticket will take. */
 const SECTIONS: [CallbackDomain, ComingSoonSection][] = [
-  ["lc", "launch"], // V1-35
-  // sim: the Token step (V1-16), then V1-22; sub: the offers screen (V1-29)
+  // lc: Launch Coin (V1-35); sim: the Token step (V1-16), then V1-22; sub: the offers (V1-29)
   ["sup", "support"], // V1-40
 ];
 

@@ -11,7 +11,7 @@ import {
   createSimulation,
   FALLBACK_CURVE_PARAMS,
   isValidSeed,
-  presetForDevBuy,
+  presetForAmount,
 } from "@launchbot/sim-engine";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSimulations, TEST_USER } from "../test-harness.js";
@@ -20,15 +20,21 @@ import { buildSimConfig, createSimulationService, drawSeed } from "./simulation.
 const T0 = Date.parse("2026-09-23T12:00:00Z");
 
 describe("buildSimConfig", () => {
-  const build = (devBuySol: number, solUsdPrice: number | null = 150) =>
-    buildSimConfig({ seed: 42, devBuySol, curve: FALLBACK_CURVE_PARAMS, solUsdPrice });
+  const build = (bundleSol: number, solUsdPrice: number | null = 150) =>
+    buildSimConfig({
+      seed: 42,
+      devBuySol: 1,
+      bundleSol,
+      curve: FALLBACK_CURVE_PARAMS,
+      solUsdPrice,
+    });
 
-  it("takes the preset of the dev buy, the 3 min of §6 and the price, or null", () => {
+  it("buys 1 SOL then the bundle, whose preset it takes, for the 3 min of §6 at the price", () => {
     for (const sol of [3, 5, 10, 7]) {
       const config = build(sol);
       expect(config.durationSec).toBe(SIM_DURATION_SEC);
-      expect(config.preset).toEqual(presetForDevBuy(sol));
-      expect(config.devBuySol).toBe(sol);
+      expect(config.preset).toEqual(presetForAmount(sol));
+      expect(config).toMatchObject({ devBuySol: 1, bundleSol: sol });
     }
     expect(build(3, null).solUsdPrice).toBeNull();
   });
@@ -75,8 +81,8 @@ describe("createSimulationService", () => {
       now: () => time,
       seed: () => nextSeed++,
     });
-    const prepare = (devBuySol: number, draftId = "d1") =>
-      service.prepare({ userId: TEST_USER.id, telegramId: 777, draft: { id: draftId }, devBuySol });
+    const prepare = (bundleSol: number, draftId = "d1") =>
+      service.prepare({ userId: TEST_USER.id, telegramId: 777, draft: { id: draftId }, bundleSol });
     return { prepare, store, getCurveParams, at: (ms: number) => void (time = T0 + ms) };
   }
 
@@ -89,23 +95,25 @@ describe("createSimulationService", () => {
     if (result.kind !== "ok") return;
     expect(result.config).toEqual({
       seed: 1000,
-      devBuySol: 5,
+      devBuySol: 1,
+      bundleSol: 5,
       durationSec: SIM_DURATION_SEC,
       curve: FALLBACK_CURVE_PARAMS,
-      preset: presetForDevBuy(5),
+      preset: presetForAmount(5),
       solUsdPrice: 150,
     });
     expect(store.rows).toHaveLength(1);
     expect(store.rows[0]).toMatchObject({
       userId: TEST_USER.id,
       tokenDraftId: "d1",
-      devBuySol: "5",
+      devBuySol: "1",
+      bundleSol: "5",
       seed: 1000,
       params: result.config,
     });
   });
 
-  it("shows the same Simulation again for the same draft and dev buy, within the hour", async () => {
+  it("shows the same Simulation again for the same draft and bundle, within the hour", async () => {
     const { prepare, store, at } = harness();
 
     const first = await prepare(5);
@@ -119,7 +127,7 @@ describe("createSimulationService", () => {
     expect(store.rows).toHaveLength(1);
   });
 
-  it("creates a new one after an hour, for another dev buy, or for a copied draft", async () => {
+  it("creates a new one after an hour, for another bundle, or for a copied draft", async () => {
     const { prepare, store, at } = harness();
 
     await prepare(5);
@@ -133,14 +141,14 @@ describe("createSimulationService", () => {
   it("refuses a creation over the limit, without a row, and still reuses", async () => {
     const { prepare, store } = harness();
     const { limit } = RATE_LIMITS.simulation;
-    // One creation per distinct Custom amount: 1, 1.001, 1.002…
-    for (let i = 0; i < limit; i += 1) expect((await prepare(1 + i / 1000)).kind).toBe("ok");
+    // One creation per distinct Custom amount: 3, 3.001, 3.002…
+    for (let i = 0; i < limit; i += 1) expect((await prepare(3 + i / 1000)).kind).toBe("ok");
 
     const refused = await prepare(5);
 
     expect(refused.kind).toBe("rate_limited");
     expect(store.rows).toHaveLength(limit);
-    expect(await prepare(1)).toMatchObject({ kind: "ok", simId: "s1" });
+    expect(await prepare(3)).toMatchObject({ kind: "ok", simId: "s1" });
   });
 
   it("stores null as the price when it is unknown", async () => {

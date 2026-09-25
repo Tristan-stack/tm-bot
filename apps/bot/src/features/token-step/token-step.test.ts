@@ -62,7 +62,7 @@ const view = (overrides: Partial<TokenStepView> = {}): TokenStepView => ({
 const HEADER_SIM = [
   "<b>📊 SIMULATION · STEP 1/3</b> · 🧪 Devnet",
   "▰▱▱",
-  "Token › Dev buy › Recap",
+  "Token › Bundle › Recap",
 ].join("\n");
 
 const BLOCK_OTTER = [
@@ -105,12 +105,12 @@ describe("renderTokenStep", () => {
   });
 
   it("renders step 3/4 of a launch with the summary before the block", () => {
-    const summaryLines = ["👛 Wallet: Main · 4.200 SOL", "💰 Dev buy: 3 SOL"];
+    const summaryLines = ["👛 Wallet: Main · 4.200 SOL", "💰 Dev buy: 1 SOL", "📦 Bundle: 3 SOL"];
     const screen = renderTokenStep(ui, view({ flow: "LAUNCH", summaryLines }));
 
     expect(screen.text).toBe(
       [
-        "<b>🚀 LAUNCH · STEP 3/4</b> · 🧪 Devnet\n▰▰▰▱\nWallet › Dev buy › Token › Recap",
+        "<b>🚀 LAUNCH · STEP 3/4</b> · 🧪 Devnet\n▰▰▰▱\nWallet › Bundle › Token › Recap",
         en.token.description,
         summaryLines.join("\n"),
         BLOCK_OTTER,
@@ -391,7 +391,7 @@ describe("Simulate a Launch: the Token step (V1-16)", () => {
     expect(storedSession(h.prisma)?.tokenStep?.SIMULATION?.showMissing).toBeUndefined();
   });
 
-  it("Continue with a name and a ticker shows the Dev buy step (V1-22); the menu returns", async () => {
+  it("Continue with a name and a ticker shows the Bundle step (V1-22); the menu returns", async () => {
     const drafts = fakeDrafts({
       rows: [testDraft({ id: "d1", name: "Moon Otter", symbol: "OTTR" })],
     });
@@ -399,7 +399,9 @@ describe("Simulate a Launch: the Token step (V1-16)", () => {
 
     await feed(h.bot, callbackUpdate(TOKEN_CB.next("SIMULATION")));
     expect(h.screen()).toContain("<b>📊 SIMULATION · STEP 2/3</b>");
-    expect(h.screen()).toContain("🪙 Moon Otter · $OTTR\n💰 Dev buy: not selected yet");
+    expect(h.screen()).toContain(
+      "🪙 Moon Otter · $OTTR\n💰 Dev buy: 1 SOL\n📦 Bundle: not selected yet",
+    );
     expect(h.api.of("answerCallbackQuery").at(-1)?.payload["text"]).toBeUndefined();
 
     await feed(h.bot, callbackUpdate(MENU.simulate));
@@ -611,7 +613,7 @@ describe("Simulate a Launch: the Token step (V1-16)", () => {
     const h = harness();
 
     await feed(h.bot, callbackUpdate("tok:zzz:s"));
-    await feed(h.bot, callbackUpdate("tok:gen:l"));
+    await feed(h.bot, callbackUpdate("tok:gen:z"));
 
     expect(h.api.of("answerCallbackQuery").map((call) => call.payload["text"])).toEqual([
       en.common.staleButton,

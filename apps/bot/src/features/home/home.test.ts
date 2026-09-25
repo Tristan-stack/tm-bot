@@ -231,8 +231,9 @@ describe("loadHomeData", () => {
         (data) => data.wallets.hasReadyWallet,
       );
 
-    expect(await ready(1_049_999_999n)).toBe(false);
-    expect(await ready(1_050_000_000n)).toBe(true);
+    // 4 SOL: the dev buy and the smallest bundle (D13, decision of 25/09/2026).
+    expect(await ready(3_999_999_999n)).toBe(false);
+    expect(await ready(4_000_000_000n)).toBe(true);
   });
 
   it("dates the screen from the balances it shows", async () => {
@@ -364,7 +365,7 @@ describe("home handlers", () => {
 
 describe("provisional screens", () => {
   const SECTIONS: [ComingSoonSection, string, string][] = [
-    ["launch", "<b>🚀 LAUNCH COIN</b> · 🧪 Devnet", MENU.launchCoin],
+    // launch: Launch Coin since V1-35, tested in features/launch.
     // simulate: the Token step since V1-16, tested in features/token-step.
     // subscribe: the offers screen since V1-29, tested in features/subscribe.
     // wallets: delivered by V1-10, tested in features/wallets.

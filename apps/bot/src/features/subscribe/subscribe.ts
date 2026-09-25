@@ -25,7 +25,10 @@ export type SubscribeDeps = {
 };
 
 /** A click edits the message of its button: the menu, an invoice, the reminder (V1-34). */
-export type OffersOptions = Pick<OffersModel, "flags">;
+export type OffersOptions = Pick<OffersModel, "flags"> & {
+  /** The plan the same click just read (Launch Coin, V1-35): not read twice. */
+  status?: PlanStatus;
+};
 
 /** What the later tickets call: Launch Coin (V1-35). */
 export type Subscribe = {
@@ -56,8 +59,8 @@ export function createSubscribe(deps: SubscribeDeps): Subscribe {
         now: now(),
       }),
     );
-  const showOffersScreen: Subscribe["showOffersScreen"] = async (ctx, options) =>
-    showOffers(ctx, await statusOf(ctx), options);
+  const showOffersScreen: Subscribe["showOffersScreen"] = async (ctx, options = {}) =>
+    showOffers(ctx, options.status ?? (await statusOf(ctx)), options);
 
   const chooseOffer: Subscribe["chooseOffer"] = (ctx, offer) => decide(ctx, offer, true);
   const invoices = createInvoiceFlow({

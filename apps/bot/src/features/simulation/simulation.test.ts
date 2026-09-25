@@ -43,12 +43,13 @@ function harness(
 beforeEach(resetRateLimits);
 
 describe("Simulate a Launch (V1-22)", () => {
-  it("Continue leads to the Dev buy, Back from it to the Token screen", async () => {
+  it("Continue leads to the Bundle, Back from it to the Token screen", async () => {
     const h = harness();
 
     await feed(h.bot, callbackUpdate(TOKEN_CB.next("SIMULATION")));
     expect(h.screen()).toContain("<b>📊 SIMULATION · STEP 2/3</b>");
-    expect(h.screen()).toContain("💰 Dev buy: not selected yet");
+    expect(h.screen()).toContain("💰 Dev buy: 1 SOL");
+    expect(h.screen()).toContain("📦 Bundle: not selected yet");
 
     await feed(h.bot, callbackUpdate(SIM_CB.backToToken));
     expect(h.screen()).toContain("<b>📊 SIMULATION · STEP 1/3</b>");
@@ -61,22 +62,27 @@ describe("Simulate a Launch (V1-22)", () => {
     await feed(h.bot, callbackUpdate(SIM_CB.preset(5)));
 
     expect(h.screen()).toContain("<b>📊 SIMULATION · STEP 3/3</b>");
-    expect(h.screen()).toContain("💰 Dev buy: 5 SOL (≈ 15.2% of supply)");
+    expect(h.screen()).toContain("📦 Bundle: 5 SOL (≈ 14.3% of supply)");
+    expect(h.screen()).toContain("🧮 Total: 6 SOL (≈ 17.7% of supply)");
     expect(h.screen()).toContain(en.sim.demoBanner);
     expect(h.api.keyboard("editMessageText", -1)[0]).toEqual([
       { text: "▶️ Start simulation", callback_data: "sim:go:s1" },
     ]);
     expect(h.simulations.rows).toHaveLength(1);
-    expect(h.simulations.rows[0]).toMatchObject({ tokenDraftId: "d1", devBuySol: "5" });
-    expect(storedSession(h.prisma)?.sim).toEqual({ devBuySol: 5 });
+    expect(h.simulations.rows[0]).toMatchObject({
+      tokenDraftId: "d1",
+      devBuySol: "1",
+      bundleSol: "5",
+    });
+    expect(storedSession(h.prisma)?.sim).toEqual({ bundleSol: 5 });
   });
 
-  it("Back from the recap shows the Dev buy with the amount; the same choice reuses the row", async () => {
+  it("Back from the recap shows the Bundle with the amount; the same choice reuses the row", async () => {
     const h = harness();
 
     await feed(h.bot, callbackUpdate(SIM_CB.preset(5)));
-    await feed(h.bot, callbackUpdate(SIM_CB.backToDevBuy));
-    expect(h.screen()).toContain("💰 Dev buy: 5 SOL");
+    await feed(h.bot, callbackUpdate(SIM_CB.backToBundle));
+    expect(h.screen()).toContain("📦 Bundle: 5 SOL");
 
     await feed(h.bot, callbackUpdate(SIM_CB.preset(5)));
     expect(h.api.keyboard("editMessageText", -1)[0]?.[0]).toMatchObject({
@@ -86,18 +92,18 @@ describe("Simulate a Launch (V1-22)", () => {
 
     await feed(h.bot, callbackUpdate(SIM_CB.preset(3)));
     expect(h.simulations.rows).toHaveLength(2);
-    expect(h.screen()).toContain("💰 Dev buy: 3 SOL (≈ 9.7% of supply)");
+    expect(h.screen()).toContain("📦 Bundle: 3 SOL (≈ 9.1% of supply)");
   });
 
   it("Custom takes a typed amount, refuses one out of bounds with a flag, and cancels", async () => {
     const h = harness();
 
     await feed(h.bot, callbackUpdate(SIM_CB.custom));
-    expect(h.screen()).toContain("Send the dev buy amount in SOL.");
+    expect(h.screen()).toContain("Send the bundle amount in SOL.");
     expect(storedSession(h.prisma)?.pendingInput).toEqual({ kind: "sim_amount" });
 
     await feed(h.bot, textUpdate("25"));
-    expect(h.screen()).toContain("Allowed: 1 to 20 SOL, up to 3 decimals.");
+    expect(h.screen()).toContain("Allowed: 3 to 20 SOL, up to 3 decimals.");
     expect(h.screen().endsWith(en.sim.custom.invalid)).toBe(true);
     expect(h.api.of("deleteMessage")).toHaveLength(1);
     expect(storedSession(h.prisma)?.pendingInput).toEqual({ kind: "sim_amount" });
@@ -105,19 +111,19 @@ describe("Simulate a Launch (V1-22)", () => {
     await feed(h.bot, photoUpdate());
     expect(h.screen().endsWith(en.sim.custom.invalid)).toBe(true);
 
-    await feed(h.bot, textUpdate("2,5 sol"));
-    expect(h.screen()).toContain("💰 Dev buy: 2.5 SOL (≈ ");
-    expect(h.simulations.rows[0]).toMatchObject({ devBuySol: "2.5" });
+    await feed(h.bot, textUpdate("3,5 sol"));
+    expect(h.screen()).toContain("📦 Bundle: 3.5 SOL (≈ ");
+    expect(h.simulations.rows[0]).toMatchObject({ bundleSol: "3.5" });
     expect(storedSession(h.prisma)?.pendingInput).toBeUndefined();
 
     await feed(h.bot, callbackUpdate(SIM_CB.custom));
     await feed(h.bot, callbackUpdate(SIM_CB.cancelCustom));
-    expect(h.screen()).toContain("How much SOL should the dev buy at launch?");
-    expect(h.screen()).toContain("💰 Dev buy: 2.5 SOL");
+    expect(h.screen()).toContain("How much SOL should the bundle buy?");
+    expect(h.screen()).toContain("📦 Bundle: 3.5 SOL");
     expect(storedSession(h.prisma)?.pendingInput).toBeUndefined();
   });
 
-  it("over the limit of creations: the alert, the flag on the Dev buy, and no row", async () => {
+  it("over the limit of creations: the alert, the flag on the Bundle, and no row", async () => {
     const h = harness();
     for (let i = 0; i < RATE_LIMITS.simulation.limit; i += 1) {
       consumeRateLimit(Number(TEST_USER.telegramId), "simulation");
@@ -144,13 +150,13 @@ describe("Simulate a Launch (V1-22)", () => {
   it("sends back to the Token screen when the draft is gone (a stale button)", async () => {
     const h = harness({ draft: null });
 
-    await feed(h.bot, callbackUpdate(SIM_CB.backToDevBuy));
+    await feed(h.bot, callbackUpdate(SIM_CB.backToBundle));
 
     expect(h.screen()).toContain("<b>📊 SIMULATION · STEP 1/3</b>");
     expect(h.screen()).toContain("⚠️ Missing: name, ticker");
   });
 
-  it("writes the generic error on the Dev buy when the store fails", async () => {
+  it("writes the generic error on the Bundle when the store fails", async () => {
     const h = harness({
       simulations: {
         rows: [],
@@ -167,10 +173,10 @@ describe("Simulate a Launch (V1-22)", () => {
     expect(h.screen().endsWith(en.common.genericError)).toBe(true);
   });
 
-  it("answers a stale dev buy button, and the menu still opens the Token step", async () => {
+  it("answers a stale bundle button, and the menu still opens the Token step", async () => {
     const h = harness();
 
-    await feed(h.bot, callbackUpdate("sim:dev:99"));
+    await feed(h.bot, callbackUpdate("sim:b:99"));
     expect(h.lastAlert()).toMatchObject({ text: en.common.staleButton });
 
     await feed(h.bot, callbackUpdate(MENU.simulate));

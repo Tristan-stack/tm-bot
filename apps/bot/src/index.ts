@@ -52,6 +52,7 @@ import { createAccess } from "./features/access/access.js";
 import { checkChannelRights } from "./features/access/startup-check.js";
 import { registerComingSoon } from "./features/home/coming-soon.js";
 import { registerHome } from "./features/home/home.js";
+import { registerLaunch } from "./features/launch/launch.js";
 import { registerSimulation } from "./features/simulation/simulation.js";
 import { simTelegram } from "./features/simulation/telegram.js";
 import type { InvoicePayments } from "./features/subscribe/invoice.js";
@@ -215,6 +216,15 @@ export function createBot(
   });
   tokenStep.mount(router, inputs);
   registerSubscribe(router, subscribe);
+  // Launch Coin (V1-35 to V1-37): the menu button and « Payment received » (`lc:open`).
+  registerLaunch(router, inputs, {
+    ui,
+    data,
+    access,
+    tokenStep,
+    offers: subscribe,
+    successUrl: env.CHANNEL_SUCCESS_URL,
+  });
   // Until the ticket of a section registers its domain.
   registerComingSoon(router, ui);
   // The message that answers an input a screen waits for: a name, an address, an amount.

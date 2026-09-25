@@ -1,4 +1,4 @@
-import { DEV_BUY_MAX_SOL } from "@launchbot/shared";
+import { MAX_OPENING_BUY_SOL } from "@launchbot/shared";
 import { devBuySupplyShare, FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import { PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
@@ -130,15 +130,17 @@ describe("pumpGlobalToCurveParams", () => {
     );
   });
 
-  it("rejects the devnet Global, whose 1 SOL of virtual reserves the max dev buy completes", () => {
+  it("rejects the devnet Global, whose 1 SOL of virtual reserves the max opening completes", () => {
     const raw = decodePumpGlobal(devnetGlobalAccount());
     const asIs = { ...FALLBACK_CURVE_PARAMS, virtualSol: 1 };
 
-    expect(devBuySupplyShare(asIs, DEV_BUY_MAX_SOL).capped).toBe(true);
-    expect(devBuySupplyShare(FALLBACK_CURVE_PARAMS, DEV_BUY_MAX_SOL).capped).toBe(false);
+    expect(devBuySupplyShare(asIs, MAX_OPENING_BUY_SOL).capped).toBe(true);
+    expect(devBuySupplyShare(FALLBACK_CURVE_PARAMS, MAX_OPENING_BUY_SOL).capped).toBe(false);
     expect(() => pumpGlobalToCurveParams(raw)).toThrow(
       expect.objectContaining({ reason: "invalid_values" }),
     );
-    expect(() => pumpGlobalToCurveParams(raw)).toThrow(/20 SOL dev buy completes the curve/);
+    expect(() => pumpGlobalToCurveParams(raw)).toThrow(
+      /1 SOL dev buy and a 20 SOL bundle complete the curve/,
+    );
   });
 });

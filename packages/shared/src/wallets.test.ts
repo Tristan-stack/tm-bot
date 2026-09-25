@@ -17,9 +17,9 @@ describe("wallet rules", () => {
     ]);
   });
 
-  it("calls a wallet ready from 1.050 SOL", () => {
-    expect(isWalletReady(1_050_000_000n)).toBe(true);
-    expect(isWalletReady(1_049_999_999n)).toBe(false);
+  it("calls a wallet ready from 4 SOL", () => {
+    expect(isWalletReady(4_000_000_000n)).toBe(true);
+    expect(isWalletReady(3_999_999_999n)).toBe(false);
   });
 
   it("rounds a priority fee up to the lamport", () => {

@@ -80,10 +80,11 @@ export const WITHDRAWAL_ERROR_MAX_CHARS = 500;
 // SOL amounts, always in lamports
 export const SOL_DECIMALS = 9;
 export const LAMPORTS_PER_SOL = 10n ** BigInt(SOL_DECIMALS);
-/** 0.05 SOL, provisional (§10.1). */
+/**
+ * 0.05 SOL, provisional (§10.1): the fees the recap of a launch estimates. Not asked of the
+ * wallet on top of the dev buy and the bundle (decision of 25/09/2026).
+ */
 export const FEE_MARGIN_LAMPORTS = 50_000_000n;
-/** 1.050 SOL: a wallet is "ready" from 1 SOL + the fee margin (D13). */
-export const WALLET_READY_MIN_LAMPORTS = LAMPORTS_PER_SOL + FEE_MARGIN_LAMPORTS;
 
 // Fee budget of a SOL transfer (V1-11): the upper bound a screen can show before V1-13 has
 // simulated the real transaction. A test of @launchbot/solana keeps it above the real estimate.
@@ -125,10 +126,30 @@ export const TX_FAILURE_CODES = [
 ] as const;
 export type TxFailureCode = (typeof TX_FAILURE_CODES)[number];
 
-// Dev buy (§6, §10.1)
-export const DEV_BUY_MIN_SOL = 1;
-export const DEV_BUY_MAX_SOL = 20;
-export const DEV_BUY_PRESETS_SOL = [3, 5, 10] as const;
+// Dev buy and bundle (§6, §10.1, decision of 25/09/2026): the dev buys 1 SOL at the launch,
+// then the bundle buys in the next block, from the same wallet. The user picks the bundle, in
+// a simulation as in a launch.
+/** The dev buy of every launch and every simulation: fixed. */
+export const DEV_BUY_SOL = 1;
+export const DEV_BUY_LAMPORTS = BigInt(DEV_BUY_SOL) * LAMPORTS_PER_SOL;
+export const BUNDLE_MIN_SOL = 3;
+export const BUNDLE_MAX_SOL = 20;
+export const BUNDLE_PRESETS_SOL = [3, 5, 10] as const;
+/** A Custom bundle is typed with 3 decimals at most (proposal, V1-22). */
+export const BUNDLE_MAX_DECIMALS = 3;
+export const BUNDLE_MIN_LAMPORTS = BigInt(BUNDLE_MIN_SOL) * LAMPORTS_PER_SOL;
+export const BUNDLE_MAX_LAMPORTS = BigInt(BUNDLE_MAX_SOL) * LAMPORTS_PER_SOL;
+/** 0.001 SOL: every bundle is a whole number of it. */
+export const BUNDLE_LAMPORT_UNIT = 10n ** BigInt(SOL_DECIMALS - BUNDLE_MAX_DECIMALS);
+/** 4 SOL: a wallet is "ready" from the dev buy + the smallest bundle, no fee margin (D13). */
+export const WALLET_READY_MIN_LAMPORTS = DEV_BUY_LAMPORTS + BUNDLE_MIN_LAMPORTS;
+/** 21 SOL: the most the dev buys at t = 0, the dev buy and the largest bundle. */
+export const MAX_OPENING_BUY_SOL = DEV_BUY_SOL + BUNDLE_MAX_SOL;
+/**
+ * Launch Coin creates nothing in V1 (§10.1, D6): the recap says so and Create token only
+ * answers an alert. V2-04 turns it on, which also drops the notice of the recap.
+ */
+export const TOKEN_CREATION_ENABLED = false;
 
 // Token generator (§5). The byte limits come from Metaplex: kept in the interface, to be checked
 // against `create_v2` in V2-01. The zod schemas of `token/fields.ts` read them here, nowhere else.
@@ -160,8 +181,6 @@ export const AI_LOGO_TIMEOUT_MS = 30 * SECOND_MS;
 export const SIM_DURATION_SEC = 180;
 /** The recap shows the same Simulation again while it is younger than this (proposal, V1-22). */
 export const SIMULATION_REUSE_MS = HOUR_MS;
-/** A Custom dev buy is typed with 3 decimals at most (proposal, V1-22). */
-export const DEV_BUY_MAX_DECIMALS = 3;
 
 // The simulated clock of the simulation in the chat (§6.1, §7.4, V1-26).
 /** `x1`, `x2`, `x5` (§6.1): simulated seconds per real second. */

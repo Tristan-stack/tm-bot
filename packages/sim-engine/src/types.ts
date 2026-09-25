@@ -43,6 +43,13 @@ export type CurveState = {
 export type SimConfig = {
   seed: number;
   devBuySol: number;
+  /**
+   * The bundle (decision of 25/09/2026): a second buy of the dev, from the same wallet, in the
+   * next block. The engine has no blocks: it lands right after the dev buy, before the first
+   * trader. 0 for none: a run with its dev buy alone (the simulations made before the bundle,
+   * and their Run again).
+   */
+  bundleSol: number;
   durationSec: number;
   curve: CurveParams;
   preset: PresetParams;
@@ -53,7 +60,7 @@ export type SimConfig = {
 export type Position = {
   /** Tokens still held. */
   tokens: number;
-  /** Dev buy, fees included. */
+  /** Dev buy and bundle, fees included. */
   solIn: number;
   /** SOL received from the sells, fees deducted. */
   solOut: number;

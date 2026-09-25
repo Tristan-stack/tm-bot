@@ -1,33 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { formatSolNumber } from "./format/sol.js";
+import { formatSolNumber, solToLamports } from "./format/sol.js";
 import {
   curveParamsSchema,
-  devBuyAmountSchema,
-  parseDevBuyAmount,
+  parseBundleAmount,
   presetParamsSchema,
   simConfigSchema,
 } from "./schemas.js";
 
-describe("parseDevBuyAmount", () => {
+describe("parseBundleAmount", () => {
   it.each([
-    ["1", 1],
+    ["3", 3],
     ["20", 20],
-    ["2.5", 2.5],
-    ["2,5", 2.5],
+    ["3.5", 3.5],
+    ["3,5", 3.5],
     ["5 sol", 5],
     ["5SOL", 5],
-    [" 1.125 ", 1.125],
+    [" 3.125 ", 3.125],
     ["07", 7],
   ])("accepts %j as %s SOL", (text, sol) => {
-    expect(parseDevBuyAmount(text)).toEqual({ ok: true, sol });
-    expect(devBuyAmountSchema.parse(text)).toBe(sol);
+    expect(parseBundleAmount(text)).toEqual({ ok: true, sol, lamports: solToLamports(sol) });
   });
 
-  it.each(["0.99", "20.001", "21", "-5", "1e1", "abc", "1.1234", "", "1.", ".5", "5 usd", "1 000"])(
+  it.each(["2.999", "1", "20.001", "21", "-5", "1e1", "abc", "3.1234", "", "3.", ".5", "5 usd"])(
     "refuses %j",
     (text) => {
-      expect(parseDevBuyAmount(text)).toEqual({ ok: false });
-      expect(devBuyAmountSchema.safeParse(text).success).toBe(false);
+      expect(parseBundleAmount(text)).toEqual({ ok: false });
     },
   );
 });
@@ -58,7 +55,8 @@ const PRESET = {
 };
 const CONFIG = {
   seed: 42,
-  devBuySol: 5,
+  devBuySol: 1,
+  bundleSol: 5,
   durationSec: 180,
   curve: CURVE,
   preset: PRESET,
@@ -71,11 +69,29 @@ describe("simConfigSchema", () => {
     expect(simConfigSchema.parse({ ...CONFIG, solUsdPrice: null }).solUsdPrice).toBeNull();
   });
 
+  it("reads any row the engine accepts: a row made before the bundle has its dev buy alone", () => {
+    const legacy = {
+      seed: 42,
+      devBuySol: 5,
+      durationSec: 180,
+      curve: CURVE,
+      preset: PRESET,
+      solUsdPrice: 150,
+    };
+    expect(simConfigSchema.parse(legacy)).toEqual({ ...legacy, bundleSol: 0 });
+    // The bounds of an input are not those of a stored row (`parseBundleAmount` has them).
+    expect(simConfigSchema.parse({ ...CONFIG, devBuySol: 0.5, bundleSol: 25 })).toMatchObject({
+      devBuySol: 0.5,
+      bundleSol: 25,
+    });
+  });
+
   it.each([
     ["a seed above uint32", { seed: 2 ** 32 }],
     ["a fractional seed", { seed: 1.5 }],
-    ["a dev buy of 0.5 SOL", { devBuySol: 0.5 }],
-    ["a dev buy of 21 SOL", { devBuySol: 21 }],
+    ["a dev buy of 0 SOL", { devBuySol: 0 }],
+    ["a negative bundle", { bundleSol: -1 }],
+    ["an infinite bundle", { bundleSol: Infinity }],
     ["a zero duration", { durationSec: 0 }],
     ["a missing curve", { curve: undefined }],
     ["a SOL price of 0", { solUsdPrice: 0 }],

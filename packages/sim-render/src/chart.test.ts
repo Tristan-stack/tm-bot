@@ -16,7 +16,7 @@ function realCandles(nowSec: number): readonly Candle[] {
     initialPrice: config.curve.virtualSol / config.curve.virtualTokens,
     durationSec: config.durationSec,
   });
-  aggregator.push([run.devBuy()], 0);
+  aggregator.push(run.openingBuys(), 0);
   aggregator.push(run.advanceTo(nowSec), nowSec);
   return aggregator.candles();
 }

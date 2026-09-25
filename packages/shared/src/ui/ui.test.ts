@@ -75,7 +75,7 @@ describe("flowHeader", () => {
     [3, "▰▰▰"],
   ])("renders SIMULATION step %d/3", (step, bar) => {
     expect(flowHeader("SIMULATION", step, badge)).toBe(
-      `<b>📊 SIMULATION · STEP ${step}/3</b> · 🧪 Devnet\n${bar}\nToken › Dev buy › Recap`,
+      `<b>📊 SIMULATION · STEP ${step}/3</b> · 🧪 Devnet\n${bar}\nToken › Bundle › Recap`,
     );
   });
 
@@ -85,7 +85,7 @@ describe("flowHeader", () => {
     [4, "▰▰▰▰"],
   ])("renders LAUNCH step %d/4", (step, bar) => {
     expect(flowHeader("LAUNCH", step, badge)).toBe(
-      `<b>🚀 LAUNCH · STEP ${step}/4</b> · 🧪 Devnet\n${bar}\nWallet › Dev buy › Token › Recap`,
+      `<b>🚀 LAUNCH · STEP ${step}/4</b> · 🧪 Devnet\n${bar}\nWallet › Bundle › Token › Recap`,
     );
   });
 
@@ -157,11 +157,11 @@ describe("renderScreen", () => {
     expect(screen.text).toBe("<b>👛 WALLETS</b> · 🧪 Devnet\n\nState");
   });
 
-  it("puts the summary before the description on request (Dev buy, §6)", () => {
+  it("puts the summary before the description on request (Bundle, §6)", () => {
     const screen = renderScreen({
       header: flowHeader("SIMULATION", 2, badge),
-      description: "How much SOL should the dev buy at launch?",
-      info: [`🪙 ${escapeHtml("Moon Otter")} · $OTTR`, "💰 Dev buy: not selected yet"],
+      description: "How much SOL should the bundle buy?",
+      info: [`🪙 ${escapeHtml("Moon Otter")} · $OTTR`, "📦 Bundle: not selected yet"],
       flags: ["⚠️ Flag"],
       order: ["info", "description"],
       keyboard,
@@ -169,9 +169,9 @@ describe("renderScreen", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>📊 SIMULATION · STEP 2/3</b> · 🧪 Devnet\n▰▰▱\nToken › Dev buy › Recap",
-        "🪙 Moon Otter · $OTTR\n💰 Dev buy: not selected yet",
-        "How much SOL should the dev buy at launch?",
+        "<b>📊 SIMULATION · STEP 2/3</b> · 🧪 Devnet\n▰▰▱\nToken › Bundle › Recap",
+        "🪙 Moon Otter · $OTTR\n📦 Bundle: not selected yet",
+        "How much SOL should the bundle buy?",
         "⚠️ Flag",
       ].join("\n\n"),
     );

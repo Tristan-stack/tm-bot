@@ -3,10 +3,10 @@ import { FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import { describe, expect, it } from "vitest";
 import { keyboardOf, testDraft } from "../../test-harness.js";
 import {
+  buildBundleScreen,
   buildCustomAmountScreen,
-  buildDevBuyScreen,
   buildRecapScreen,
-  formatDevBuyWithShare,
+  renderBuyLines,
   renderTokenRecapBlock,
   SIM_CB,
 } from "./screens.js";
@@ -14,7 +14,7 @@ import {
 const ui = createUi("devnet");
 
 const HEADER = (step: number, bar: string) =>
-  [`<b>📊 SIMULATION · STEP ${step}/3</b> · 🧪 Devnet`, bar, "Token › Dev buy › Recap"].join("\n");
+  [`<b>📊 SIMULATION · STEP ${step}/3</b> · 🧪 Devnet`, bar, "Token › Bundle › Recap"].join("\n");
 
 /** The token of the mockup of §6, image added, no link. */
 const OTTER = {
@@ -25,36 +25,38 @@ const OTTER = {
   imageFileId: "file-1",
 };
 
-describe("buildDevBuyScreen", () => {
-  it("renders the mockup of §6 before a choice", () => {
-    const screen = buildDevBuyScreen(ui, { draft: OTTER });
+describe("buildBundleScreen (decision of 25/09/2026)", () => {
+  it("says the dev buys 1 SOL, then asks for the bundle", () => {
+    const screen = buildBundleScreen(ui, { draft: OTTER });
 
     expect(screen.text).toBe(
       [
         HEADER(2, "▰▰▱"),
-        "How much SOL should the dev buy at launch?",
-        "🪙 Moon Otter · $OTTR\n💰 Dev buy: not selected yet",
+        "The dev buys 1 SOL at launch, then the bundle buys in the next block. How much SOL should the bundle buy?",
+        "🪙 Moon Otter · $OTTR\n💰 Dev buy: 1 SOL\n📦 Bundle: not selected yet",
       ].join("\n\n"),
     );
     expect(keyboardOf(screen)).toEqual([
       [
-        { text: "3 SOL", callback_data: "sim:dev:3" },
-        { text: "5 SOL", callback_data: "sim:dev:5" },
-        { text: "10 SOL", callback_data: "sim:dev:10" },
+        { text: "3 SOL", callback_data: "sim:b:3" },
+        { text: "5 SOL", callback_data: "sim:b:5" },
+        { text: "10 SOL", callback_data: "sim:b:10" },
       ],
-      [{ text: "✏️ Custom", callback_data: "sim:dev:c" }],
+      [{ text: "✏️ Custom", callback_data: "sim:b:c" }],
       [{ text: "⬅️ Back", callback_data: "sim:bk:tok" }],
     ]);
   });
 
-  it("shows the amount chosen, escapes the name, and writes a flag", () => {
-    const screen = buildDevBuyScreen(
+  it("shows the bundle chosen, escapes the name, and writes a flag", () => {
+    const screen = buildBundleScreen(
       ui,
-      { draft: { ...OTTER, name: "Moon <Otter>" }, devBuySol: 2.5 },
+      { draft: { ...OTTER, name: "Moon <Otter>" }, bundleSol: 3.5 },
       { flags: [en.sim.rateLimited.flag] },
     );
 
-    expect(screen.text).toContain("🪙 Moon &lt;Otter&gt; · $OTTR\n💰 Dev buy: 2.5 SOL");
+    expect(screen.text).toContain(
+      "🪙 Moon &lt;Otter&gt; · $OTTR\n💰 Dev buy: 1 SOL\n📦 Bundle: 3.5 SOL",
+    );
     expect(
       screen.text.endsWith("\n\n⚠️ Too many simulations. Wait a minute, then try again."),
     ).toBe(true);
@@ -62,43 +64,55 @@ describe("buildDevBuyScreen", () => {
 });
 
 describe("buildCustomAmountScreen", () => {
-  it("shows the current choice and the bounds, with Cancel only", () => {
+  it("shows the current choices and the bounds of the bundle, with Cancel only", () => {
     const screen = buildCustomAmountScreen(
       ui,
-      { draft: OTTER, devBuySol: 5 },
+      { draft: OTTER, bundleSol: 5 },
       { flags: [en.sim.custom.invalid] },
     );
 
     expect(screen.text).toBe(
       [
         HEADER(2, "▰▰▱"),
-        "Send the dev buy amount in SOL.",
-        "🪙 Moon Otter · $OTTR\n💰 Dev buy: 5 SOL\nAllowed: 1 to 20 SOL, up to 3 decimals.",
-        "⚠️ Invalid amount. Send a number from 1 to 20 SOL.",
+        "Send the bundle amount in SOL.",
+        "🪙 Moon Otter · $OTTR\n💰 Dev buy: 1 SOL\n📦 Bundle: 5 SOL\nAllowed: 3 to 20 SOL, up to 3 decimals.",
+        "⚠️ Invalid amount. Send a number from 3 to 20 SOL.",
       ].join("\n\n"),
     );
     expect(keyboardOf(screen)).toEqual([[{ text: "❌ Cancel", callback_data: "sim:cc" }]]);
   });
 });
 
-describe("formatDevBuyWithShare", () => {
+describe("renderBuyLines", () => {
   it.each([
-    [1, "1 SOL (≈ 3.4% of supply)"],
-    [3, "3 SOL (≈ 9.7% of supply)"],
-    [5, "5 SOL (≈ 15.2% of supply)"],
-    [10, "10 SOL (≈ 26.6% of supply)"],
-    [20, "20 SOL (≈ 42.7% of supply)"],
-  ])("gives the share of the curve for %s SOL on the §7.1 values", (sol, expected) => {
-    expect(formatDevBuyWithShare(sol, FALLBACK_CURVE_PARAMS)).toBe(expected);
+    [3, "9.1%", "4 SOL", "12.5%"],
+    [5, "14.3%", "6 SOL", "17.7%"],
+    [10, "25.1%", "11 SOL", "28.6%"],
+    [20, "40.5%", "21 SOL", "43.9%"],
+  ])(
+    "gives the dev buy, the bundle of %s SOL and the total their shares of the curve (§7.1)",
+    (bundle, bundleShare, total, totalShare) => {
+      expect(renderBuyLines(FALLBACK_CURVE_PARAMS, 1, bundle)).toEqual([
+        "💰 Dev buy: 1 SOL (≈ 3.4% of supply)",
+        `📦 Bundle: ${bundle} SOL (≈ ${bundleShare} of supply)`,
+        `🧮 Total: ${total} (≈ ${totalShare} of supply)`,
+      ]);
+    },
+  );
+
+  it("keeps the decimals of a Custom bundle and follows the curve it is given", () => {
+    expect(renderBuyLines(FALLBACK_CURVE_PARAMS, 1, 3.5)[1]).toBe(
+      "📦 Bundle: 3.5 SOL (≈ 10.4% of supply)",
+    );
+    // Half the virtual SOL: the same buy takes a bigger share.
+    const cheaper = { ...FALLBACK_CURVE_PARAMS, virtualSol: 15 };
+    expect(renderBuyLines(cheaper, 5, 0)).toEqual(["💰 Dev buy: 5 SOL (≈ 26.6% of supply)"]);
   });
 
-  it("keeps the decimals of a Custom amount and follows the curve it is given", () => {
-    expect(formatDevBuyWithShare(2.5, FALLBACK_CURVE_PARAMS)).toMatch(
-      /^2\.5 SOL \(≈ 8\.\d% of supply\)$/,
-    );
-    // Half the virtual SOL: the same dev buy takes a bigger share.
-    const cheaper = { ...FALLBACK_CURVE_PARAMS, virtualSol: 15 };
-    expect(formatDevBuyWithShare(5, cheaper)).toBe("5 SOL (≈ 26.6% of supply)");
+  it("without a bundle (a simulation made before it, or its Run again): the dev buy alone", () => {
+    expect(renderBuyLines(FALLBACK_CURVE_PARAMS, 5, 0)).toEqual([
+      "💰 Dev buy: 5 SOL (≈ 15.2% of supply)",
+    ]);
   });
 });
 
@@ -144,18 +158,22 @@ describe("renderTokenRecapBlock", () => {
 describe("buildRecapScreen", () => {
   const screen = buildRecapScreen(ui, {
     draft: OTTER,
-    devBuySol: 5,
-    curve: FALLBACK_CURVE_PARAMS,
+    config: { devBuySol: 1, bundleSol: 5, curve: FALLBACK_CURVE_PARAMS },
     simId: "clsim123",
   });
 
-  it("renders the mockup of §6 with the DEMO mention", () => {
+  it("renders the recap with the dev buy, the bundle, the total and the DEMO mention", () => {
     expect(screen.text).toBe(
       [
         HEADER(3, "▰▰▰"),
         "Check your simulation, then tap Start simulation.",
         renderTokenRecapBlock(OTTER),
-        "💰 Dev buy: 5 SOL (≈ 15.2% of supply)\n⏱ Duration: 3 min max",
+        [
+          "💰 Dev buy: 1 SOL (≈ 3.4% of supply)",
+          "📦 Bundle: 5 SOL (≈ 14.3% of supply)",
+          "🧮 Total: 6 SOL (≈ 17.7% of supply)",
+          "⏱ Duration: 3 min max",
+        ].join("\n"),
         "⚠️ DEMO — Bullish scenario. Not a prediction or a real result.",
       ].join("\n\n"),
     );
@@ -165,7 +183,7 @@ describe("buildRecapScreen", () => {
     expect(keyboardOf(screen)).toEqual([
       [{ text: "▶️ Start simulation", callback_data: "sim:go:clsim123" }],
       [
-        { text: "⬅️ Back", callback_data: "sim:bk:dev" },
+        { text: "⬅️ Back", callback_data: "sim:bk:b" },
         { text: "🏠 Menu", callback_data: NAV_HOME },
       ],
     ]);
@@ -181,17 +199,17 @@ describe("SIM_CB", () => {
       SIM_CB.custom,
       SIM_CB.cancelCustom,
       SIM_CB.backToToken,
-      SIM_CB.backToDevBuy,
+      SIM_CB.backToBundle,
     ];
     for (const data of all) expect(isCallbackDataSize(data)).toBe(true);
     expect(all).toEqual([
       "sim:open",
-      "sim:dev:3",
-      "sim:dev:10",
-      "sim:dev:c",
+      "sim:b:3",
+      "sim:b:10",
+      "sim:b:c",
       "sim:cc",
       "sim:bk:tok",
-      "sim:bk:dev",
+      "sim:bk:b",
     ]);
     // The buttons of a running simulation carry a cuid (V1-26).
     const simId = "cmfz1abcd0000abcdefghijk1";

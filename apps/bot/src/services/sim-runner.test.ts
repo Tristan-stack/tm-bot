@@ -97,7 +97,6 @@ describe("createSimRunner", () => {
 
   it("plays the same trades as the engine in one go, at x1 and at x5", async () => {
     const reference = createSimulation(config);
-    reference.devBuy();
     const expected = reference.step(180);
     const card = buildPnlCardModel({ position: reference.position(), config, token: TOKEN });
 

@@ -5,7 +5,7 @@ import type { PrismaClient } from "../generated/prisma/client.js";
 import { createTestUser, resetTestDatabase } from "../test-db.js";
 import { createSimulationStore } from "./simulations.js";
 
-const PARAMS = { seed: 42, devBuySol: 2.5, durationSec: 180 };
+const PARAMS = { seed: 42, devBuySol: 1, bundleSol: 3.5, durationSec: 180 };
 
 // Needs PostgreSQL (`pnpm db:up`), in a database of its own: suites run in parallel.
 describe.skipIf(!process.env["RUN_DB_TESTS"])("simulations (db)", () => {
@@ -31,24 +31,16 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("simulations (db)", () => {
     await prisma.simulation.deleteMany();
   });
 
-  it("creates a row with the dev buy as a decimal, and finds the latest one back", async () => {
-    const created = await store().create({
-      userId,
-      tokenDraftId: draftId,
-      devBuySol: 2.5,
-      seed: 42,
-      params: PARAMS,
-    });
+  it("creates a row with the dev buy and the bundle as decimals, and finds it back", async () => {
+    const key = { userId, tokenDraftId: draftId, devBuySol: 1, bundleSol: 3.5 };
+    const created = await store().create({ ...key, seed: 42, params: PARAMS });
 
-    expect(created.devBuySol.toString()).toBe("2.5");
+    expect(created.devBuySol.toString()).toBe("1");
+    expect(created.bundleSol.toString()).toBe("3.5");
     expect(created.seed).toBe(42);
-    const found = await store().findLatest(
-      { userId, tokenDraftId: draftId, devBuySol: 2.5 },
-      new Date(Date.now() - HOUR_MS),
-    );
+    const found = await store().findLatest(key, new Date(Date.now() - HOUR_MS));
     expect(found?.id).toBe(created.id);
-    expect(
-      await store().findLatest({ userId, tokenDraftId: draftId, devBuySol: 3 }, new Date(0)),
-    ).toBeNull();
+    // Another bundle is another simulation (decision of 25/09/2026).
+    expect(await store().findLatest({ ...key, bundleSol: 5 }, new Date(0))).toBeNull();
   });
 });

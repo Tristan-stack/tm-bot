@@ -26,8 +26,10 @@ export type PendingInput =
   | { kind: "withdraw_amount" }
   /** A field of the Token screen (V1-16); `since` lets a forgotten input expire (proposal). */
   | { kind: "token_field"; flow: TokenFlow; field: TokenInputField; since: number }
-  /** The Custom dev buy of a simulation (V1-22). */
-  | { kind: "sim_amount" };
+  /** The Custom bundle of a simulation (V1-22). */
+  | { kind: "sim_amount" }
+  /** The Custom bundle of a launch (V1-36): its wallet is in `launch`. */
+  | { kind: "launch_amount" };
 
 /** The two flows the Token step serves (§5): step 1 of a simulation, step 3 of a launch. */
 export const TOKEN_FLOWS = ["SIMULATION", "LAUNCH"] as const;
@@ -62,11 +64,25 @@ export type WithdrawState = {
 };
 
 /**
- * The dev buy chosen in Simulate a Launch (V1-22): kept across screens, so Back from the recap
- * shows it again. The draft is in `tokenStep.SIMULATION`; the Simulation is found again from
- * both (reuse rule of V1-22), so its id is not kept here.
+ * The bundle chosen in Simulate a Launch (V1-22, decision of 25/09/2026; the dev buy is a
+ * fixed 1 SOL): kept across screens, so Back from the recap shows it again. The draft is in
+ * `tokenStep.SIMULATION`; the Simulation is found again from both (reuse rule of V1-22), so
+ * its id is not kept here.
  */
-export type SimFlowState = { devBuySol?: number };
+export type SimFlowState = { bundleSol?: number };
+
+/**
+ * Launch Coin (V1-35 to V1-37): ids and amounts only, never a balance, never a key. The wallet
+ * is chosen again at each launch; the draft is in `tokenStep.LAUNCH`. Amounts are lamports as
+ * decimal strings: JSON has no bigint.
+ */
+export type LaunchFlowState = {
+  walletId?: string;
+  /** The bundle chosen at step 2; the dev buy is a fixed 1 SOL (decision of 25/09/2026). */
+  bundleLamports?: string;
+  /** A bundle the wallet could not cover: the note of step 2 and its Refresh. */
+  blockedLamports?: string;
+};
 
 /**
  * Pay from my wallet (V1-31): ids and the amount the confirmation showed, read again from the
@@ -96,6 +112,7 @@ export type SessionData = {
   tokenStep?: Partial<Record<TokenFlow, TokenStepState>>;
   sim?: SimFlowState;
   pay?: PayState;
+  launch?: LaunchFlowState;
 };
 
 export const initialSession = (): SessionData => ({ v: SESSION_VERSION });
@@ -112,6 +129,7 @@ const isPendingInput = (value: unknown): value is PendingInput => {
     case "withdraw_address":
     case "withdraw_amount":
     case "sim_amount":
+    case "launch_amount":
       return true;
     case "wallet_import":
       return (
@@ -142,8 +160,21 @@ const isTokenStep = (value: unknown): value is Partial<Record<TokenFlow, TokenSt
 
 const isSimFlow = (value: unknown): value is SimFlowState => {
   if (typeof value !== "object" || value === null) return false;
-  const { devBuySol } = value as SimFlowState;
-  return devBuySol === undefined || (typeof devBuySol === "number" && Number.isFinite(devBuySol));
+  const { bundleSol } = value as SimFlowState;
+  return bundleSol === undefined || (typeof bundleSol === "number" && Number.isFinite(bundleSol));
+};
+
+const isOptionalLamports = (value: unknown): boolean =>
+  value === undefined || (typeof value === "string" && /^\d+$/.test(value));
+
+const isLaunchState = (value: unknown): value is LaunchFlowState => {
+  if (typeof value !== "object" || value === null) return false;
+  const { walletId, bundleLamports, blockedLamports } = value as LaunchFlowState;
+  return (
+    isOptionalString(walletId) &&
+    isOptionalLamports(bundleLamports) &&
+    isOptionalLamports(blockedLamports)
+  );
 };
 
 const isWithdrawState = (value: unknown): value is WithdrawState => {
@@ -190,6 +221,7 @@ export function isSessionData(value: unknown): value is SessionData {
   if (data.pay !== undefined && !isPayState(data.pay)) return false;
   if (data.tokenStep !== undefined && !isTokenStep(data.tokenStep)) return false;
   if (data.sim !== undefined && !isSimFlow(data.sim)) return false;
+  if (data.launch !== undefined && !isLaunchState(data.launch)) return false;
   return data.pendingInput === undefined || isPendingInput(data.pendingInput);
 }
 

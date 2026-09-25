@@ -113,7 +113,7 @@ export type TokenStepView = {
   isPremium: boolean;
   /** Where Back goes: the menu for a simulation, step 2 for a launch. */
   backData: CallbackData;
-  /** The choices already made, before the block (§15): the wallet and the dev buy of a launch. */
+  /** The choices already made, before the block (§15): the wallet, dev buy and bundle of a launch. */
   summaryLines: string[];
   /** Lines of the AI hooks (V1-17): the quota, after the block. */
   infos: string[];

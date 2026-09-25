@@ -247,6 +247,8 @@ model Simulation {
   tokenDraftId String
   tokenDraft   TokenDraft @relation(fields: [tokenDraftId], references: [id], onDelete: Cascade)
   devBuySol    Decimal    @db.Decimal(20, 9)
+  // The bundle after the dev buy (decision of 25/09/2026); 0 for the rows made before it
+  bundleSol    Decimal    @default(0) @db.Decimal(20, 9)
   // int4: 0 to 2 147 483 647 (V1-22 generates in this range)
   seed         Int
   // Full SimConfig of §7.4, including the solUsdPrice frozen at creation

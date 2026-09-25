@@ -2,16 +2,17 @@ import { clamp, dmath } from "./dmath.js";
 import { checkNumber, checkPositive, isRecord, rangeError } from "./errors.js";
 import type { PresetParams } from "./types.js";
 
-type PresetRow = { devBuySol: 3 | 5 | 10; lambda0: number; pBuy: number; medianSol: number };
+type PresetRow = { sol: 3 | 5 | 10; lambda0: number; pBuy: number; medianSol: number };
 
 /**
- * Presets tied to the dev buy (§7.3): a demo hypothesis, not a relation observed on
- * pump.fun. Starting values, "to adjust by eye".
+ * Presets tied to the amount the dev buys (§7.3): a demo hypothesis, not a relation observed on
+ * pump.fun. Starting values, "to adjust by eye". The bot picks them by the bundle since the dev
+ * buy is a fixed 1 SOL (decision of 25/09/2026).
  */
 export const PRESET_TABLE: readonly [PresetRow, PresetRow, PresetRow] = Object.freeze([
-  { devBuySol: 3, lambda0: 0.8, pBuy: 0.56, medianSol: 0.2 },
-  { devBuySol: 5, lambda0: 1.2, pBuy: 0.58, medianSol: 0.25 },
-  { devBuySol: 10, lambda0: 2.0, pBuy: 0.6, medianSol: 0.3 },
+  { sol: 3, lambda0: 0.8, pBuy: 0.56, medianSol: 0.2 },
+  { sol: 5, lambda0: 1.2, pBuy: 0.58, medianSol: 0.25 },
+  { sol: 10, lambda0: 2.0, pBuy: 0.6, medianSol: 0.3 },
 ] as const);
 
 /** "σ is about 1.0 for every preset" (§7.3). */
@@ -23,16 +24,16 @@ export const MAX_TRADE_SOL = 5;
 const lerp = (a: number, b: number, w: number): number => a + (b - a) * w;
 
 /**
- * The preset of a dev buy: the table for 3, 5 and 10 SOL, an interpolation on log(dev buy)
- * between them for Custom, and the nearest preset outside [3, 10]. The 1–20 SOL check of
- * the input stays upstream (V1-22).
+ * The preset of an amount: the table for 3, 5 and 10 SOL, an interpolation on log(amount)
+ * between them for Custom, and the nearest preset outside [3, 10]. The check of the input stays
+ * upstream (V1-22).
  */
-export function presetForDevBuy(devBuySol: number): PresetParams {
-  checkPositive(devBuySol, "devBuySol");
+export function presetForAmount(sol: number): PresetParams {
+  checkPositive(sol, "sol");
   const [low, mid, high] = PRESET_TABLE;
-  const d = clamp(devBuySol, low.devBuySol, high.devBuySol);
-  const [a, b] = d <= mid.devBuySol ? [low, mid] : [mid, high];
-  const w = dmath.ln(d / a.devBuySol) / dmath.ln(b.devBuySol / a.devBuySol);
+  const d = clamp(sol, low.sol, high.sol);
+  const [a, b] = d <= mid.sol ? [low, mid] : [mid, high];
+  const w = dmath.ln(d / a.sol) / dmath.ln(b.sol / a.sol);
   return {
     lambda0: lerp(a.lambda0, b.lambda0, w),
     pBuy: lerp(a.pBuy, b.pBuy, w),

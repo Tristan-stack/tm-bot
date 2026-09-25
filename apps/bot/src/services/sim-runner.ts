@@ -356,7 +356,7 @@ export function createSimRunner(deps: SimRunnerDeps): SimRunner {
         editQueued: false,
         chain: Promise.resolve(),
       };
-      ingest(entry, [run.devBuy()]);
+      ingest(entry, run.openingBuys());
       // Reserved before the first upload: a second click during it is refused.
       entries.set(entry.simId, entry);
 
