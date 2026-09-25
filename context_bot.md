@@ -133,7 +133,7 @@ La ligne « prochaine étape » suit cet ordre de priorité :
 |---|---|
 | Aucun wallet | `➡️ Create a wallet to get started.` |
 | Pas d'abonnement actif | `➡️ Subscribe to unlock Launch Coin.` |
-| Aucun wallet avec au moins 1 SOL + la marge de frais | `➡️ Fund a wallet to launch a coin.` |
+| Aucun wallet avec au moins 4 SOL (1 SOL de dev buy + 3 SOL de bundle minimum, décision du 25/09/2026, voir 10.1) | `➡️ Fund a wallet to launch a coin.` |
 | Tout est prêt | `✅ You're all set.` |
 
 Le message est en HTML (`parse_mode: HTML`), avec les titres en gras et les aperçus de liens désactivés. Au `/start`, le bot envoie un nouveau message. Au retour vers le menu (Back ou Menu), il édite le message existant.
@@ -183,7 +183,7 @@ Une alerte Telegram (notification au clic) ne remplace jamais une info à l'écr
 | AI Generate sans Premium (5) | `🔒 AI Generate: Premium only` |
 | AI Generate sans fournisseur IA branché (5, 8.1) | `🤖 AI model coming soon: AI Generate uses the standard generator for now.` |
 | Wallet aux fonds insuffisants (8.3, 10.1) | Ligne du wallet avec `⚠️ Insufficient funds` et le montant manquant |
-| Dev buy trop élevé (10.1) | Note avec le nom du wallet, `⚠️ Insufficient funds` et le montant manquant |
+| Bundle trop élevé (10.1) | Note avec le nom du wallet, `⚠️ Insufficient funds` et le montant manquant pour le dev buy et le bundle |
 | Paiement pas encore détecté (8.3) | `⏳ Waiting for payment · last check 14:32 UTC` |
 | Offre Classic pendant un Premium actif (8.4) | `Classic: available when your Premium ends` |
 | Limite de wallets atteinte (9.3) | Compteur `2/5` dans l'en-tête de la liste, avec `limit reached` à la limite |
@@ -197,7 +197,7 @@ Cet écran sert à Simulate a Launch et à Launch Coin. Le bouton « 🎲 Genera
 ```
 📊 SIMULATION · STEP 1/3 · 🧪 Devnet
 ▰▱▱
-Token › Dev buy › Recap
+Token › Bundle › Recap
 
 Generate a token or edit it. Image and links are optional.
 
@@ -244,27 +244,28 @@ Les limites de 32 et 10 octets viennent de Metaplex, utilisé par l'ancienne ins
 
 ## 6. Simulate a Launch (V1, gratuit)
 
-La simulation est accessible sans abonnement. Elle se joue **entièrement dans le chat** : un message du bot porte l'image du graphique, rééditée à intervalle régulier, avec les boutons de vente en dessous. À la fin, la PNL card remplace l'image de ce même message. Décision du 24/09/2026 : la Mini App de simulation est abandonnée (voir 6.5).
+La simulation est accessible sans abonnement. Elle se joue **entièrement dans le chat** : un message du bot porte l'image du graphique, rééditée à intervalle régulier, avec les boutons de vente en dessous. À la fin, la PNL card remplace l'image de ce même message. Décision du 24/09/2026 : la Mini App de simulation est abandonnée (voir 6.5). Décision du 25/09/2026 : la simulation suit le même modèle que le launch (voir 10.1), un dev buy fixe de 1 SOL puis un bundle choisi par l'utilisateur.
 
 | Étape | Écran | Clavier |
 |---|---|---|
 | 1/3 | Token | Voir section 5 |
-| 2/3 | Dev buy | `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, puis `[ ✏️ Custom ]`, puis `[ ⬅️ Back ]`. Custom demande un montant de 1 à 20 SOL, avec « ❌ Cancel ». |
+| 2/3 | Bundle | `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, puis `[ ✏️ Custom ]`, puis `[ ⬅️ Back ]`. Le dev buy est fixe (1 SOL) : l'utilisateur choisit le bundle. Custom demande un montant de 3 à 20 SOL, avec « ❌ Cancel ». |
 | 3/3 | Récap | `[ ▶️ Start simulation ]` (bouton callback), puis `[ ⬅️ Back ][ 🏠 Menu ]` |
 | — | Message de simulation | Image du graphique éditée toutes les 3 secondes, légende avec chrono, market cap et position, boutons Sell et contrôles (6.1, 6.2) |
 | — | Fin | La PNL card remplace l'image du message de simulation (6.3) |
 
-Écran Dev buy :
+Écran Bundle :
 
 ```
 📊 SIMULATION · STEP 2/3 · 🧪 Devnet
 ▰▰▱
-Token › Dev buy › Recap
+Token › Bundle › Recap
+
+The dev buys 1 SOL at launch, then the bundle buys in the next block. How much SOL should the bundle buy?
 
 🪙 Moon Otter · $OTTR
-💰 Dev buy: not selected yet
-
-How much SOL should the dev buy at launch?
+💰 Dev buy: 1 SOL
+📦 Bundle: not selected yet
 
 [ 3 SOL      ][ 5 SOL      ][ 10 SOL     ]
 [ ✏️ Custom                                ]
@@ -276,7 +277,9 @@ How much SOL should the dev buy at launch?
 ```
 📊 SIMULATION · STEP 3/3 · 🧪 Devnet
 ▰▰▰
-Token › Dev buy › Recap
+Token › Bundle › Recap
+
+Check your simulation, then tap Start simulation.
 
 🪙 TOKEN
 ┌ Moon Otter · $OTTR
@@ -284,7 +287,9 @@ Token › Dev buy › Recap
 ├ 🖼 Image: ✅
 └ 🔗 Links: none
 
-💰 Dev buy: 5 SOL (≈ 15.2% of supply)
+💰 Dev buy: 1 SOL (≈ 3.4% of supply)
+📦 Bundle: 5 SOL (≈ 14.3% of supply)
+🧮 Total: 6 SOL (≈ 17.7% of supply)
 ⏱ Duration: 3 min max
 
 ⚠️ DEMO — Bullish scenario. Not a prediction or a real result.
@@ -348,9 +353,9 @@ Règles :
 
 ### 6.2 Position et ventes
 
-La position de départ correspond aux tokens achetés au dev buy. Chaque vente passe par la formule de la bonding curve (section 7.1), impact de prix et frais inclus. Vendre une grosse position fait donc baisser le prix, comme en vrai.
+La position de départ correspond aux tokens achetés au dev buy et au bundle (les deux achats du dev, voir 7.1). Chaque vente passe par la formule de la bonding curve (section 7.1), impact de prix et frais inclus. Vendre une grosse position fait donc baisser le prix, comme en vrai.
 
-La valeur « si vendu maintenant » se calcule de la même façon, et non en multipliant le prix affiché par le nombre de tokens. Le PnL vaut : SOL reçus des ventes + valeur si vendu maintenant − SOL dépensés au dev buy (frais inclus).
+La valeur « si vendu maintenant » se calcule de la même façon, et non en multipliant le prix affiché par le nombre de tokens. Le PnL vaut : SOL reçus des ventes + valeur si vendu maintenant − SOL dépensés au dev buy et au bundle (frais inclus).
 
 Un tap sur Sell passe par le bot : la vente s'applique à l'instant simulé courant, en cours comme en pause, puis l'image et la légende sont rééditées dans la seconde. Un second tap dans la même seconde est ignoré avec une alerte (un tap = une vente). « Sell 100% » ferme la position et termine la simulation ; il déclenche aussi la panique des autres détenteurs, qui revendent 90 % de leurs tokens au même instant, les plus gros d'abord (`DEV_DUMP_PANIC_SHARE`, proposition du 24/09/2026) : la dernière bougie retombe près du market cap de lancement, comme après un rug. La courbe ne descend jamais sous ce niveau (≈ 28 SOL de market cap, soit 3 200 $ à 116 $ le SOL).
 
@@ -361,20 +366,20 @@ La simulation s'arrête dans trois cas : 3 minutes simulées écoulées, 100 % d
 ```
 ╭──────────────────────────────────────╮
 │ $OTTR                           (🖼) │  ← ticker, logo du token
-│ [ ≡ +1.283 ]                          │  ← pastille verte (rouge en perte), montant en SOL
+│ [ ≡ +1.708 ]                          │  ← pastille verte (rouge en perte), montant en SOL
 │                                      │     (le clip d'animation en fond)
 │ PNL          +42.7%                  │
-│ Invested     ≡ 3.000                 │
-│ Position     ≡ 4.283                 │
+│ Invested     ≡ 4.000                 │
+│ Position     ≡ 5.708                 │
 │ SIMULATION · Not a real result       │
 ╰──────────────────────────────────────╯
 📊 SIMULATION ENDED · 🧪 Devnet
 ⚠️ DEMO — Bullish scenario. Not a prediction or a real result.
 
 🪙 $OTTR | +42.7%
-📈 Invested: 3.000 SOL ($310)
-📉 Sell: 4.283 SOL ($443)
-💰 Profit: +1.283 SOL ($133)
+📈 Invested: 4.000 SOL ($413)
+📉 Sell: 5.708 SOL ($590)
+💰 Profit: +1.708 SOL ($177)
 
 [ 🔁 Run again        ][ 🏠 Menu ]
 ```
@@ -382,12 +387,12 @@ La simulation s'arrête dans trois cas : 3 minutes simulées écoulées, 100 % d
 | Élément | Règle |
 |---|---|
 | PnL | Sur la carte : le montant en SOL (3 décimales, signé) sur la pastille, le pourcentage sur la ligne PNL ; le glyphe Solana remplace le mot SOL. Dans la légende : en % et en SOL, avec la valeur en USD si le prix SOL est connu. Vert si positif, rouge si négatif. |
-| Invested / Position | Le dev buy, et ce que la position a rapporté (vendu + le reste valorisé comme vendu à la fin), arrondis à 3 décimales d'abord : Invested + PnL = Position à l'écran. |
+| Invested / Position | Le dev buy et le bundle (SOL dépensés, frais inclus), et ce que la position a rapporté (vendu + le reste valorisé comme vendu à la fin), arrondis à 3 décimales d'abord : Invested + PnL = Position à l'écran. |
 | Légende | Le texte d'une PNL card Axiom (demande du 24/09/2026) : le ticker en gras et le PnL en %, puis Invested / Sell / Profit en SOL, avec les dollars entiers entre parenthèses quand le prix SOL est connu. Pas d'adresse de contrat (rien n'est déployé), ni de temps, ni de part détenue. |
 | Bougie de vente | Sur un Sell 100 %, le graphique avec la bougie de la vente reste affiché 2 secondes avant la carte (même règle pour les deux autres fins). |
 | Mentions | « SIMULATION · Not a real result » en bas de la carte ; la mention DEMO est dans la légende sous l'animation, pas sur l'image (demande du 24/09/2026), et le filigrane en diagonale de l'ancienne carte fixe est abandonné avec elle. `protect_content` couvre le transfert et l'enregistrement. |
 | Partage | Pas de bouton de partage. Le message reste protégé. |
-| Run again | Même token et même dev buy, nouvelle seed tirée par le bot et nouvelle ligne Simulation (elle compte dans la limite de fréquence). Le même message repart à 0:00 (proposition). |
+| Run again | Même token, même dev buy et même bundle, nouvelle seed tirée par le bot et nouvelle ligne Simulation (elle compte dans la limite de fréquence). Le même message repart à 0:00 (proposition). |
 | Menu | Envoie l'écran d'accueil dans un nouveau message ; la carte reste dans le chat. |
 
 ### 6.4 Flux technique
@@ -398,8 +403,8 @@ sequenceDiagram
     participant B as Bot
     participant D as PostgreSQL
     U->>B: Simulate a Launch
-    B->>U: Écran Token puis choix du dev buy
-    B->>D: Crée Simulation (token, dev buy, seed) à l'affichage du récap
+    B->>U: Écran Token puis choix du bundle (dev buy fixe de 1 SOL)
+    B->>D: Crée Simulation (token, dev buy, bundle, seed) à l'affichage du récap
     U->>B: Start simulation
     B->>B: SimRun en mémoire (moteur, section 7)
     B->>U: sendPhoto : image à 0:00, légende, boutons (protect_content)
@@ -460,7 +465,7 @@ Valeurs confirmées par la doc officielle de pump.fun (compte `Global`, adresse 
 
 pump.fun peut changer ces valeurs : l'API les lit dans le compte `Global` du devnet (cache 1 h) et les passe dans `SimConfig.curve`. Le tableau sert de valeurs de repli.
 
-Le dev buy est exécuté à t = 0, avant le premier trade simulé.
+Le dev buy est exécuté à t = 0, avant le premier trade simulé, puis le bundle (décision du 25/09/2026, voir 10.1). Le moteur n'a pas de blocs : « au bloc suivant » y devient « juste après le dev buy, avant tout trader ». Si le dev buy complète la curve, il n'y a pas de bundle. Une simulation créée avant le bundle (bundle à 0) se rejoue à l'identique.
 
 ### 7.2 Flux de trades
 
@@ -470,20 +475,20 @@ Pour un rendu organique, l'intensité vaut `λ(t) = λ0 · m(t)`. Le facteur `m(
 
 Chaque trade est attribué à un trader simulé. Un achat vient d'un nouveau trader avec une probabilité de 0,6, sinon d'un trader existant. Une vente vient d'un trader qui détient des tokens, choisi en proportion de ses avoirs. Ce registre alimente les top holders.
 
-Le scénario est haussier. `pBuy` moyen est au-dessus de 0,5, ce qui crée une dérive vers le haut. Un garde-fou tient la tendance : une enveloppe part du prix après dev buy et monte avec une pente paramétrable, moins une marge. Si le prix passe sous l'enveloppe, `pBuy` est relevé le temps d'y revenir. Après une vente du dev, l'enveloppe repart du nouveau prix : le scénario n'efface pas l'impact de la vente.
+Le scénario est haussier. `pBuy` moyen est au-dessus de 0,5, ce qui crée une dérive vers le haut. Un garde-fou tient la tendance : une enveloppe part du prix après les achats du dev (dev buy et bundle) et monte avec une pente paramétrable, moins une marge. Si le prix passe sous l'enveloppe, `pBuy` est relevé le temps d'y revenir. Après une vente du dev, l'enveloppe repart du nouveau prix : le scénario n'efface pas l'impact de la vente.
 
-### 7.3 Presets liés au dev buy
+### 7.3 Presets liés au bundle
 
-Plus le dev buy est élevé, plus l'activité simulée est rapide et soutenue. C'est une hypothèse de démo, pas une relation observée sur pump.fun.
+Plus le bundle est élevé, plus l'activité simulée est rapide et soutenue. C'est une hypothèse de démo, pas une relation observée sur pump.fun. La table a été dressée pour des dev buys de 3, 5 et 10 SOL ; depuis le 25/09/2026, le dev buy est fixe et le preset se choisit avec le montant du bundle.
 
-| Dev buy | λ0 (trades/s) | pBuy moyen | Taille médiane |
+| Bundle | λ0 (trades/s) | pBuy moyen | Taille médiane |
 |---|---|---|---|
 | 3 SOL | 0,8 | 0,56 | 0,20 SOL |
 | 5 SOL | 1,2 | 0,58 | 0,25 SOL |
 | 10 SOL | 2,0 | 0,60 | 0,30 SOL |
-| Custom | Interpolation sur log(dev buy) | Idem | Idem |
+| Custom | Interpolation sur log(bundle) | Idem | Idem |
 
-Le Custom accepte de 1 à 20 SOL, en simulation comme au launch. Ses paramètres restent bornés entre les presets 3 et 10 SOL. La taille médiane donne `μ = ln(médiane)`. `σ` vaut environ 1,0 pour tous les presets. Ce sont des valeurs de départ, à ajuster à l'œil.
+Le Custom accepte un bundle de 3 à 20 SOL, en simulation comme au launch. Ses paramètres restent bornés entre les presets 3 et 10 SOL. La taille médiane donne `μ = ln(médiane)`. `σ` vaut environ 1,0 pour tous les presets. Ce sont des valeurs de départ, à ajuster à l'œil.
 
 ### 7.4 Temps, bougies et interface du moteur
 
@@ -507,7 +512,8 @@ type PresetParams = {
 };
 type SimConfig = {
   seed: number;
-  devBuySol: number;
+  devBuySol: number;      // 1 SOL depuis le 25/09/2026
+  bundleSol: number;      // second achat du dev à t = 0, 0 = pas de bundle
   durationSec: number;
   curve: CurveParams;
   preset: PresetParams;
@@ -529,7 +535,7 @@ type CurveState = {
 };
 type Position = {
   tokens: number;         // tokens encore détenus
-  solIn: number;          // dev buy, frais inclus
+  solIn: number;          // dev buy + bundle, frais inclus
   solOut: number;         // SOL reçus des ventes, frais déduits
   valueIfSoldNow: number; // SOL si vente du reste maintenant, impact inclus
   pnlSol: number;         // solOut + valueIfSoldNow - solIn
@@ -802,10 +808,12 @@ Garder les clés privées et les seed phrases d'autres personnes est un sujet se
 
 Avant tout, le bot vérifie l'adhésion au canal, sans cache (voir 4.2). Sans abonnement actif, « Launch Coin » ouvre l'écran des offres avec la note « ⭐ Launch Coin needs an active subscription. ». Avec un abonnement, le parcours compte 4 étapes.
 
+**Décision du 25/09/2026 : dev buy fixe, puis bundle.** Le dev achète toujours **1 SOL** à la création du token (dev buy fixe). Le **bundle** achète ensuite **au bloc suivant**, depuis **le même wallet** : pas de wallets de bundle séparés, et les écrans le disent. L'utilisateur choisit seulement le bundle : 3, 5 ou 10 SOL, ou Custom de 3 à 20 SOL (3 décimales au plus, et au plus le solde − 1 SOL). Le minimum pour lancer est de **4 SOL tout rond** (1 + 3), sans marge de frais : c'est aussi le seuil de la ligne « Fund a wallet to launch a coin. » de l'accueil (4.3). Le récap montre le dev buy, le bundle et le total avec leur part de la supply (formule d'achat 7.1 ; la part du bundle est celle du total moins celle du dev buy). La simulation suit le même modèle (6).
+
 | Étape | Écran | Clavier |
 |---|---|---|
 | 1/4 | Wallet | Un bouton par wallet, puis `[ ⬅️ Back ]` |
-| 2/4 | Dev buy | `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, puis `[ ✏️ Custom ]`, puis `[ ⬅️ Back ]`. `[ 🔄 Refresh ]` s'ajoute au-dessus de Back quand les fonds sont insuffisants. |
+| 2/4 | Bundle | `[ 3 SOL ][ 5 SOL ][ 10 SOL ]`, puis `[ ✏️ Custom ]`, puis `[ ⬅️ Back ]`. `[ 🔄 Refresh ]` s'ajoute au-dessus de Back quand les fonds sont insuffisants. |
 | 3/4 | Token | Écran Token (section 5) |
 | 4/4 | Récap | `[ 🚀 Create token ]`, puis `[ ⬅️ Back ][ 🏠 Menu ]` |
 
@@ -814,13 +822,13 @@ Avant tout, le bot vérifie l'adhésion au canal, sans cache (voir 4.2). Sans ab
 ```
 🚀 LAUNCH · STEP 1/4 · 🧪 Devnet
 ▰▱▱▱
-Wallet › Dev buy › Token › Recap
+Wallet › Bundle › Token › Recap
 
-Choose the wallet that creates the token and pays the dev buy.
-The smallest launch needs 1.050 SOL (1 SOL dev buy + fees).
+Choose the wallet that creates the token and pays the dev buy and the bundle.
+The smallest launch needs 4 SOL (1 SOL dev buy + 3 SOL bundle).
 
 ┌ Main · 4.200 SOL ✅
-└ Test · 0.400 SOL ⚠️ Insufficient funds (0.650 SOL missing)
+└ Test · 0.400 SOL ⚠️ Insufficient funds (3.600 SOL missing)
 
 [ 👛 Main                                  ]
 [ 👛 Test                                  ]
@@ -829,26 +837,26 @@ The smallest launch needs 1.050 SOL (1 SOL dev buy + fees).
 
 Un wallet aux fonds insuffisants reste cliquable : le clic met à jour l'écran avec une note qui reprend son nom, le flag, le montant manquant et son adresse pour l'alimenter. Sans wallet, l'écran affiche « You have no wallet yet. Create or import one first. » avec `[ 👛 Wallets ][ ⬅️ Back ]`.
 
-Étape 2, Dev buy, après un clic sur un montant trop élevé :
+Étape 2, Bundle, après un clic sur un bundle trop élevé :
 
 ```
 🚀 LAUNCH · STEP 2/4 · 🧪 Devnet
 ▰▰▱▱
-Wallet › Dev buy › Token › Recap
+Wallet › Bundle › Token › Recap
 
-Choose how much SOL the dev buys at launch.
-Fees need about 0.05 SOL on top.
+The dev buys 1 SOL at launch, then the bundle buys in the next block. Both are paid from this wallet. Choose the bundle amount.
 
 👛 Wallet: Main · 4.200 SOL ($434.11)
+💰 Dev buy: 1 SOL
 
 ┌ 3 SOL · ✅ OK
-├ 5 SOL · ⚠️ Insufficient funds (0.850 SOL missing)
-├ 10 SOL · ⚠️ Insufficient funds (5.850 SOL missing)
-└ Custom · 1 to 4.150 SOL with this wallet
+├ 5 SOL · ⚠️ Insufficient funds (1.800 SOL missing)
+├ 10 SOL · ⚠️ Insufficient funds (6.800 SOL missing)
+└ Custom · 3 to 3.200 SOL with this wallet
 
 ⚠️ INSUFFICIENT FUNDS
-Main can't cover 5 SOL + fees: 0.850 SOL missing.
-Send SOL to Main, then tap Refresh, or pick a smaller amount.
+Main can't cover the 1 SOL dev buy and a 5 SOL bundle: 1.800 SOL missing.
+Send SOL to Main, then tap Refresh, or pick a smaller bundle.
 
 [ 3 SOL      ][ 5 SOL      ][ 10 SOL     ]
 [ ✏️ Custom                                ]
@@ -863,7 +871,7 @@ Les lignes d'état par montant sont toujours affichées. La note « INSUFFICIENT
 ```
 🚀 LAUNCH · STEP 4/4 · 🧪 Devnet
 ▰▰▰▰
-Wallet › Dev buy › Token › Recap
+Wallet › Bundle › Token › Recap
 
 Check everything before creating the token.
 
@@ -874,7 +882,9 @@ Check everything before creating the token.
 └ 🔗 Website · X · Telegram
 
 👛 Wallet: Main · 4.200 SOL
-💰 Dev buy: 3 SOL (≈ 9.7% of supply)
+💰 Dev buy: 1 SOL (≈ 3.4% of supply)
+📦 Bundle: 3 SOL (≈ 9.1% of supply)
+🧮 Total: 4 SOL (≈ 12.5% of supply)
 ⛽ Fees: ≈ 0.05 SOL
 
 🏆 Your launch will be posted in the Success channel.
@@ -885,17 +895,18 @@ Check everything before creating the token.
 [ ⬅️ Back             ][ 🏠 Menu            ]
 ```
 
-En V1, « Create token » ne crée rien : l'écran indique déjà « 🚧 Token creation arrives in V2. », et le clic ouvre une alerte qui le répète. La marge de frais couvre la création, le rent et les priority fees. Valeur provisoire : 0,05 SOL, à mesurer en V2.
+En V1, « Create token » ne crée rien : l'écran indique déjà « 🚧 Token creation arrives in V2. », et le clic ouvre une alerte qui le répète. La ligne « ⛽ Fees » est une estimation affichée pour information (création, rent et priority fees) : elle n'entre pas dans le minimum de 4 SOL (décision du 25/09/2026). Valeur provisoire : 0,05 SOL, à mesurer en V2, où le minimum sera revu avec les frais réels.
 
 ### 10.2 V2 : création réelle
 
 | Étape | Action |
 |---|---|
 | 1 | Upload de l'image (ou de l'image par défaut du bot si l'utilisateur n'en a pas mis) et des métadonnées JSON (nom, ticker, description, liens) sur IPFS |
-| 2 | Transaction pump.fun : `create_v2` (Token-2022, `is_mayhem_mode = false`), puis achat du dev buy avec `buy_v2`. Le tout dans une seule transaction v0 avec une Address Lookup Table, signée par le wallet créateur. |
-| 3 | Priority fee estimée automatiquement (voir 12), envoi et confirmation. Gestion des erreurs : solde, blockhash expiré, slippage. |
-| 4 | Écran de résultat (ci-dessous) |
-| 5 | Post automatique dans le canal Succès (section 10.4) |
+| 2 | Transaction pump.fun : `create_v2` (Token-2022, `is_mayhem_mode = false`), puis achat du dev buy (1 SOL) avec `buy_v2`. Le tout dans une seule transaction v0 avec une Address Lookup Table, signée par le wallet créateur. |
+| 3 | Au bloc suivant, achat du bundle avec `buy_v2`, signé par le même wallet (décision du 25/09/2026, 10.1). Mécanisme d'envoi et cas d'échec du bundle après une création réussie : à fixer en V2 (voir 17). |
+| 4 | Priority fee estimée automatiquement (voir 12), envoi et confirmation. Gestion des erreurs : solde, blockhash expiré, slippage. |
+| 5 | Écran de résultat (ci-dessous) |
+| 6 | Post automatique dans le canal Succès (section 10.4) |
 
 ```
 ✅ TOKEN LAUNCHED · 🧪 Devnet
@@ -903,8 +914,9 @@ En V1, « Create token » ne crée rien : l'écran indique déjà « 🚧 Token 
 MOON OTTER · $OTTR
 Mint: OTTRk3…9fQ2
 
-💰 Dev buy: 3.00 SOL
-🪙 You hold: 96.66M OTTR (9.67%)
+💰 Dev buy: 1.00 SOL
+📦 Bundle: 3.00 SOL
+🪙 You hold: 125.12M OTTR (12.51%)
 
 🏆 Posted in the Success channel.
 ```
@@ -960,6 +972,8 @@ An otter who loves the stars.
 
 Le post n'affiche pas le nom Telegram du créateur. Il ne contient ni chiffres de performance ni promesse de gain. La part du dev dans la supply est toujours affichée. Le récap du launch prévient l'utilisateur que son token sera publié, et les Terms of Service le mentionnent.
 
+À trancher (25/09/2026) : depuis le bundle (10.1), le dev détient les tokens du dev buy **et** du bundle. Le post ci-dessus montre encore un dev buy seul ; son format (dev buy et bundle séparés, ou total avec la part cumulée) se décide avec le ticket du post Succès (V1-39).
+
 ## 11. Support, Terms of Service, Privacy Policy
 
 ### 11.1 Support
@@ -1003,7 +1017,7 @@ Les Terms of Service et la Privacy Policy sont des pages statiques en anglais, s
 | Générateur IA | Contenus générés sans garantie, à vérifier par l'utilisateur avant usage |
 | Responsabilité | Aucun conseil financier. Service fourni tel quel, sans garantie de disponibilité. |
 | Changements | Une nouvelle version demande une nouvelle acceptation. |
-| Comptes inactifs | Supprimés automatiquement après 48 h sans activité, sans préavis, y compris avec un abonnement en cours, qui n'est pas remboursé. Les SOL (et en V2 les tokens) restants sont d'abord transférés à la trésorerie du projet et peuvent être réclamés au support. |
+| Comptes inactifs | Supprimés automatiquement après 24 h sans activité, sans préavis, y compris avec un abonnement en cours, qui n'est pas remboursé. Les SOL (et en V2 les tokens) restants sont d'abord transférés à la trésorerie du projet et peuvent être réclamés au support. |
 | Contact | Compte support |
 
 ### 11.3 Privacy Policy
@@ -1023,7 +1037,7 @@ Durées de conservation (propositions de départ, à faire valider par un jurist
 
 | Données | Durée |
 |---|---|
-| Compte (ID Telegram, username, prénom, acceptation des Terms) | Supprimé après 48 h sans activité (ci-dessous) |
+| Compte (ID Telegram, username, prénom, acceptation des Terms) | Supprimé après 24 h sans activité (ci-dessous) |
 | Wallets (clés et seed phrases chiffrées) | Tant que le wallet existe |
 | Brouillons de token et simulations | 90 jours |
 | Paiements, retraits et ventes | 10 ans s'il s'agit de vrais paiements (obligation comptable), détachés du compte après une suppression. En devnet, supprimés avec le compte. |
@@ -1032,7 +1046,7 @@ Durées de conservation (propositions de départ, à faire valider par un jurist
 | Logs techniques | 6 mois |
 | Avis publiés | Jusqu'à ce que l'auteur demande leur retrait |
 
-Comptes inactifs : une activité, c'est toute interaction avec le bot (message ou clic). Après 48 h sans activité, le worker supprime le compte, même s'il a un abonnement actif, une facture en attente ou des fonds. Seuls les comptes admin (`ADMIN_TELEGRAM_IDS`) sont exemptés. Aucun avertissement n'est envoyé. Avant la suppression, le worker transfère le SOL de chaque wallet vers `TREASURY_WALLET` (en V2, les tokens d'abord, puis le SOL). Chaque transfert est enregistré avec l'ID Telegram, pour qu'un admin puisse rembourser l'utilisateur à la main s'il réclame. Si un transfert échoue, le compte est gardé et retraité au passage suivant.
+Comptes inactifs : une activité, c'est toute interaction avec le bot (message ou clic). Après 24 h sans activité (décision du 25/09/2026 ; 48 h auparavant), le worker supprime le compte, même s'il a un abonnement actif, une facture en attente ou des fonds. Le worker vérifie toutes les 15 minutes : un compte part donc entre 24 h et 24 h 15 après sa dernière activité. Seuls les comptes admin (`ADMIN_TELEGRAM_IDS`) sont exemptés. Aucun avertissement n'est envoyé. Avant la suppression, le worker transfère le SOL de chaque wallet vers `TREASURY_WALLET` (en V2, les tokens d'abord, puis le SOL). Chaque transfert est enregistré avec l'ID Telegram, pour qu'un admin puisse rembourser l'utilisateur à la main s'il réclame. Si un transfert échoue, le compte est gardé et retraité au passage suivant.
 
 Suppression à la demande : pas de bouton dans le bot (décision). L'utilisateur écrit au support depuis son compte Telegram et retire d'abord ses SOL. Un admin lance ensuite `/purge` (voir 11.4), et l'utilisateur reçoit une confirmation dans le délai d'un mois prévu par le RGPD. Le bot est public : la Privacy Policy doit indiquer ce contact et ce délai. Effacer les clés rend les fonds irrécupérables, c'est pourquoi la suppression est bloquée tant qu'il reste des fonds.
 
@@ -1135,8 +1149,8 @@ IMAGE_API_KEY=
 | Wallet | id, userId, name (unique par utilisateur), publicKey (unique par utilisateur), source (CREATED, IMPORTED_KEY, IMPORTED_SEED), derivationPath, encSecretKey, iv, authTag, encMnemonic, mnemonicIv, mnemonicAuthTag (seed phrase chiffrée, vide pour un import par clé privée), createdAt |
 | Withdrawal | id, userId, walletId (nullable), fromAddress, toAddress, lamports, feeLamports, signature, status (PENDING, CONFIRMED, FAILED), error, kind (USER, INACTIVITY_SWEEP), userTelegramId (transferts des comptes inactifs, gardé après la suppression), createdAt |
 | TokenDraft | id, userId, name, symbol, description, imageFileId, website, twitter, telegram, createdAt |
-| Simulation | id, userId, tokenDraftId, devBuySol, seed, params (JSON), createdAt |
-| Launch (V2) | id, userId, walletId, tokenDraftId, devBuySol, devTokens, mint, txSignature, status (PENDING, CONFIRMED, FAILED), error, channelMessageId, createdAt |
+| Simulation | id, userId, tokenDraftId, devBuySol, bundleSol (0 avant le 25/09/2026), seed, params (JSON), createdAt |
+| Launch (V2) | id, userId, walletId, tokenDraftId, devBuySol, bundleSol (transaction du bundle à modéliser en V2), devTokens, mint, txSignature, status (PENDING, CONFIRMED, FAILED), error, channelMessageId, createdAt |
 | TokenSell (V2) | id, userId, launchId, walletId, tokens, pctOfPosition, expectedLamports, minLamports, receivedLamports, slippageBps, venue (BONDING_CURVE, PUMPSWAP), signature, status (PENDING, CONFIRMED, FAILED), error, createdAt |
 
 Après une purge ou la suppression d'un compte inactif, `userId` passe à null dans `Payment`, `Withdrawal` et `TokenSell` : les données comptables sont gardées, détachées du compte.
@@ -1159,7 +1173,7 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 | Accueil | Si l'API de prix ne répond plus depuis 10 min, les montants USD sont masqués. |
 | Accueil | « Refresh » met à jour les soldes, au plus une fois toutes les 10 s. |
 | Simulation | Même seed et mêmes paramètres : exactement les mêmes trades. |
-| Simulation | Sans vente du dev, pour 1 000 seeds par preset, le prix final est au-dessus du prix après dev buy. |
+| Simulation | Sans vente du dev, pour 1 000 seeds par preset, le prix final est au-dessus du prix après les achats du dev (dev buy et bundle). |
 | Simulation | La simulation s'arrête à 3 minutes simulées, dès que 100 % de la position est vendue, ou à la fin de la curve. |
 | Simulation | Une vente du dev utilise la formule de la curve, impact de prix et frais inclus. |
 | Simulation | Le message de simulation et la PNL card sont envoyés avec `protect_content` : ni transfert ni enregistrement. |
@@ -1182,14 +1196,14 @@ TypeScript en mode strict, avec ESLint et Prettier. Toutes les entrées utilisat
 | Subscribe | Passer de Classic à Premium affiche l'avertissement avant la facture. |
 | Launch Coin | Sans abonnement actif, l'utilisateur est renvoyé vers Subscribe. |
 | Launch Coin | Avec un solde insuffisant, le bot affiche le montant manquant et bloque la suite. |
-| Launch Coin | Un dev buy Custom hors de 1 à 20 SOL est refusé, en simulation comme au launch. |
+| Launch Coin | Le dev buy est fixe à 1 SOL ; un bundle Custom hors de 3 à 20 SOL est refusé, en simulation comme au launch (décision du 25/09/2026). |
 | Support | Le code support affiché correspond à l'offre actuelle de l'utilisateur. |
 | Admin | Les commandes admin ne répondent qu'aux ID listés dans `ADMIN_TELEGRAM_IDS`. |
 | Admin | `/announce` ne publie rien sans aperçu et confirmation. |
 | Admin | `/grant` affiche un résumé avant d'activer l'abonnement. |
 | Admin | `/getall` n'affiche la clé privée et la seed phrase qu'après « Reveal keys », et ce message est supprimé après 60 s. |
 | Admin | `/purge` reste bloqué tant que l'utilisateur a des fonds sur un wallet. |
-| Données | Un compte inactif depuis 48 h est supprimé, même avec un abonnement actif, une facture en attente ou des fonds ; seuls les admins sont exemptés. |
+| Données | Un compte inactif depuis 24 h est supprimé, même avec un abonnement actif, une facture en attente ou des fonds ; seuls les admins sont exemptés. |
 | Données | Avant la suppression d'un compte inactif, les SOL de ses wallets sont transférés à la trésorerie, et chaque transfert est enregistré avec l'ID Telegram. |
 | Données | Aucun avertissement n'est envoyé avant la suppression d'un compte inactif. |
 | API | Une requête sous `/api` sans `initData` valide renvoie 401. |
@@ -1219,3 +1233,5 @@ La V2 correspond aux sections 10.2 à 10.4.
 | Fonctions Premium en V2 | Idées en 8.5, non décidées | V2 |
 | Fournisseurs IA (texte et logo) | À choisir et à brancher. En attendant, AI Generate utilise le générateur local avec la mention « coming soon ». Limite : 50 par jour. | Après la V1 |
 | Textes juridiques (Terms, Privacy) et durées de conservation | Plans et propositions en 11.2 et 11.3. Textes à rédiger, puis à faire valider par un juriste avant tout usage réel. | Étape 9 |
+| Bundle en V2 | Décidé le 25/09/2026 : dev buy fixe de 1 SOL à la création, puis bundle au bloc suivant, depuis le même wallet (10.1). Reste à fixer : mécanisme d'envoi du bundle, conduite si le bundle échoue après une création réussie, minimum de 4 SOL revu avec les frais mesurés. | V2 |
+| Post Succès et bundle | Afficher le bundle dans le post (10.4) : dev buy et bundle séparés, ou total avec la part cumulée. | V1-39, V2 |

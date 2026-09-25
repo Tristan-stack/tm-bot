@@ -36,7 +36,8 @@ le moteur et la relecture des simulations stockées (`SIM_ENGINE_VERSION`). **V2
 Lu le 23/09/2026 (fixture [test/fixtures/pump-global-devnet.json](test/fixtures/pump-global-devnet.json)) :
 réserves virtuelles SOL de **1 SOL** au lieu des 30 SOL du §7.1, tout le reste identique
 (1 073 000 000 tokens virtuels, 793 100 000 réels, supply 1 000 000 000, 95 + 5 bps). Avec 1 SOL,
-un dev buy de 3 SOL complète la curve avant le premier trade. Le service rejette un `Global` que le
-dev buy maximal du produit (20 SOL) complète à t = 0 (`invalid_values`) et sert le tableau §7.1 :
-sur devnet, `source` vaut `fallback` ; `global` dès que le compte lu est cohérent (mainnet,
+un achat de 3 SOL complète la curve avant le premier trade. Le service rejette un `Global` que le
+plus gros achat du dev à t = 0 complète (`invalid_values`) : 1 SOL de dev buy puis le bundle maximal
+de 20 SOL, soit `MAX_OPENING_BUY_SOL` = 21 SOL depuis D22 (25/09/2026). Il sert alors le tableau
+§7.1 : sur devnet, `source` vaut `fallback` ; `global` dès que le compte lu est cohérent (mainnet,
 DEC-05).
