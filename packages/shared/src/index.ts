@@ -5,7 +5,10 @@
  */
 export const PACKAGE_NAME = "@launchbot/shared";
 
+export { buildDepositAlert } from "./admin/deposit-alerts.js";
+export type { AlertInvoice, DepositAlert } from "./admin/deposit-alerts.js";
 export * from "./ai/types.js";
+export { chunk } from "./array.js";
 export * from "./cache/last-known.js";
 export * from "./cache/ttl-cache.js";
 export * from "./callback.js";
@@ -19,6 +22,7 @@ export { en, warn } from "./i18n/en.js";
 export { DEFAULT_TERMS_VERSION, LEGAL_UPDATED_AT, resolveTermsVersion } from "./legal.js";
 export * from "./schemas.js";
 export * from "./solana-address.js";
+export * from "./subscription/index.js";
 export * from "./token/index.js";
 export * from "./ui/index.js";
 export { joinUrl, withoutTrailingSlash } from "./url.js";
@@ -30,4 +34,5 @@ export {
   isWalletReady,
   priorityFeeLamports,
   transferFeeLamports,
+  transferShortfall,
 } from "./wallets.js";

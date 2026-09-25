@@ -1,9 +1,35 @@
-import { CACHE_TTL_MS, createTtlCache, getWalletLimit } from "@launchbot/shared";
+import {
+  CACHE_TTL_MS,
+  computeActivation,
+  createTtlCache,
+  getOffer,
+  getPlanFeatures,
+  isPaid,
+  PAYMENT_STATUSES,
+} from "@launchbot/shared";
+import type {
+  ActivationKind,
+  ActivationMode,
+  ComputedActivation,
+  Offer,
+  PlanFeatures,
+  PlanStatus,
+} from "@launchbot/shared";
+import { createLogger } from "@launchbot/shared/server";
 import type { Db } from "../client.js";
-import type { PrismaClient, Subscription } from "../generated/prisma/client.js";
+import type {
+  PaymentStatus,
+  Plan,
+  PlanDuration,
+  PrismaClient,
+  Subscription,
+} from "../generated/prisma/client.js";
 
-// Reads only, and never cached (except the counter): an activation (V1-27, V1-28) must show
-// at once. The rules of purchase, activation and expiry belong to V1-27.
+// The subscription domain on the database side (§8, V1-27). Reads are never cached (except the
+// counter): an activation must show at once. The rules themselves are pure, in
+// @launchbot/shared (`decidePurchase`, `computeActivation`).
+
+const log = createLogger("db:subscriptions");
 
 export type SubscriptionInfo = Pick<
   Subscription,
@@ -12,55 +38,64 @@ export type SubscriptionInfo = Pick<
 
 const INFO = { id: true, plan: true, duration: true, startsAt: true, expiresAt: true } as const;
 
-/** The date filter covers an expiry job (V1-34) that runs late. */
+/**
+ * "Active" everywhere: `status = ACTIVE` and `expiresAt > now`. The date covers an expiry job
+ * (V1-34) that runs late. A partial unique index keeps at most one ACTIVE row per user.
+ */
 const isActive = (now: Date) => ({ status: "ACTIVE", expiresAt: { gt: now } }) as const;
+/** ACTIVE rows whose end has passed: the expiry job and the activation turn them EXPIRED. */
+const isDue = (now: Date) => ({ status: "ACTIVE", expiresAt: { lte: now } }) as const;
 
-/** With several active subscriptions: Premium first, then the one that ends last. */
 export function getActiveSubscription(
   prisma: Db,
   userId: string,
   now: Date = new Date(),
 ): Promise<SubscriptionInfo | null> {
-  return prisma.subscription.findFirst({
-    where: { userId, ...isActive(now) },
-    // Enums sort in the order of their declaration: CLASSIC, then PREMIUM.
-    orderBy: [{ plan: "desc" }, { expiresAt: "desc" }],
-    select: INFO,
-  });
+  return prisma.subscription.findFirst({ where: { userId, ...isActive(now) }, select: INFO });
 }
 
-/**
- * AI Generate is Premium only (§5, §8.1): plan PREMIUM, status ACTIVE, not expired. V1-16 reads
- * it for the label of the button, V1-17 again on the click. To be centralised by V1-27.
- */
+/** What the active plan unlocks (§8.1): the gates below read it, never the plan itself. */
+async function activeFeatures(prisma: Db, userId: string, now: Date): Promise<PlanFeatures> {
+  return getPlanFeatures((await getActiveSubscription(prisma, userId, now))?.plan ?? null);
+}
+
+/** Launch Coin needs an active plan (§8, D2): the entry of the flow (V1-35). */
+export async function hasActiveSubscription(
+  prisma: Db,
+  userId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  return (await activeFeatures(prisma, userId, now)).launchCoin;
+}
+
+/** AI Generate is Premium only (§5, §8.1): V1-16 reads it for the button, V1-17 on the click. */
 export async function hasActivePremium(
   prisma: Db,
   userId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
-  return (await getActiveSubscription(prisma, userId, now))?.plan === "PREMIUM";
+  return (await activeFeatures(prisma, userId, now)).aiGenerate;
 }
 
-export type SubscriptionSummary = {
-  active: SubscriptionInfo | null;
-  /** The subscription that ended last: the home screen says "Classic expired" (V1-08). */
-  lastExpired: SubscriptionInfo | null;
-};
-
-export async function getSubscriptionSummary(
+/**
+ * The plan of a user (§4.3, §8.2) in one read: the row that ends last. With one ACTIVE row per
+ * user at most, and every EXPIRED row ended when it was expired, that row is the active
+ * subscription when there is one, else the one that ended last (« Classic ⚠️ expired »).
+ */
+export async function getPlanStatus(
   prisma: Db,
   userId: string,
   now: Date = new Date(),
-): Promise<SubscriptionSummary> {
-  const [active, lastExpired] = await Promise.all([
-    getActiveSubscription(prisma, userId, now),
-    prisma.subscription.findFirst({
-      where: { userId, OR: [{ status: "EXPIRED" }, { expiresAt: { lte: now } }] },
-      orderBy: { expiresAt: "desc" },
-      select: INFO,
-    }),
-  ]);
-  return { active, lastExpired };
+): Promise<PlanStatus> {
+  const latest = await prisma.subscription.findFirst({
+    where: { userId },
+    orderBy: { expiresAt: "desc" },
+    select: { ...INFO, status: true },
+  });
+  if (latest === null) return { kind: "NONE" };
+  const { status, ...subscription } = latest;
+  const active = status === "ACTIVE" && subscription.expiresAt > now;
+  return { kind: active ? "ACTIVE" : "EXPIRED", subscription };
 }
 
 export type WalletQuota = {
@@ -75,17 +110,16 @@ export async function getWalletQuota(
   userId: string,
   now: Date = new Date(),
 ): Promise<WalletQuota> {
-  const [count, active] = await Promise.all([
+  const [count, features] = await Promise.all([
     prisma.wallet.count({ where: { userId } }),
-    getActiveSubscription(prisma, userId, now),
+    activeFeatures(prisma, userId, now),
   ]);
-  const limit = getWalletLimit(active?.plan ?? null);
-  return { count, limit, reached: count >= limit };
+  return { count, limit: features.maxWallets, reached: count >= features.maxWallets };
 }
 
 /**
- * The counter of the home screen (§4.3), cached 60 s for everyone: users with an active
- * subscription, so two subscriptions of one user count once.
+ * The counter of the home screen (§4.3), cached 60 s for everyone. One ACTIVE row per user at
+ * most: active rows are subscribers.
  */
 export function createActiveSubscriberCounter(deps: {
   prisma: PrismaClient;
@@ -94,7 +128,209 @@ export function createActiveSubscriberCounter(deps: {
   const { prisma, now = Date.now } = deps;
   const cache = createTtlCache<"count", number>({ ttlMs: CACHE_TTL_MS.activeSubscribers, now });
   return () =>
-    cache.get("count", () =>
-      prisma.user.count({ where: { subscriptions: { some: isActive(new Date(now())) } } }),
+    cache.get("count", () => prisma.subscription.count({ where: isActive(new Date(now())) }));
+}
+
+type Activated = { status: "ACTIVATED"; kind: ActivationKind; subscription: SubscriptionInfo };
+
+export type ActivationResult =
+  | Activated
+  /** Another caller activated this invoice first: nothing was written. */
+  | { status: "ALREADY_ACTIVATED" }
+  /** The account was purged (`Payment.userId` null): nothing is activated, refund by hand. */
+  | { status: "USER_DELETED" };
+
+/** `REFUSED`: Classic during Premium (§8.4). */
+export type GrantResult = Activated | { status: "REFUSED" } | { status: "USER_DELETED" };
+
+export type ExpiredSubscription = Pick<Subscription, "id" | "userId" | "plan">;
+
+export type SubscriptionService = {
+  /**
+   * The only code that turns an invoice PAID (§8.3: once per invoice). The caller (V1-28) has
+   * checked the amount received and the 24 h window. With `tx`, runs inside the caller's
+   * transaction (V1-28 writes `receivedLamports` in the same one).
+   */
+  activateFromPayment: (paymentId: string, now: Date, tx?: Db) => Promise<ActivationResult>;
+  /** /grant (§11.4, V1-42): the rules of a purchase, without an invoice. */
+  grantSubscription: (input: {
+    userId: string;
+    offer: Offer;
+    now: Date;
+    actorTelegramId: bigint;
+  }) => Promise<GrantResult>;
+  /** What a /grant would do, written nowhere: the confirmation screen of V1-42. */
+  previewGrant: (userId: string, offer: Offer, now: Date) => Promise<ComputedActivation>;
+  /** ACTIVE rows whose end has passed → EXPIRED; returns the rows it changed (V1-34). */
+  expireDueSubscriptions: (now: Date) => Promise<ExpiredSubscription[]>;
+};
+
+type LockedPayment = {
+  userId: string | null;
+  plan: Plan;
+  duration: PlanDuration;
+  status: PaymentStatus;
+};
+
+/** An invoice can be paid late: up to 24 h after its expiry or its cancellation (V1-28). */
+const CLAIMABLE = PAYMENT_STATUSES.filter((status) => !isPaid(status));
+
+/**
+ * Locks, in this order everywhere (no deadlock): the invoice, then the user. The invoice lock
+ * makes two detections of one payment (worker V1-32, "I've paid" V1-30) activate it once; the
+ * user lock keeps an extension from being computed on an end another activation just moved.
+ */
+async function lockPayment(tx: Db, paymentId: string): Promise<LockedPayment | undefined> {
+  const rows = await tx.$queryRaw<LockedPayment[]>`
+    SELECT "userId", plan::text AS plan, duration::text AS duration, status::text AS status
+    FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`;
+  return rows[0];
+}
+
+async function lockUser(tx: Db, userId: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<unknown[]>`SELECT 1 FROM "User" WHERE id = ${userId} FOR UPDATE`;
+  return rows.length > 0;
+}
+
+/**
+ * Applies the rules at this very moment, under the user lock: the situation may have changed
+ * since the invoice was made. One row per continuous period of a plan: an extension moves the
+ * end of the row and records the duration of the last pass (V1-34 picks its notice from it).
+ */
+async function applyActivation(
+  tx: Db,
+  input: {
+    userId: string;
+    offer: Offer;
+    now: Date;
+    mode: ActivationMode;
+    paymentId: string | null;
+  },
+): Promise<Activated | { status: "REFUSED" }> {
+  const { userId, offer, now, mode, paymentId } = input;
+  // Rows that ended are expired first: the one-active index would refuse the new row.
+  await tx.subscription.updateMany({
+    where: { userId, ...isDue(now) },
+    data: { status: "EXPIRED" },
+  });
+  const current = await getActiveSubscription(tx, userId, now);
+  const computed = computeActivation(current, offer, now, mode);
+  if (computed.kind === "REFUSED") return { status: "REFUSED" };
+
+  const activated = (subscription: SubscriptionInfo): Activated => ({
+    status: "ACTIVATED",
+    kind: computed.kind,
+    subscription,
+  });
+  const create = async () =>
+    activated(
+      await tx.subscription.create({
+        data: {
+          userId,
+          plan: offer.plan,
+          duration: offer.duration,
+          startsAt: computed.startsAt,
+          expiresAt: computed.expiresAt,
+          paymentId,
+        },
+        select: INFO,
+      }),
     );
+
+  if (current === null || computed.kind === "NEW") return create();
+  if (computed.kind === "UPGRADE") {
+    // The Classic ends now: the row keeps the real end of the period (§8.4, time lost).
+    await tx.subscription.update({
+      where: { id: current.id },
+      data: { status: "EXPIRED", expiresAt: now },
+    });
+    return create();
+  }
+  return activated(
+    await tx.subscription.update({
+      where: { id: current.id },
+      data: { expiresAt: computed.expiresAt, duration: offer.duration },
+      select: INFO,
+    }),
+  );
+}
+
+export function createSubscriptionService(deps: { prisma: PrismaClient }): SubscriptionService {
+  const { prisma } = deps;
+
+  const alreadyActivated = (paymentId: string): ActivationResult => {
+    log.info({ paymentId }, "subscription.already_activated");
+    return { status: "ALREADY_ACTIVATED" };
+  };
+
+  async function activate(tx: Db, paymentId: string, now: Date): Promise<ActivationResult> {
+    const payment = await lockPayment(tx, paymentId);
+    if (payment === undefined) throw new Error("Unknown payment");
+    if (isPaid(payment.status)) return alreadyActivated(paymentId);
+    const { userId } = payment;
+    if (userId === null) {
+      log.warn({ paymentId }, "subscription.user_deleted");
+      return { status: "USER_DELETED" };
+    }
+    await lockUser(tx, userId);
+    // Second guard, the conditional update: only one caller claims the invoice.
+    const claimed = await tx.payment.updateMany({
+      where: { id: paymentId, status: { in: CLAIMABLE } },
+      data: { status: "PAID", paidAt: now },
+    });
+    if (claimed.count === 0) return alreadyActivated(paymentId);
+
+    const offer = getOffer(payment.plan, payment.duration);
+    const result = await applyActivation(tx, { userId, offer, now, mode: "PAYMENT", paymentId });
+    // A payment is never refused: Classic during Premium extends the Premium (EXTEND_PREMIUM).
+    if (result.status === "REFUSED") throw new Error("A paid invoice cannot be refused");
+    const { kind, subscription } = result;
+    const logged = { userId, paymentId, plan: subscription.plan, kind };
+    if (kind === "EXTEND_PREMIUM") log.warn(logged, "subscription.classic_paid_during_premium");
+    log.info({ ...logged, expiresAt: subscription.expiresAt }, "subscription.activated");
+    return result;
+  }
+
+  return {
+    activateFromPayment: (paymentId, now, tx) =>
+      tx === undefined
+        ? prisma.$transaction((inner) => activate(inner, paymentId, now))
+        : activate(tx, paymentId, now),
+
+    grantSubscription: ({ userId, offer, now, actorTelegramId }) =>
+      prisma.$transaction(async (tx): Promise<GrantResult> => {
+        if (!(await lockUser(tx, userId))) return { status: "USER_DELETED" };
+        const result = await applyActivation(tx, {
+          userId,
+          offer,
+          now,
+          mode: "GRANT",
+          paymentId: null,
+        });
+        if (result.status === "ACTIVATED") {
+          const { kind, subscription } = result;
+          log.info(
+            {
+              userId,
+              actorTelegramId: actorTelegramId.toString(),
+              plan: subscription.plan,
+              kind,
+              expiresAt: subscription.expiresAt,
+            },
+            "subscription.granted",
+          );
+        }
+        return result;
+      }),
+
+    previewGrant: async (userId, offer, now) =>
+      computeActivation(await getActiveSubscription(prisma, userId, now), offer, now, "GRANT"),
+
+    expireDueSubscriptions: (now) =>
+      prisma.subscription.updateManyAndReturn({
+        where: isDue(now),
+        data: { status: "EXPIRED" },
+        select: { id: true, userId: true, plan: true },
+      }),
+  };
 }

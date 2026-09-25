@@ -7,6 +7,7 @@ import {
   isWalletReady,
   priorityFeeLamports,
   transferFeeLamports,
+  transferShortfall,
 } from "./wallets.js";
 
 describe("wallet rules", () => {
@@ -44,6 +45,25 @@ describe("wallet rules", () => {
     expect(computeMaxAmount(1_000_000n, 5_000n)).toBe(995_000n);
     expect(computeMaxAmount(5_000n, 5_000n)).toBe(0n);
     expect(computeMaxAmount(1_000n, 5_000n)).toBe(0n);
+  });
+
+  describe("what a balance lacks to send an amount (V1-31)", () => {
+    const rentMin = 890_880n;
+    const lacks = (balance: bigint, amount = 570_820_434n, fee = 15_000n) =>
+      transferShortfall({ balance, amount, fee, rentMin });
+
+    it("nothing when the balance is the amount plus the fees, down to 0", () => {
+      expect(lacks(570_835_434n)).toBe(0n);
+      expect(lacks(570_835_434n + rentMin)).toBe(0n);
+    });
+
+    it("the amount plus the fees over the balance", () => {
+      expect(lacks(400_000_000n)).toBe(170_835_434n);
+    });
+
+    it("up to the rent-exempt minimum when a dust would be left", () => {
+      expect(lacks(570_835_434n + 1_000n)).toBe(rentMin - 1_000n);
+    });
   });
 
   it("lets a wallet be deleted at the fee budget, not one lamport above", () => {

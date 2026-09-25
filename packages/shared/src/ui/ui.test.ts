@@ -33,6 +33,10 @@ describe("tree", () => {
   it("closes a single line", () => {
     expect(tree("TITLE", ["only"])).toBe("<b>TITLE</b>\n└ only");
   });
+
+  it("draws the branches alone without a title", () => {
+    expect(tree(null, ["Main", "Test"])).toBe("┌ Main\n└ Test");
+  });
 });
 
 describe("html", () => {

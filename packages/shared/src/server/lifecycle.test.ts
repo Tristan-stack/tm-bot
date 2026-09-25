@@ -95,16 +95,40 @@ describe("runProcess", () => {
     expect(log).toEqual(["start:bot", "start:api", "stop:api", "stop:bot", "shutdown"]);
   });
 
-  it("ignores a second signal while it is already shutting down", async () => {
+  it("exits at once on a second signal during the shutdown (Ctrl+C twice)", async () => {
     const log: string[] = [];
     const { exit, codes } = exitSpy();
 
     await runProcess([trace("bot", log)], { exit });
     events.emit("SIGINT");
     events.emit("SIGTERM");
-    await vi.waitFor(() => expect(codes).toEqual([0]));
 
+    // The spy does not end the process: the shutdown still runs to its own exit after it.
+    expect(codes[0]).toBe(1);
+    await vi.waitFor(() => expect(codes).toEqual([1, 0]));
     expect(log).toEqual(["start:bot", "stop:bot"]);
+  });
+
+  it("forces the exit after `forceExitAfterMs` when a service hangs on stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const { exit, codes } = exitSpy();
+      const hanging: Service = {
+        name: "worker",
+        start: () => undefined,
+        stop: () => new Promise<void>(() => undefined),
+      };
+
+      await runProcess([hanging], { exit, forceExitAfterMs: 45_000 });
+      events.emit("SIGTERM");
+      await vi.advanceTimersByTimeAsync(44_999);
+      expect(codes).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(codes).toEqual([1]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

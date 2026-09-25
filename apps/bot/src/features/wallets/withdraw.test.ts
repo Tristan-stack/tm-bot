@@ -8,6 +8,7 @@ import type { BotContext, WithdrawMode } from "../../context.js";
 import {
   botHarness,
   callbackUpdate,
+  confirmData,
   fakeWithdrawals,
   feed,
   keyboardOf,
@@ -314,13 +315,6 @@ async function reachConfirm(bot: Bot<BotContext>) {
   await feed(bot, textUpdate(TO));
   await feed(bot, callbackUpdate(WITHDRAW_CB.pct(25)));
 }
-
-/** The Confirm button of the last screen: `wal:wx:ok:<token>`. */
-const confirmData = (api: Api): string => {
-  const button = api.keyboard("editMessageText", -1)[0]?.[0];
-  if (button === undefined || !("callback_data" in button)) throw new Error("no Confirm");
-  return button.callback_data;
-};
 
 /** The summary of the wallet a failed outcome carries. */
 const MAIN_SUMMARY = {

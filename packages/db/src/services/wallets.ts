@@ -14,6 +14,7 @@ import type {
   KeyVault,
   MnemonicWallet,
 } from "@launchbot/solana";
+import { lockUserScope } from "../client.js";
 import type { Db } from "../client.js";
 import { isUniqueViolation } from "../errors.js";
 import type { PrismaClient, WalletSource } from "../generated/prisma/client.js";
@@ -188,7 +189,7 @@ export function createWalletService(deps: WalletsDeps): WalletService {
     for (let attempt = 1; ; attempt++) {
       try {
         const outcome = await prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:${userId}`}))`;
+          await lockUserScope(tx, "wallet", userId);
           const taken = await walletsOf(tx, userId);
           if (taken.length >= (await limitOf(tx, userId))) return LIMIT_REACHED;
           // Per user (§13): the same key imported by someone else is another wallet.

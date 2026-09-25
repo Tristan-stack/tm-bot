@@ -39,7 +39,7 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("withdrawal service (db)", () => {
   /** A V1-13 answering from the script: quote, broadcast, then `send`, or a confirmed send. */
   function serviceOf(options: { send?: TxSuccess | TxFailure; now?: () => number } = {}) {
     const send = vi.fn<TransferApi["send"]>(
-      async (_request, _signer, { onPrepared, onSubmitted }) => {
+      async (_request, _signer, { onPrepared, onSubmitted } = {}) => {
         const result: TxSuccess | TxFailure = options.send ?? {
           ok: true,
           signature: `sig-${Date.now()}-${Math.random()}`,
@@ -47,10 +47,11 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("withdrawal service (db)", () => {
           feeLamports: FEE,
           amountLamports: AMOUNT.lamports,
         };
-        await onPrepared(
+        await onPrepared?.(
           testTransferQuote({ from: FROM, to: TO, amountLamports: AMOUNT.lamports }),
         );
-        if (result.ok || result.signature !== undefined) await onSubmitted(result.signature ?? "");
+        if (result.ok || result.signature !== undefined)
+          await onSubmitted?.(result.signature ?? "");
         return result;
       },
     );

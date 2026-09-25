@@ -5,10 +5,11 @@ import {
   en,
   encodeCallback,
   escapeHtml,
-  formatRemaining,
   formatSolPrice,
   formatSolWithUsd,
   formatTimeUtc,
+  LAUNCH_COIN,
+  planLabel,
   renderScreen,
   tree,
 } from "@launchbot/shared";
@@ -23,7 +24,7 @@ import type { HomeData } from "./data.js";
  * values when it replaces the provisional screen of its domain.
  */
 export const MENU = {
-  launchCoin: encodeCallback("lc", "open"),
+  launchCoin: LAUNCH_COIN,
   simulate: encodeCallback("sim", "open"),
   subscribe: encodeCallback("sub", "open"),
   wallets: encodeCallback("wal", "list"),
@@ -37,13 +38,8 @@ export type HomeEnv = Pick<
 >;
 
 function subscriptionLine({ subscription, now }: HomeData): string {
-  if (subscription.kind === "none") return en.home.noSubscription;
-  const plan = en.plans[subscription.plan];
-  const remaining =
-    subscription.kind === "active" ? formatRemaining(subscription.expiresAt, now) : null;
-  return remaining === null
-    ? en.home.subscriptionExpired(plan)
-    : en.home.subscription(plan, remaining);
+  const label = planLabel(subscription, now);
+  return label === null ? en.home.noSubscription : en.home.subscription(label);
 }
 
 function walletsLine({ wallets, solUsd }: HomeData): string {

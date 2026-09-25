@@ -19,6 +19,8 @@ export const PLAN_DURATION_MS = {
   ONE_MONTH: 30 * DAY_MS,
 } as const satisfies Record<Duration, number>;
 export const INVOICE_TTL_MS = 30 * MINUTE_MS;
+/** `Payment.solUsdRate` is a `Decimal(18, 8)`: the rate of an invoice is kept to 8 decimals. */
+export const SOL_USD_RATE_DECIMALS = 8;
 export const LATE_PAYMENT_TOLERANCE_MS = 24 * HOUR_MS;
 export const PAYMENT_CHECK_INTERVAL_MS = 15 * SECOND_MS;
 export const DEPOSIT_WATCH_MS = 30 * DAY_MS;
@@ -28,6 +30,26 @@ export const REMINDER_BEFORE_MS = {
 } as const satisfies Record<Duration, number>;
 /** Under this remaining time the home screen shows `1d 4h left` instead of `until 12 Oct`. */
 export const REMAINING_DETAIL_BELOW_MS = 72 * HOUR_MS;
+
+// The worker (§12, V1-32 to V1-34). Cron expressions are in UTC (D18); every value is a proposal.
+/** A worker without the lock of the payment loop tries to take it again at this pace. */
+export const WORKER_LOCK_RETRY_MS = 30 * SECOND_MS;
+/** What the jobs of a stopping worker get to finish (`boss.stop`). */
+export const WORKER_STOP_TIMEOUT_MS = 30 * SECOND_MS;
+export const EVERY_MINUTE_CRON = "* * * * *";
+/** « Payment received »: attempts after a network error or a 5xx of Telegram. */
+export const NOTIFY_RETRY_LIMIT = 5;
+/** A deposit that holds less than this once the fees are paid is left where it is (V1-33). */
+export const SWEEP_DUST_LAMPORTS = 10_000n;
+/** Attempts of a transfer to the treasury, `SWEEP_RETRY_DELAY_SEC` doubled each time. */
+export const SWEEP_RETRY_LIMIT = 8;
+export const SWEEP_RETRY_DELAY_SEC = 30;
+/** An address is not emptied until this long after its 24 h: the payment loop may be on it. */
+export const WATCH_RACE_MARGIN_MS = 2 * MINUTE_MS;
+export const DEPOSIT_WATCH_CRON = "*/5 * * * *";
+export const DEPOSIT_KEY_PURGE_CRON = "15 3 * * *";
+/** Reminders sent per run of the job, the closest ends first (V1-34). */
+export const REMINDER_BATCH_SIZE = 100;
 
 // Wallets (§9.1). D1 validated on 16/09/2026: 3 wallets without a subscription (§8.1 said 0).
 export const WALLET_LIMITS = { NONE: 3, CLASSIC: 5, PREMIUM: 10 } as const satisfies Record<
@@ -70,6 +92,8 @@ export const BASE_FEE_LAMPORTS = 5_000n;
 /** A transfer with compute budget instructions uses a few hundred units: a deliberate ceiling. */
 export const TRANSFER_COMPUTE_UNIT_LIMIT = 1_000;
 export const MICROLAMPORTS_PER_LAMPORT = 1_000_000;
+/** Limit of `getMultipleAccountsInfo`: the grouped balance reads (V1-07, V1-28) go by this. */
+export const MAX_ACCOUNTS_PER_READ = 100;
 
 // Sending transactions (§12, V1-13). Every amount is in lamports.
 /** Ceiling of one transaction, imposed by the Compute Budget program. */

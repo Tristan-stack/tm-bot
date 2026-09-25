@@ -50,7 +50,7 @@ export type WalletListView = WalletListData & { solUsd: number | null };
 export type WalletDetailView = WalletDetailData & { solUsd: number | null };
 
 /** `2.500 SOL ($258.40)`, `2.500 SOL` without a price, `— SOL` without a balance. */
-const balanceText = (lamports: bigint | null, solUsd: number | null): string =>
+export const balanceText = (lamports: bigint | null, solUsd: number | null): string =>
   lamports === null ? en.wallets.unavailableSol : formatSolWithUsd(lamports, solUsd);
 
 /**

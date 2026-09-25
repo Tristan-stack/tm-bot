@@ -9,6 +9,8 @@ generator client {
   moduleFormat           = "esm"
   generatedFileExtension = "ts"
   importFileExtension    = "js"
+  // Partial unique index of Subscription (V1-27): one ACTIVE subscription per user.
+  previewFeatures        = ["partialIndexes"]
 }
 
 datasource db {
@@ -54,6 +56,8 @@ enum WithdrawalStatus {
 enum WithdrawalKind {
   USER
   INACTIVITY_SWEEP
+  // The funds of an invoice's deposit address moved to the treasury (V1-33).
+  DEPOSIT_SWEEP
 }
 
 enum AiGenerationKind {
@@ -87,20 +91,28 @@ model User {
 
 // One row per activation.
 model Subscription {
-  id        String             @id @default(cuid())
-  userId    String
-  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan      Plan
-  duration  PlanDuration
-  status    SubscriptionStatus @default(ACTIVE)
-  startsAt  DateTime           @db.Timestamptz(3)
-  expiresAt DateTime           @db.Timestamptz(3)
+  id                   String             @id @default(cuid())
+  userId               String
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                 Plan
+  duration             PlanDuration
+  status               SubscriptionStatus @default(ACTIVE)
+  startsAt             DateTime           @db.Timestamptz(3)
+  expiresAt            DateTime           @db.Timestamptz(3)
   // Unique: a paid invoice activates a subscription only once, even when the worker and
   // "I've paid" detect it at the same time. Null for a manual /grant.
-  paymentId String?            @unique
-  payment   Payment?           @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  createdAt DateTime           @default(now()) @db.Timestamptz(3)
+  paymentId            String?            @unique
+  payment              Payment?           @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  createdAt            DateTime           @default(now()) @db.Timestamptz(3)
+  // The reminder before the end (V1-34), claimed before it is sent. `reminderForExpiresAt` is
+  // the end it was sent for: an extension moves `expiresAt`, which re-arms it.
+  reminderSentAt       DateTime?          @db.Timestamptz(3)
+  reminderForExpiresAt DateTime?          @db.Timestamptz(3)
 
+  // At most one ACTIVE subscription per user (V1-27): the safety net of the activation, which
+  // expires the rows that ended before it inserts. The generated client accepts `userId` as a
+  // unique key (findUnique, update, upsert, delete) but ignores the condition: never use it.
+  @@unique([userId], where: raw("status = 'ACTIVE'"))
   // Expirations and reminders (V1-34)
   @@index([status, expiresAt])
   // Active subscription of a user (V1-07)
@@ -123,6 +135,9 @@ model Payment {
   encSecretKey     Bytes?
   iv               Bytes?
   authTag          Bytes?
+  keyDeletedAt     DateTime?     @db.Timestamptz(3)
+  // The SWEEP FAILED alert went out (V1-33): once, until a transfer succeeds again.
+  sweepAlertedAt   DateTime?     @db.Timestamptz(3)
   status           PaymentStatus @default(PENDING)
   expiresAt        DateTime      @db.Timestamptz(3)
   paidAt           DateTime?     @db.Timestamptz(3)
@@ -199,6 +214,8 @@ model Withdrawal {
   @@index([userId, createdAt])
   // Manual refund of inactivity sweeps (V1-45)
   @@index([kind, userTelegramId])
+  // The transfer of a deposit still in flight, looked up before another one (V1-33)
+  @@index([fromAddress, status])
 }
 
 model TokenDraft {

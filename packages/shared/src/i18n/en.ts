@@ -105,9 +105,8 @@ export const en = {
     /** `id` is already wrapped in <code> by the caller. */
     id: (id: string) => `${E.id} ${id}`,
     noSubscription: `${E.plan} No subscription`,
-    /** `remaining` comes from `formatRemaining`: `1d 4h left`, `until 12 Oct`. */
-    subscription: (plan: string, remaining: string) => `${E.plan} ${plan} · ${remaining}`,
-    subscriptionExpired: (plan: string) => `${E.plan} ${plan} ${E.warning} expired`,
+    /** `plan` comes from `planLabel`: `Premium · 1d 4h left`, `Classic ⚠️ expired`. */
+    subscription: (plan: string) => `${E.plan} ${plan}`,
     noWallet: `${E.wallets} No wallet yet`,
     // proposed text (D19): the singular
     wallets: (count: number, balance: string) =>
@@ -159,11 +158,6 @@ export const en = {
         title: `${E.simulate} SIMULATE A LAUNCH`,
         // proposed text (D19)
         description: "Simulate a live launch of your token. Free, no subscription needed.",
-      },
-      subscribe: {
-        title: `${E.subscribe} SUBSCRIBE`,
-        // proposed text (D19)
-        description: "Choose a plan to unlock Launch Coin.",
       },
       wallets: {
         title: `${E.wallets} WALLETS`,
@@ -601,6 +595,155 @@ export const en = {
     },
   },
 
+  // Subscribe (§8.2, §8.4, V1-29): the offers and the move from Classic to Premium. Plans,
+  // durations, prices and remaining times arrive formatted.
+  subscribe: {
+    title: `${E.subscribe} SUBSCRIBE`,
+    /** `⭐ PREMIUM · 2 DAYS`: the header of the screens of one offer (warning, invoice). */
+    offerTitle: (plan: string, duration: string) =>
+      `${E.subscribe} ${plan.toUpperCase()} · ${duration.toUpperCase()}`,
+    // proposed text (D19): §8.2 has no description, §4.5 wants one
+    description: "Choose a pass to unlock Launch Coin. Prices are in USD, paid in SOL.",
+    /** `plan` comes from `planLabel`, like on the home screen (§4.3). */
+    currentPlan: (plan: string) => `${E.currentPlan} Current plan: ${plan}`,
+    noPlan: "None",
+    classic: `${E.classic} CLASSIC`,
+    premium: `${E.premium} PREMIUM · Best value`,
+    planEmoji: { CLASSIC: E.classic, PREMIUM: E.premium } satisfies Record<Plan, string>,
+    /** `price` in whole dollars: `2 days · $49`. */
+    pass: (duration: string, price: string) => `${duration} · ${price}`,
+    /** `Premium · 2 days · $59` */
+    offer: (plan: string, duration: string, price: string) => `${plan} · ${duration} · ${price}`,
+    /** `🔹 Classic · 2 days`: the buttons of the offers. */
+    offerButton: (emoji: string, plan: string, duration: string) =>
+      `${emoji} ${plan} · ${duration}`,
+    premiumAdds: "Premium adds:",
+    /** The mention goes once an AI model is plugged in (§8.1, V1-17). */
+    aiGenerator: (modelAvailable: boolean) =>
+      modelAvailable
+        ? `${E.ok} AI token generator`
+        : `${E.ok} AI token generator (AI model coming soon)`,
+    upToWallets: (count: number) => `${E.ok} Up to ${formatInt(count)} wallets`,
+    prioritySupport: `${E.ok} Priority support`,
+    /** §8.4: the flag stays on the offers screen for as long as Premium is active. */
+    classicDuringPremium: {
+      alert: "You can switch to Classic when Premium expires.",
+      flag: "Classic: available when your Premium ends",
+    },
+    /** The note of the Launch Coin entry without a plan (§10.1, V1-35). */
+    launchCoinNeedsPlan: `${E.subscribe} Launch Coin needs an active subscription.`,
+    upgrade: {
+      warning: `${E.warning} Your remaining Classic time will be lost.`,
+      // proposed text (D19)
+      description: "Premium starts right away when your payment is received.",
+      // proposed text (D19)
+      newPlan: (emoji: string, offer: string) => `${emoji} New plan: ${offer}`,
+    },
+    // The invoice (§8.3, V1-30). Amounts arrive formatted (4 decimals), times as `formatClock`
+    // (`30:00`) or `formatTimeUtc`. Only « Invoice expired. » and the status lines come from the
+    // context; the other texts are proposed (D19).
+    invoice: {
+      /** `0.5709 SOL ($59.00)`: rounded up, never short of the amount expected. */
+      sendExactly: (amount: string) => `Send exactly ${amount} to:`,
+      waiting: (countdown: string) => `${E.waiting} Waiting for payment · expires in ${countdown}`,
+      lastCheck: (time: string) => `${E.waiting} Waiting for payment · last check ${time}`,
+      // proposed text (D19): the deadline stays visible after « I've paid »
+      expiresIn: (countdown: string) => `Expires in ${countdown}.`,
+      paymentSent: `${E.waiting} Payment sent, waiting for confirmation…`,
+      // proposed text (D19)
+      partial: (received: string, remaining: string) =>
+        `${E.warning} Partial payment: ${received} received, ${remaining} still to send.`,
+      // Toasts of « I've paid »: the screen says the same with its status line.
+      notDetected: "Payment not detected yet. It can take up to a minute.",
+      // proposed text (D19)
+      partialDetected: "Partial payment detected.",
+      // proposed texts (D19): a blocked click, then the screen with its line (§4.5)
+      notFound: warn("Invoice not found."),
+      priceUnavailable: warn("Payments are temporarily unavailable."),
+      tooManyInvoices: warn("Too many invoices. Try again in a few minutes."),
+      checkFailed: warn("We couldn't check the payment. Try again in a moment."),
+      expired: `${E.expired} Invoice expired.`,
+      // proposed text (D19)
+      expiredNote: (minutes: number) =>
+        `The SOL amount was locked for ${minutes} minutes. A new invoice uses the current SOL price.`,
+      // proposed texts (D19): what arrived on an invoice that can no longer activate
+      partialExpired: (received: string) =>
+        `${E.warning} ${received} received. Contact support for a refund.`,
+      latePayment: `${E.warning} Payment received after the deadline. Contact support for a refund.`,
+      btnPayFromWallet: `${E.payFromWallet} Pay from my wallet`,
+      btnPaid: `${E.ok} I've paid`,
+      btnNewInvoice: `${E.invoice} New invoice`,
+    },
+    /**
+     * The screen of an invoice paid (§8.3), in the bot and in the message of the worker (V1-32),
+     * which knows only the plan and its end. `until` comes from `formatDateTime`.
+     */
+    paymentReceived: (plan: string, until: string) =>
+      `${E.ok} Payment received. ${plan} is active until ${until}.`,
+    // The reminder the worker sends before the end of a plan (§8.4, V1-34). Every text is
+    // proposed (D19); `left` comes from `planLabel`, `ends` from `formatDateTime`.
+    reminder: {
+      title: `${E.subscribe} SUBSCRIPTION ENDING`,
+      description: (plan: string) =>
+        `Your ${plan} plan ends soon. Renew it to keep access to Launch Coin.`,
+      left: (label: string) => `${E.plan} ${label}`,
+      ends: (at: string) => `${E.updated} Ends ${at}`,
+      /** §8.4: buying the same offer again extends the plan. */
+      extends: "Buying the same plan again extends your current plan.",
+      btnRenew: `${E.renew} Renew`,
+    },
+    // Pay from my wallet (§8.3, V1-31). Titles, descriptions and the notes are proposed texts
+    // (D19); names arrive escaped (raw in an alert), amounts formatted. The lines a withdrawal
+    // shows too (amount, fees, network, reason, Try again) are the ones of `wallets.withdraw`.
+    payFromWallet: {
+      title: `${E.payFromWallet} PAY FROM WALLET`,
+      description: "Choose the wallet that pays this invoice.",
+      /** §10.1, reused. */
+      noWallet: "You have no wallet yet. Create or import one first.",
+      /** `⭐ Premium · 2 days · 0.5708 SOL ($59.00)` */
+      invoice: (plan: string, duration: string, amount: string) =>
+        `${E.subscribe} ${plan} · ${duration} · ${amount}`,
+      walletOk: (name: string, balance: string) => `${name} · ${balance} ${E.ok}`,
+      walletShort: (name: string, balance: string, missing: string) =>
+        `${name} · ${balance} ${E.warning} Insufficient funds (${missing} missing)`,
+      /** A balance the RPC could not give (`— SOL`): the click reads it again. */
+      walletUnknown: (name: string, balance: string) => `${name} · ${balance}`,
+      insufficient: {
+        alert: (name: string) => `${name} can't cover this payment.`,
+        /** `address` arrives in <code>. */
+        note: (name: string, amount: string, missing: string, address: string) =>
+          [
+            `${E.warning} INSUFFICIENT FUNDS`,
+            `${name} can't cover ${amount} + fees: ${missing} missing.`,
+            `Send SOL to ${name}, then tap it again:`,
+            address,
+          ].join("\n"),
+      },
+      confirm: {
+        title: `${E.payFromWallet} CONFIRM PAYMENT`,
+        description: "Check the payment, then tap Confirm. The SOL is sent right away.",
+        for: (plan: string, duration: string) => `${E.subscribe} For: ${plan} · ${duration}`,
+        from: (name: string, address: string, balance: string) =>
+          `From: ${name} · ${address} · ${balance}`,
+        /** `address` arrives in <code>. */
+        to: (address: string) => `To: ${address}`,
+        amountUpdated: warn("Amount updated."),
+        tooMany: warn("Too many payment attempts. Try again in a few minutes."),
+        locked: warn("A payment is already being sent."),
+      },
+      sending: {
+        title: `${E.payFromWallet} SENDING PAYMENT`,
+        description: (amount: string, name: string) =>
+          `Sending ${amount} from ${name}. This can take a few seconds.`,
+      },
+      failed: {
+        title: `${E.fail} PAYMENT FAILED`,
+        description: "The payment could not be sent. Your invoice is still open.",
+        from: (name: string, balance: string) => `From: ${name} · ${balance}`,
+      },
+    },
+  },
+
   // Sending a transaction (§10.2, V1-13): one text per `TxFailure` code, for the withdrawal
   // (V1-14), Pay from my wallet (V1-31) and the V2. Amounts arrive formatted, and the screen
   // adds its own emoji: the same failure is a flag on one screen and a result line on another.
@@ -641,6 +784,13 @@ export const en = {
     ONE_MONTH: "1 month",
   } satisfies Record<Duration, string>,
 
+  /** A plan and its time left (§4.3): the home screen and the offers screen (`planLabel`). */
+  planStatus: {
+    /** `remaining` comes from `formatRemaining`: `1d 4h left`, `until 12 Oct`. */
+    active: (plan: string, remaining: string) => `${plan} · ${remaining}`,
+    expired: (plan: string) => `${plan} ${E.warning} expired`,
+  },
+
   remaining: {
     until: (dayMonth: string) => `until ${dayMonth}`,
     daysHours: (days: number, hours: number) => `${days}d ${hours}h left`,
@@ -668,6 +818,48 @@ export const en = {
     WITHDRAW_ALL: {
       title: `${E.withdraw} WITHDRAW`,
       steps: ["Address", "Confirm"],
+    },
+  },
+
+  // Messages to the admins (§11.4). Every text is proposed (D19).
+  admin: {
+    // The deposit addresses of the invoices (§8.3, V1-33): what the worker moved to the
+    // treasury and what an admin must refund by hand. Values arrive formatted and escaped.
+    depositAlert: {
+      manualRefund: `${E.warning} MANUAL REFUND`,
+      oldAddress: `${E.warning} OLD DEPOSIT ADDRESS`,
+      sweepFailed: `${E.warning} SWEEP FAILED`,
+      PARTIAL_EXPIRED:
+        "Partial payment on an expired invoice. The funds were moved to the treasury. Refund the user by hand.",
+      LATE_FULL_PAYMENT:
+        "Full payment received more than 24 h after the invoice expired or was canceled. No subscription was activated. The funds were moved to the treasury. Refund the user by hand.",
+      OLD_ADDRESS:
+        "Funds were sent to an old deposit address. They were moved to the treasury. Check with the user.",
+      /** `attempts` is `null` for an invoice found unmoved when its key was due to go. */
+      SWEEP_FAILED: (attempts: number | null) =>
+        attempts === null
+          ? "The deposit funds were never moved to the treasury. Check the worker logs."
+          : `The deposit funds could not be moved to the treasury after ${attempts} attempts. Check the worker logs.`,
+      /** `🧾 Invoice: Premium · 2 days · created 12 Sep 2026, 14:02 UTC` */
+      invoice: (plan: string, duration: string, created: string) =>
+        `${E.invoice} Invoice: ${plan} · ${duration} · created ${created}`,
+      /** `user` is `@username (ID 123456789)` or `ID 123456789`, escaped. */
+      user: (user: string) => `${E.account} User: ${user}`,
+      userWithName: (username: string, telegramId: string) => `@${username} (ID ${telegramId})`,
+      userId: (telegramId: string) => `ID ${telegramId}`,
+      deletedAccount: "deleted account",
+      expected: (amount: string) => `Expected: ${amount}`,
+      received: (amount: string) => `Received: ${amount}`,
+      moved: (amount: string) => `Moved to treasury: ${amount}`,
+      balance: (amount: string) => `Balance: ${amount}`,
+      /** `status` is `Paid`, `Expired` or `Canceled`. */
+      status: (status: string) => `Status: ${status}`,
+      statuses: { PAID: "Paid", SWEPT: "Paid", EXPIRED: "Expired", CANCELED: "Canceled" },
+      /** `short` links to the explorer; `full` is in <code> for a copy. */
+      deposit: (short: string, full: string) => `Deposit: ${short}\n${full}`,
+      from: (address: string) => `From: ${address}`,
+      tx: (link: string) => `Tx: ${link}`,
+      reason: (reason: string) => `Reason: ${reason}`,
     },
   },
 

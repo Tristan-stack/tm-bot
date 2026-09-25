@@ -117,14 +117,14 @@ Schéma Prisma : [packages/db/prisma/schema.prisma](packages/db/prisma/schema.pr
 §13, plus la table `Session` que grammY utilise). Le client généré (`packages/db/src/generated/`) n'est pas commité : `pnpm install` lance
 `prisma generate`, qui ne demande ni base ni `.env`.
 
-| Script             | Rôle                                                                     |
-| ------------------ | ------------------------------------------------------------------------ |
-| `pnpm db:generate` | régénère le client après une modification du schéma                      |
-| `pnpm db:migrate`  | `prisma migrate dev` : crée et applique une migration (dev)              |
-| `pnpm db:deploy`   | `prisma migrate deploy` : applique les migrations commitées              |
-| `pnpm db:reset`    | vide la base de dev et rejoue tout (confirmation dans un terminal)       |
-| `pnpm db:seed`     | seed de dev idempotent : un utilisateur Premium et un brouillon de token |
-| `pnpm db:studio`   | Prisma Studio                                                            |
+| Script             | Rôle                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `pnpm db:generate` | régénère le client après une modification du schéma                                            |
+| `pnpm db:migrate`  | `prisma migrate dev` : crée et applique une migration (dev)                                    |
+| `pnpm db:deploy`   | `prisma migrate deploy` : applique les migrations commitées                                    |
+| `pnpm db:reset`    | vide la base de dev et rejoue tout (confirmation dans un terminal)                             |
+| `pnpm db:seed`     | seed de dev idempotent : un utilisateur Premium et un brouillon de token (voir « Abonnement ») |
+| `pnpm db:studio`   | Prisma Studio                                                                                  |
 
 Ces scripts lisent `DATABASE_URL` dans le `.env` racine. Chaque ticket ajoute sa propre migration.
 Prisma ne sait pas exprimer une contrainte CHECK : elle s'écrit à la main dans une migration SQL
@@ -902,14 +902,14 @@ Les lectures derrière l'accueil et les écrans suivants, sans aucun affichage. 
 ([apps/bot/src/services/data.ts](apps/bot/src/services/data.ts)) les assemble, une instance par
 process : les caches (§4.3) vivent dedans, en mémoire.
 
-| Service                                                             | Où                  | Cache                                        |
-| ------------------------------------------------------------------- | ------------------- | -------------------------------------------- |
-| `getSolUsdPrice`, `getSolUsdQuote`                                  | `@launchbot/solana` | 60 s, échecs compris ; repli 10 min          |
-| `getUserBalances(userId, { skipCache? })`                           | `@launchbot/db`     | 30 s par utilisateur                         |
-| `countActiveSubscribers`                                            | `@launchbot/db`     | 60 s                                         |
-| `getBotChannelMemberCount`                                          | `apps/bot`          | 10 min ; en erreur, dernière valeur connue   |
-| `getActiveSubscription`, `getSubscriptionSummary`, `getWalletQuota` | `@launchbot/db`     | aucun : une activation se voit tout de suite |
-| `getBalancesFresh(rpc, addresses)`                                  | `@launchbot/solana` | aucun : contrôles internes, un appel groupé  |
+| Service                                                    | Où                  | Cache                                        |
+| ---------------------------------------------------------- | ------------------- | -------------------------------------------- |
+| `getSolUsdPrice`, `getSolUsdQuote`                         | `@launchbot/solana` | 60 s, échecs compris ; repli 10 min          |
+| `getUserBalances(userId, { skipCache? })`                  | `@launchbot/db`     | 30 s par utilisateur                         |
+| `countActiveSubscribers`                                   | `@launchbot/db`     | 60 s                                         |
+| `getBotChannelMemberCount`                                 | `apps/bot`          | 10 min ; en erreur, dernière valeur connue   |
+| `getActiveSubscription`, `getPlanStatus`, `getWalletQuota` | `@launchbot/db`     | aucun : une activation se voit tout de suite |
+| `getBalancesFresh(rpc, addresses)`                         | `@launchbot/solana` | aucun : contrôles internes, un appel groupé  |
 
 - **Prix SOL/USD (D11)** : CoinGecko Simple Price, sans clé, un appel par minute au plus — y compris
   quand l'API est en panne. En échec, le dernier prix connu sert pendant 10 min (âge recalculé à
@@ -969,6 +969,207 @@ le canal du bot, `getChatMember` échoue et **personne ne passe l'écran 2**.
 Rejouer le premier accès avec son propre compte : remettre `termsVersion` et `channelCheckedAt` à
 `NULL` sur sa ligne `User` (`pnpm db:studio`), ou passer `TERMS_VERSION=2` après avoir ajouté la date
 de la version 2 dans [packages/shared/src/legal.ts](packages/shared/src/legal.ts).
+
+## Abonnement
+
+Règles pures dans `packages/shared/src/subscription/` (sans Prisma : bot, worker et builders
+d'écrans les lisent), partie base dans `packages/db/src/services/` (`subscriptions.ts`,
+`payments.ts`, `wallet-payments.ts`, `treasury.ts`, `reminders.ts`), écrans dans
+`apps/bot/src/features/subscribe/`, jobs de fond dans `apps/worker/`.
+
+Seed de dev pour les variantes de l'écran des offres : `pnpm db:seed` donne un Premium qui finit
+dans 28 h ; `SEED_PLAN=CLASSIC` un Classic, `SEED_HOURS=200` une fin au-delà de 72 h
+(« until 12 Oct »), `SEED_HOURS=-1` un abonnement expiré. Sous PowerShell :
+`$env:SEED_PLAN="CLASSIC"; pnpm db:seed`. L'utilisateur est le premier id de `ADMIN_TELEGRAM_IDS`.
+
+### Worker : détection des paiements, trésorerie, rappels (V1-32 à V1-34)
+
+`apps/worker` est un process à part (`pnpm --filter @launchbot/worker dev`, lancé aussi par
+`pnpm dev`) : `src/main.ts` → `runProcess([createWorkerService()])`. Au démarrage, dans l'ordre :
+env, garde-fou devnet (le worker signe les transferts des dépôts), base
+(`assertDatabaseReachable`, partagé avec le bot), `getMe` sur `BOT_TOKEN`, avertissement si
+`TREASURY_WALLET` n'existe pas encore sur le devnet (l'alimenter une fois au faucet), pg-boss,
+files et crons, puis la boucle. Telegram par `new Api(token)` seulement : jamais de polling, qui
+couperait celui du bot (409). Arrêt : la boucle finit son tick, le verrou est rendu, les jobs ont
+30 s (`boss.stop`), puis Prisma ; un second Ctrl+C sort tout de suite (`runProcess`).
+
+- **pg-boss 12.34.0** (version figée), schéma `pgboss` que Prisma ne voit pas. Files en politique
+  `exclusive` : un seul job en attente ou actif par `singletonKey` (l'id de la facture), et un
+  cron ne se chevauche jamais. Crons en UTC, sans retry (le passage suivant réessaie), leur file
+  interrogée toutes les 30 s (2 s pour « Payment received » et les transferts).
+- **Boucle de paiement** (`runEvery`, 15 s, jamais deux ticks à la fois, un tick lent enchaîne
+  aussitôt) : `listInvoicesToCheck` → `checkInvoicesBatch` (un appel RPC par 100 adresses) →
+  `expireDueInvoices`, puis pour chaque facture que le worker a lui-même activée
+  (`activatedNow`) : `payments.notify-paid` et le transfert vers la trésorerie. Une seule
+  instance tourne la boucle : verrou advisory de session sur une connexion `pg` à elle
+  (proposition), une instance en attente réessaie toutes les 30 s.
+- **« Payment received »** : nouveau message, écran de V1-30 (`buildPaymentReceivedScreen`), plan
+  et fin relus au moment de l'envoi (`getPaidNotice`, prolongation comprise). Bot bloqué ou chat
+  inconnu → rien à refaire ; 429 → `auto-retry` attend, puis pg-boss réessaie (5 fois,
+  backoff), comme pour une erreur réseau ou 5xx.
+- **Trésorerie** (`createTreasuryService`) : `deposits.sweep` (8 retries, 30 s doublés) vide un
+  dépôt en mode `max` (solde − frais, 0 restant) vers `TREASURY_WALLET`. Chaque transfert est une
+  ligne `Withdrawal` de type `DEPOSIT_SWEEP`, enregistrée comme un retrait (`sendRecorded` et
+  `settleTransfer` de `withdrawals.ts`, communs aux deux) : ligne écrite avant la signature,
+  signature avant la confirmation, une issue inconnue relue avant tout nouvel essai, jamais
+  renvoyée. La confirmation et la mise à jour de la facture passent dans une transaction.
+  PAID → SWEPT à l'activation par le worker et par le cron `deposits.sweep-paid` (chaque minute,
+  rattrape « I've paid » et le paiement depuis un wallet). `deposits.watch` (toutes les 5 min)
+  surveille 30 jours les adresses déjà vidées et celles des factures expirées ou annulées, jamais
+  avant la fin de leurs 24 h + 2 min ; cas `OLD_ADDRESS`, `LATE_FULL_PAYMENT`, `PARTIAL_EXPIRED` →
+  alerte admin après le transfert (montants exacts au lamport, liens explorer, expéditeur du
+  dernier dépôt si le RPC le donne). Dernier essai raté → une alerte `SWEEP FAILED`, une seule
+  (`Payment.sweepAlertedAt`, remis à zéro par un transfert réussi). `deposits.purge-keys` (03:15
+  UTC) efface les clés à J+30 (`keyDeletedAt`), transfère d'abord ce qui reste, ne touche jamais
+  une facture PAID non transférée (alerte).
+- **Rappels** (`createReminderService`) : `subscriptions.remind` chaque minute, 24 h avant la fin
+  (6 h pour un pass 2 jours, selon la durée du dernier pass), réservé avant l'envoi par une mise
+  à jour conditionnelle (`reminderForExpiresAt` = la fin rappelée ; une prolongation déplace la
+  fin et réarme le rappel). Bot bloqué → réservation gardée ; autre échec → réservation rendue,
+  essai au passage suivant. Bouton `🔄 Renew` (`sub:open`, `SUB_OPEN` de shared, comme le menu)
+  → l'écran des offres remplace le rappel. `subscriptions.expire` chaque minute : `expireDueSubscriptions`, aucun message.
+
+### Payer depuis un wallet du bot (V1-31)
+
+`createWalletPaymentService({ prisma, payments, balances, transfer, vault })`
+([wallet-payments.ts](packages/db/src/services/wallet-payments.ts), dans `@launchbot/db` comme le
+retrait de V1-14) : `listChoices`, `quote`, `pay`. Handlers `sub:pw:*` dans
+[pay.ts](apps/bot/src/features/subscribe/pay.ts), écrans purs dans
+[pay-screens.ts](apps/bot/src/features/subscribe/pay-screens.ts).
+
+- **Choix** (`sub:pw:open:<id>`) : les wallets du plus ancien au plus récent, soldes du cache 30 s,
+  `✅` ou `⚠️ Insufficient funds (0.1709 SOL missing)` ; une estimation de frais par écran (sur
+  l'adresse de dépôt). Le manquant suit les règles de §9.5 (`transferShortfall` de
+  `@launchbot/shared`, à côté de `computeMaxAmount`) : montant + frais − solde, et le minimum
+  rent-exempt en plus quand le solde restant tomberait dessous (proposition) ; arrondi au
+  0.0001 SOL supérieur. Paiement
+  partiel : la ligne de V1-30, on n'envoie que le reste. Sans wallet : le texte de §10.1,
+  `👛 Wallets` et `⬅️ Back`.
+- **Clic sur un wallet** (`sub:pw:w:<paymentId>:<walletId>`, ≤ 60 octets) : soldes relus sans
+  cache ; insuffisant → alerte `Test can't cover this payment.` et la liste (rendue avec le
+  refus, sans nouvelle lecture) avec la note
+  `⚠️ INSUFFICIENT FUNDS` (adresse du wallet en `<code>`) ; sinon la confirmation : source, reste à
+  envoyer (en dollars seulement tant que rien n'est arrivé), adresse de dépôt, frais à 6 décimales
+  au plus, réseau.
+- **Confirm** (`sub:pw:ok:<jeton>`, jeton du dernier écran, dépensé avant l'envoi) : limite
+  `RATE_LIMITS.payFromWallet` (5 / 10 min) avec alerte, puis la requête est acquittée et `pay` :
+  verrou par facture, dépôt relu (`checkInvoice` : une facture couverte s'active, rien n'est
+  envoyé ; expirée, annulée ou payée → l'écran de V1-30), reste comparé à celui de la
+  confirmation (`amount_changed` → la confirmation avec `⚠️ Amount updated.`), une lecture du
+  wallet (`WALLET_SIGNER_SELECT`), puis `sendTransfer` du reste vers l'adresse de dépôt lue en
+  base : V1-13 relit le solde et les frais et refuse ce qui ne passe plus (solde insuffisant →
+  la liste avec la note), la clé n'est déchiffrée qu'au moment de signer. L'écran
+  `SENDING PAYMENT` sans bouton s'affiche une fois le solde lu (`onPrepared`). Le verrou ne
+  couvre que les vérifications et l'envoi.
+- **Après l'envoi**, hors verrou : cache des soldes invalidé, `checkInvoice` : activé → « Payment received » ;
+  pas encore vu → la facture avec `⏳ Payment sent, waiting for confirmation…`. Échec : si les
+  fonds sont arrivés quand même, c'est un paiement ; issue inconnue (`landed: "unknown"`) → la
+  facture « Payment sent », jamais d'écran d'échec ni de Try again, et la signature est gardée en
+  session (`pay.sent`) : le Confirm suivant la relit d'abord et n'envoie rien tant qu'elle peut
+  encore atterrir (2 min, `mayStillLand`, la règle que le retrait applique à ses lignes) ; sinon `❌ PAYMENT FAILED` avec la raison de V1-13,
+  `🔁 Try again` (confirmation recalculée) et `⬅️ Back` (`sub:inv:<id>`).
+- Session `pay` : ids, reste confirmé (chaîne de lamports), jeton, signature en vol ; jamais un
+  solde ni une clé. Logs : ids, montants, signature seulement.
+
+### Écrans de facture (V1-30)
+
+`createInvoiceFlow` ([invoice.ts](apps/bot/src/features/subscribe/invoice.ts)), écrans purs dans
+[invoice-screens.ts](apps/bot/src/features/subscribe/invoice-screens.ts). Remplace l'écran
+provisoire de V1-29. Aucune session : l'id de la facture voyage dans la callback data (`sub:paid`,
+`sub:cancel`, `sub:new`, `sub:inv`, `sub:pw:open`) et la facture est relue à chaque clic.
+
+- **Ouverture** (une offre, Continue, New invoice) : `createInvoice` ; `PRICE_UNAVAILABLE` et
+  `RATE_LIMITED` → alerte et les offres avec la ligne, `PLAN_SWITCH_REFUSED` → l'alerte de V1-29.
+- **Facture** : `⭐ PREMIUM · 2 DAYS`, `Send exactly 0.5709 SOL ($59.00) to:` (4 décimales
+  arrondies vers le haut, le prix figé de la facture), adresse de dépôt en `<code>`,
+  `⏳ Waiting for payment · expires in 30:00` au moment du rendu (pas d'édition chaque seconde).
+  Après « I've paid » : `last check 14:32 UTC` puis `Expires in 27:40.` ; paiement partiel : la
+  ligne `⚠️ Partial payment: … received, … still to send.` sous la ligne d'état.
+- **I've paid** : `checkInvoice` au plus une fois par facture toutes les 5 s (mémo en mémoire,
+  `RATE_LIMITS.paymentCheck`), un clic plus rapproché reçoit la même réponse sans RPC ; rien →
+  toast et last check ; partiel → toast et ligne ; activé (par ce clic ou par le worker) →
+  `✅ Payment received. Premium is active until 26 Sep 2026, 12:05 UTC.` ; échue →
+  `⌛ Invoice expired.` avec le flag du partiel ou du paiement tardif ; annulée → les offres ;
+  inconnue, d'un autre utilisateur ou orpheline → `Invoice not found.` et les offres ; RPC muet →
+  la facture avec `⚠️ We couldn't check the payment.` (proposition).
+- **Cancel** → les offres, ou « Payment received » si la facture a été payée entre-temps.
+  **New invoice** → `chooseOffer` avec la même offre (règles de V1-27 réévaluées).
+- `buildPaymentReceivedScreen(ui, { plan, expiresAt })` vit dans `@launchbot/shared`
+  (`subscription/payment-received.ts`) pour que le worker (V1-32) envoie le même message ;
+  `LAUNCH_COIN` (`lc:open`) est désormais une constante partagée, le menu l'utilise aussi.
+
+### Écran des offres (V1-29)
+
+`createSubscribe({ ui, data, providers, payments, walletPayments })` + `registerSubscribe(router, subscribe)`
+([subscribe.ts](apps/bot/src/features/subscribe/subscribe.ts)), écrans purs dans
+[screens.ts](apps/bot/src/features/subscribe/screens.ts). Remplace l'écran provisoire `sub` de V1-08.
+
+- **Offres (§8.2)** : `📋 Current plan: None`, `Premium · 1d 4h left` (sous 72 h),
+  `Classic · until 12 Oct`, `Classic ⚠️ expired` : `planLabel` (`@launchbot/shared`), le même
+  libellé que l'accueil, sur le même `PlanStatus` (`data.getPlanStatus`) ; blocs `🔹 CLASSIC` et
+  `💎 PREMIUM · Best value` en arbre, prix entiers (`$49`) ; « Premium adds: » avec `(AI model
+coming soon)` tant que `isAiModelAvailable(providers)` est faux et « Up to 10 wallets » lu dans
+  `getPlanFeatures`. Flags au-dessus du clavier : `Classic: available when your Premium ends`
+  quand `decidePurchase` refuserait Classic, puis ceux des appelants (prix indisponible en V1-30,
+  `en.subscribe.launchCoinNeedsPlan` en V1-35). Description proposée (D19).
+- **Clic sur une offre** (`sub:buy:<code>`) : l'abonnement est relu en base puis `decidePurchase` :
+  Classic pendant Premium → alerte « You can switch to Classic when Premium expires. » et l'écran
+  des offres (une édition identique est ignorée) ; Classic → Premium → écran d'avertissement
+  `⚠️ Your remaining Classic time will be lost.` avec `➡️ Continue` (`sub:up:<code>`, règles
+  relues, pas de second avertissement) et `❌ Cancel` (`sub:open`) ; sinon (nouveau plan,
+  prolongation) → la facture (V1-30).
+- Aucune session : l'offre voyage dans la callback data (`C2D`, `C1M`, `P2D`, `P1M`, lus par
+  `parseOfferCode` ; un code inconnu ramène aux offres).
+- Fournit : `showOffersScreen(ctx, { mode?, flags? })`, `chooseOffer` (le « New invoice » de
+  V1-30), `continueUpgrade`, `invoices` (V1-30).
+
+### Factures (V1-28)
+
+`createPaymentService({ prisma, subscriptions, getSolUsdPrice, readLamports, generateKeypair,
+vault })` : `createInvoice`, `getInvoice`, `checkInvoice`, `checkInvoiceWithBalance`,
+`checkInvoicesBatch`, `listInvoicesToCheck`, `cancelInvoice`, `expireDueInvoices`. Le service ne
+déchiffre jamais la clé de dépôt et ne la lit pas (`omit`) : `InvoiceRow` et `InvoiceView` n'en
+ont pas.
+
+- **Création** : règles de V1-27 (`PLAN_SWITCH_REFUSED`), facture PENDING de la même offre rendue
+  telle quelle (`reused`), sinon prix V1-07 (`PRICE_UNAVAILABLE` : aucune ligne), taux gardé à
+  8 décimales comme la colonne, `computeExpectedLamports` en entiers (arrondi au lamport
+  supérieur : $59 à 103.36 → 570 820 434), keypair neuve chiffrée par le coffre, 30 minutes.
+  Limite D17 (`RATE_LIMITS.invoice`, 5 par 10 min) comptée en base, sous le verrou advisory par
+  utilisateur (`lockUserScope(tx, "invoice", userId)`, le même helper que wallets et IA) qui
+  sérialise aussi la réutilisation.
+- **Montant affiché** : `formatSol(lamports, { decimals: 4, rounding: "ceil" })`, 4 décimales
+  arrondies vers le haut (« 0.5709 SOL »), jamais sous le montant attendu (DEC-06, validé le
+  24/09/2026).
+- **Vérification** (§8.3) : `decideInvoice`, `effectiveStatus`, `acceptanceDeadline` et `isPaid`
+  (purs, `packages/shared/src/subscription/invoice.ts`) sur le solde du dépôt ; paiement complet
+  jusqu'à 24 h après l'expiration ou l'annulation → activation par V1-27 dans la même transaction
+  que `receivedLamports` (`activatedNow` pour le seul processus qui a activé), au-delà
+  `LATE_FULL_PAYMENT` ; partiel → `PARTIAL` puis `PARTIAL_EXPIRED` ; compte purgé →
+  `ORPHAN_PAYMENT`, sans transaction. Expiration paresseuse d'une facture PENDING échue.
+- **Lecture groupée** : `readLamports` (`getBalancesFresh`, commitment confirmed, sans cache) par
+  paquets de `MAX_ACCOUNTS_PER_READ` (100, `chunk` de `@launchbot/shared`) ; un paquet en erreur
+  n'emporte que ses factures. Pour V1-32 : `listInvoicesToCheck` borne aussi les factures
+  annulées par `expiresAt`, ce qui garde l'index `(status, expiresAt)` utile.
+
+### Domaine abonnement (V1-27)
+
+- `packages/shared/src/subscription/` : catalogue (`listOffers`, `getOffer`, `parseOfferCode`),
+  `decidePurchase(current, plan)` → `NEW` / `EXTEND` / `UPGRADE` / `REFUSED`,
+  `computeActivation` (mode PAYMENT ou GRANT), `getPlanFeatures` (3 / 5 / 10 wallets, AI et
+  support prioritaire en Premium, Launch Coin avec un plan), `PlanStatus` + `planLabel`.
+- `createSubscriptionService({ prisma })` : `activateFromPayment(paymentId, now, tx?)`, **seul
+  code qui passe une facture en PAID** — verrou de la facture puis de l'utilisateur, réclamation
+  conditionnelle, lignes échues expirées, règle réévaluée à l'instant ; `ALREADY_ACTIVATED`
+  n'écrit ni ne relit rien ; `grantSubscription` et `previewGrant` (V1-42) ;
+  `expireDueSubscriptions` (V1-34). Lectures : `getPlanStatus` (une requête : la ligne qui finit
+  en dernier), `hasActiveSubscription` et `hasActivePremium` (tous deux par `getPlanFeatures`).
+- Une ligne par période continue d'une offre : une prolongation déplace `expiresAt` et met
+  `duration` au dernier pass (préavis de V1-34). Classic → Premium : le Classic finit à l'instant
+  (EXPIRED). Classic payé pendant un Premium : le Premium est prolongé (`EXTEND_PREMIUM`, validé le
+  24/09/2026). Index unique partiel `Subscription_userId_key` : au plus une ligne ACTIVE par
+  utilisateur. Le client Prisma accepte `userId` comme clé unique (`findUnique`, `update`,
+  `upsert`, `delete`) mais ignore la condition : ne jamais s'en servir.
 
 ## Mini App
 
@@ -1384,3 +1585,9 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 24/09/2026 | **PNL card animée sur un clip, composée par `ffmpeg-static`** (V1-25, demande de Tristan après son premier test). La carte suit sa maquette (ticker, pastille verte ou rouge avec le glyphe Solana, PNL / Invested / Position) et se pose sur un clip d'animation qu'il a fourni ; Telegram reçoit un MP4 muet en `editMessageMedia` `animation`, joué en boucle. Le clip (1,8 MB, prétraité une fois : sans son, 30 fps, 1280 × 944) vit dans `packages/sim-render/assets/`. `ffmpeg-static` (GPL, binaire par plateforme téléchargé à l'installation, ≈ 80 MB) lance ffmpeg en sous-processus une fois par simulation, ≈ 1,7 s ; l'image de déploiement devra le laisser s'installer (`pnpm install` sans `--ignore-scripts`). Avant la carte, le dernier graphique (la bougie de la vente de clôture) reste 2 s (`SIM_END_HOLD_MS`). |
 | 24/09/2026 | **Images de simulation : SVG écrit en TypeScript, rasterisé par `@resvg/resvg-js` 2.6.2 avec la police Inter embarquée** (V1-25, `packages/sim-render`). Le SVG se teste comme du texte (classes, libellés, géométrie), resvg est un binaire précompilé par plateforme sans dépendance système, et la police du dépôt rend les PNG identiques partout (`loadSystemFonts: false`). Écartés : `@napi-rs/canvas` (API impérative, tests sur des pixels) et `sharp` (rendu SVG via librsvg et fontconfig, police selon la machine). `fontBuffers` n'existe pas en 2.6.2 : les fichiers sont relus à chaque rendu, ≈ 52 ms par image de 36 bougies au total. |
 | 23/09/2026 | **`@pump-fun/pump-sdk` 2.0.0 (version figée) chargé en CommonJS** via `createRequire` (V1-21) : son build ESM importe `BN` en export nommé de `@coral-xyz/anchor`, que Node et `tsx` refusent. `@types/bn.js` en devDependency. Le `Global` du devnet (1 SOL de réserves virtuelles, 30 sur mainnet) est rejeté par le service de curve : les simulations suivent le tableau §7.1 tant que le compte lu n'est pas cohérent avec le produit (un dev buy de 20 SOL ne doit pas compléter la curve à t = 0). |
+| 24/09/2026 | **Index unique partiel déclaré dans le schéma avec la preview Prisma `partialIndexes`** (V1-27) : `@@unique([userId], where: raw("status = 'ACTIVE'"))`, au plus un abonnement actif par utilisateur. Écrit à la main dans une migration, l'index aurait été vu comme une dérive et supprimé au prochain `migrate dev` ; déclaré, `migrate diff` reste vide. Revers : le client généré accepte `userId` dans un `findUnique` sans la condition, à ne jamais utiliser. |
+| 24/09/2026 | **Montants de facture en entiers, sans decimal.js** (V1-28) : le taux SOL/USD est d'abord arrondi à 8 décimales, celles de la colonne, puis `lamports = ceil(cents × 10^15 / taux × 10^8)` en `bigint`. Le montant attendu se recalcule donc à l'identique depuis la ligne. L'écran l'arrondit vers le haut à 4 décimales (`formatSol(x, { decimals: 4, rounding: "ceil" })`) : qui envoie le montant affiché n'est jamais en paiement partiel (DEC-06, validé le 24/09/2026). |
+| 24/09/2026 | **Un paiement depuis un wallet du bot à la fois par facture, par un verrou advisory de transaction** (V1-31) : `pg_try_advisory_xact_lock(hashtext('pay:' \|\| paymentId))` pris dans une transaction interactive qui reste ouverte pendant l'envoi (délai : toutes les tentatives de V1-13 plus une minute), plutôt qu'un verrou de session sur une connexion dédiée, que le pool de Prisma ne garantit pas. Déjà pris → rien n'est envoyé. Une transaction qui expirerait pendant l'envoi perd son verrou, jamais le résultat de l'envoi. Avant tout envoi, le dépôt est relu : une facture déjà couverte s'active sans nouvel envoi. |
+| 25/09/2026 | **pg-boss 12.34.0 pour les jobs du worker, une boucle à part pour les paiements** (V1-32). Le cron de pg-boss descend à la minute : la détection toutes les 15 s est une boucle `runEvery` dans le process, tenue par une seule instance grâce à un verrou advisory de session sur une connexion `pg` dédiée (le pool de Prisma et celui de pg-boss prêtent une connexion par requête, un verrou de session n'y tiendrait pas). Les files sont `exclusive` : l'id de la facture en `singletonKey` dédoublonne les envois, un cron ne se chevauche pas. |
+| 25/09/2026 | **Les transferts d'un dépôt vers la trésorerie sont des lignes `Withdrawal` de type `DEPOSIT_SWEEP`** (V1-33, migration `payment_deposit_key_lifecycle`), plutôt que des colonnes de plus sur `Payment`. La ligne est écrite avant la signature et reçoit la signature avant la confirmation : un résultat inconnu est relu avant tout nouvel essai, par le même code que le retrait (`sendRecorded`, `settleTransfer`), et chaque transfert reste en comptabilité avec ses frais. `Payment.sweepSignature` garde le dernier transfert confirmé. |
+| 24/09/2026 | **Limite de création de factures comptée en base** (V1-28), pas dans le compteur mémoire du bot : les factures créées par l'utilisateur depuis 10 minutes, sous un verrou advisory par utilisateur qui sérialise aussi la réutilisation d'une facture ouverte. La limite tient aux redémarrages et le service reste utilisable hors du bot. |
