@@ -23,7 +23,7 @@ describe("splitHtmlMessage (V1-43)", () => {
 
   it("cuts between blocks, in order, each part framed and within the limit", () => {
     const blocks = Array.from({ length: 12 }, (_, index) => walletBlock(index + 1));
-    const header = "<b>🔑 WALLET KEYS</b> · 🧪 Devnet";
+    const header = "<b>🔑 WALLET KEYS</b>";
     const footer = "⚠️ This message will be deleted in 60 s.";
 
     const parts = splitHtmlMessage(blocks, { header, footer });

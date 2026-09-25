@@ -95,6 +95,30 @@ describe("runInactiveAccountsJob (V1-45)", () => {
     expect(vi.mocked(accounts.processAccount).mock.calls[0]?.[1]).toEqual(CUTOFF);
   });
 
+  it("sends nothing to the user, before or after the deletion of their account (§15)", async () => {
+    captureLogs();
+    const { deps, notifyAdmins } = accountsWith([[user()]], () => ({
+      status: "DELETED",
+      transfers: [TRANSFER],
+      counts: {
+        wallets: 1,
+        drafts: 0,
+        simulations: 0,
+        aiGenerations: 0,
+        subscriptions: 1,
+        payments: 1,
+        withdrawals: 1,
+      },
+    }));
+    // A whole sender, as the worker has one: the job must still only know the admins.
+    const sendScreen = vi.fn<TelegramSender["sendScreen"]>();
+    const telegram: TelegramSender = { notifyAdmins, sendScreen };
+
+    expect(await runInactiveAccountsJob({ ...deps, telegram }, AT)).toMatchObject({ deleted: 1 });
+    expect(sendScreen).not.toHaveBeenCalled();
+    expect(notifyAdmins).not.toHaveBeenCalled();
+  });
+
   it("never touches an admin nor an account active within 24 h, whatever a page holds", async () => {
     const admin = user({ telegramId: BigInt(ADMIN) });
     const recent = user({ lastActiveAt: new Date(AT.getTime() - INACTIVITY_DELETE_MS + HOUR_MS) });

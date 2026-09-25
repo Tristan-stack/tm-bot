@@ -106,7 +106,7 @@ describe("buildGrantConfirmScreen (V1-42)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>⭐ GRANT</b> · 🧪 Devnet",
+        "<b>⭐ GRANT</b>",
         "",
         "Grant Premium · 2 days to @alice (ID <code>555000111</code>)?",
         "",
@@ -153,7 +153,7 @@ describe("buildGrantConfirmScreen (V1-42)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>⭐ GRANT</b> · 🧪 Devnet",
+        "<b>⭐ GRANT</b>",
         "",
         "Grant Classic · 2 days to @alice (ID <code>555000111</code>)?",
         "",
@@ -191,7 +191,7 @@ describe("buildGrantResultScreen (V1-42)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>⭐ GRANT</b> · 🧪 Devnet",
+        "<b>⭐ GRANT</b>",
         "",
         "✅ Premium active until 15 Oct 2026, 14:32 UTC.",
         "Granted to @alice (ID <code>555000111</code>) · Premium · 1 month",

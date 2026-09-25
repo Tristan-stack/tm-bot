@@ -57,7 +57,7 @@ describe("buildWalletListScreen", () => {
   it("renders the mockup of §9.1", () => {
     expect(listText(list())).toBe(
       [
-        "<b>👛 WALLETS · 2/5</b> · 🧪 Devnet",
+        "<b>👛 WALLETS · 2/5</b>",
         "",
         "Your wallets on the bot. Tap one to see its address, withdraw or rename it.",
         "",
@@ -155,7 +155,7 @@ describe("buildWalletDetailScreen", () => {
   it("renders the mockup of §9.2 with the notice of a creation", () => {
     expect(buildWalletDetailScreen(ui, detail(), { notice: en.wallets.created }).text).toBe(
       [
-        "<b>👛 Main</b> · 🧪 Devnet",
+        "<b>👛 Main</b>",
         "",
         "Tap the address to copy it.",
         "",
@@ -181,7 +181,7 @@ describe("buildWalletDetailScreen", () => {
 
   it("escapes the name of the header", () => {
     expect(buildWalletDetailScreen(ui, detail({ name: "<b>x</b>" })).text).toContain(
-      "<b>👛 &lt;b&gt;x&lt;/b&gt;</b> · 🧪 Devnet",
+      "<b>👛 &lt;b&gt;x&lt;/b&gt;</b>",
     );
   });
 
@@ -226,7 +226,7 @@ describe("wallet handlers", () => {
     await feed(bot, callbackUpdate(MENU.wallets));
 
     expect(api.of("sendMessage")).toEqual([]);
-    expect(api.text("editMessageText")).toContain("<b>👛 WALLETS · 2/3</b> · 🧪 Devnet");
+    expect(api.text("editMessageText")).toContain("<b>👛 WALLETS · 2/3</b>");
     expect(api.text("editMessageText")).toContain("1. Main");
   });
 
@@ -235,7 +235,7 @@ describe("wallet handlers", () => {
 
     await feed(bot, callbackUpdate(WALLET_CB.view("w2")));
 
-    expect(api.text("editMessageText")).toContain("<b>👛 Test</b> · 🧪 Devnet");
+    expect(api.text("editMessageText")).toContain("<b>👛 Test</b>");
     expect(api.text("editMessageText")).toContain(`<code>${TEST.publicKey}</code>`);
   });
 
@@ -322,7 +322,7 @@ describe("rename screens (V1-11)", () => {
   it("asks for the name with the current one and the rule", () => {
     expect(buildRenameScreen(ui, MAIN).text).toBe(
       [
-        "<b>✏️ RENAME WALLET</b> · 🧪 Devnet",
+        "<b>✏️ RENAME WALLET</b>",
         "",
         "Send the new name.",
         "",
@@ -348,7 +348,7 @@ describe("delete screens (V1-11)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>🗑 DELETE WALLET</b> · 🧪 Devnet",
+        "<b>🗑 DELETE WALLET</b>",
         "",
         'Delete wallet "&lt;b&gt;x&lt;/b&gt;" (7xKX…gAsU)?',
         "Its encrypted key will be erased. This cannot be undone.",
@@ -368,7 +368,7 @@ describe("delete screens (V1-11)", () => {
 
     expect(blocked(2_500_000_000n, 103.36).text).toBe(
       [
-        "<b>🗑 DELETE WALLET</b> · 🧪 Devnet",
+        "<b>🗑 DELETE WALLET</b>",
         "",
         "⚠️ Main still holds 2.500 SOL ($258.40). Withdraw it before deleting: a deleted wallet can't be recovered.",
       ].join("\n"),

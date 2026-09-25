@@ -62,9 +62,9 @@ const amountView = (mode: WithdrawMode = "normal") => ({
   rentMinLamports: TEST_RENT_MIN,
 });
 
-const HEADER_1 = "<b>📤 WITHDRAW · STEP 1/3</b> · 🧪 Devnet\n▰▱▱\nAddress › Amount › Confirm";
-const HEADER_2 = "<b>📤 WITHDRAW · STEP 2/3</b> · 🧪 Devnet\n▰▰▱\nAddress › Amount › Confirm";
-const HEADER_3 = "<b>📤 WITHDRAW · STEP 3/3</b> · 🧪 Devnet\n▰▰▰\nAddress › Amount › Confirm";
+const HEADER_1 = "<b>📤 WITHDRAW · STEP 1/3</b>\n▰▱▱\nAddress › Amount › Confirm";
+const HEADER_2 = "<b>📤 WITHDRAW · STEP 2/3</b>\n▰▰▱\nAddress › Amount › Confirm";
+const HEADER_3 = "<b>📤 WITHDRAW · STEP 3/3</b>\n▰▰▰\nAddress › Amount › Confirm";
 const FROM_LINE = "👛 From: Main · 7xKX…gAsU";
 const CANCEL = { text: "❌ Cancel", callback_data: "wal:v:w1" };
 
@@ -91,7 +91,7 @@ describe("withdraw screens", () => {
   it("counts two steps and announces Max in mode all", () => {
     const text = buildWithdrawAddressScreen(ui, view("all"), BALANCE).text;
 
-    expect(text).toContain("<b>📤 WITHDRAW · STEP 1/2</b> · 🧪 Devnet\n▰▱\nAddress › Confirm");
+    expect(text).toContain("<b>📤 WITHDRAW · STEP 1/2</b>\n▰▱\nAddress › Confirm");
     expect(text).toContain("💰 Balance: 2.500 SOL ($258.40)\n💰 Amount: Max (balance − fees)\n");
   });
 
@@ -156,7 +156,7 @@ describe("withdraw screens", () => {
     expect(keyboardOf(screen)).toEqual([[CANCEL]]);
   });
 
-  it("confirms with the full address, exact amounts, the network and a token", () => {
+  it("confirms with the full address, exact amounts and a token", () => {
     const screen = buildWithdrawConfirmScreen(ui, view(), testQuote(), "abcd1234");
 
     expect(screen.text).toBe(
@@ -169,7 +169,6 @@ describe("withdraw screens", () => {
         `📍 To: <code>${TO}</code>`,
         "💰 Amount: 1.250 SOL ($129.20)",
         "⛽ Fees: ≈ 0.000005 SOL",
-        "🧪 Network: Solana Devnet",
       ].join("\n"),
     );
     expect(keyboardOf(screen)).toEqual([
@@ -182,7 +181,7 @@ describe("withdraw screens", () => {
     const quote = testQuote({ mode: "max", amountLamports: BALANCE - TEST_FEE });
     const text = buildWithdrawConfirmScreen(ui, view("all"), quote, "t").text;
 
-    expect(text).toContain("<b>📤 WITHDRAW · STEP 2/2</b> · 🧪 Devnet\n▰▰\nAddress › Confirm");
+    expect(text).toContain("<b>📤 WITHDRAW · STEP 2/2</b>\n▰▰\nAddress › Confirm");
     expect(text).toContain("💰 Amount: 2.499995 SOL ($258.40) (Max)");
   });
 
@@ -195,7 +194,7 @@ describe("withdraw screens", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>📤 WITHDRAW</b> · 🧪 Devnet",
+        "<b>📤 WITHDRAW</b>",
         "",
         "✅ Withdrawal sent.",
         "💰 Amount: 1.250 SOL ($129.20)",
@@ -222,7 +221,7 @@ describe("withdraw screens", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>📤 WITHDRAW</b> · 🧪 Devnet",
+        "<b>📤 WITHDRAW</b>",
         "",
         "❌ Withdrawal failed.",
         "Reason: The network didn't confirm the transaction in time.",
@@ -292,8 +291,8 @@ describe("withdraw screens", () => {
       "⚠️ This address is empty: send at least 0.00089 SOL.",
     );
     expect(refusalOf({ ok: false, code: "RPC_UNAVAILABLE", landed: "no" })).toEqual({
-      alert: "Solana devnet is not responding. Try again in a moment.",
-      flag: "⚠️ Solana devnet is not responding. Try again in a moment.",
+      alert: "Solana is not responding. Try again in a moment.",
+      flag: "⚠️ Solana is not responding. Try again in a moment.",
     });
   });
 });
@@ -465,12 +464,36 @@ describe("withdraw handlers", () => {
     expect(lastEdit(api)).toContain("⚠️ Insufficient funds (0.100 SOL missing)");
   });
 
+  it("refuses an amount that would leave dust under the rent minimum, with nothing sent (§15)", async () => {
+    const execute = vi.fn<WithdrawalService["execute"]>();
+    const quote: WithdrawalService["quote"] = async (userId, walletId) => {
+      const checked = await fakeWithdrawals().check(userId, walletId);
+      if (checked.status !== "ok") throw new Error("unexpected");
+      const failure: TxFailure = {
+        ok: false,
+        code: "REMAINING_BELOW_RENT",
+        landed: "no",
+        rentMinLamports: TEST_RENT_MIN,
+      };
+      return { status: "refused", check: checked, failure };
+    };
+    const { bot, api } = botHarness({ withdrawals: { quote, execute } });
+    await open(bot);
+    await feed(bot, textUpdate(TO));
+
+    await feed(bot, callbackUpdate(WITHDRAW_CB.pct(50)));
+
+    expect(lastEdit(api)).toContain(HEADER_2);
+    expect(lastEdit(api)).toContain("below the rent-exempt minimum (0.00089 SOL)");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("ends the flow on Cancel, and on any other screen: an old step button is stale", async () => {
     const { bot, api, prisma } = botHarness();
     await reachConfirm(bot);
 
     await feed(bot, callbackUpdate(WALLET_CB.view("w1")));
-    expect(lastEdit(api)).toContain("<b>👛 Main</b> · 🧪 Devnet");
+    expect(lastEdit(api)).toContain("<b>👛 Main</b>");
     expect(storedSession(prisma)?.withdraw).toBeUndefined();
     expect(storedSession(prisma)?.pendingInput).toBeUndefined();
 
@@ -494,9 +517,7 @@ describe("withdraw handlers", () => {
       kind: "exact",
       lamports: 625_000_000n,
     });
-    expect(api.text("editMessageText", -2)).toBe(
-      "<b>📤 WITHDRAW</b> · 🧪 Devnet\n\n⏳ Sending 0.625 SOL…",
-    );
+    expect(api.text("editMessageText", -2)).toBe("<b>📤 WITHDRAW</b>\n\n⏳ Sending 0.625 SOL…");
     expect(lastEdit(api)).toContain("✅ Withdrawal sent.");
     expect(lastEdit(api)).toContain("💰 Amount: 0.625 SOL ($64.60)");
     expect(lastEdit(api)).toContain(`?cluster=devnet">5KtP…x9Qm</a>`);

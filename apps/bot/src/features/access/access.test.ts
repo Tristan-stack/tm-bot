@@ -24,9 +24,9 @@ import { MENU } from "../home/screen.js";
 import { createAccess } from "./access.js";
 import { joinedCallback } from "./screens.js";
 
-const CHANNEL_TITLE = "<b>📢 ONE LAST STEP</b> · 🧪 Devnet";
+const CHANNEL_TITLE = "<b>📢 ONE LAST STEP</b>";
 const CHANNEL_SCREEN = `${CHANNEL_TITLE}\n\nJoin our channel to follow updates and new features.`;
-const HOME_TITLE = "<b>🚀 LAUNCH BOT</b> · 🧪 Devnet";
+const HOME_TITLE = "<b>🚀 LAUNCH BOT</b>";
 const NOT_JOINED_LINE = "ℹ️ Not joined yet. Join the channel, then tap I've joined.";
 const MEMBER_LIST_HIDDEN = telegramError(
   "getChatMember",

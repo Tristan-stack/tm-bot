@@ -154,7 +154,7 @@ export const buildImportScreen = (
 ): Screen =>
   renderScreen({
     header: ui.screenHeader(en.wallets.import.title),
-    description: [en.wallets.import.warning, "", en.wallets.import.description].join("\n"),
+    description: en.wallets.import.description,
     info: en.wallets.import.counter(quota.count, quota.limit),
     flags: options.flags,
     keyboard: [

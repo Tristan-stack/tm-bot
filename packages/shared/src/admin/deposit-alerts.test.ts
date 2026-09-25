@@ -38,7 +38,7 @@ describe("buildDepositAlert (V1-33)", () => {
     const text = moved();
 
     expect(text.split("\n")).toEqual([
-      "<b>⚠️ MANUAL REFUND</b> · 🧪 Devnet",
+      "<b>⚠️ MANUAL REFUND</b>",
       "",
       "Partial payment on an expired invoice. The funds were moved to the treasury. Refund the user by hand.",
       "",
@@ -80,7 +80,7 @@ describe("buildDepositAlert (V1-33)", () => {
     const paid = moved({ kind: "OLD_ADDRESS", invoice: invoice({ status: "SWEPT" }) });
     const canceled = moved({ kind: "OLD_ADDRESS", invoice: invoice({ status: "CANCELED" }) });
 
-    expect(paid).toContain("<b>⚠️ OLD DEPOSIT ADDRESS</b> · 🧪 Devnet");
+    expect(paid).toContain("<b>⚠️ OLD DEPOSIT ADDRESS</b>");
     expect(paid).toContain("Funds were sent to an old deposit address.");
     expect(paid).toContain("Status: Paid");
     expect(canceled).toContain("Status: Canceled");
@@ -116,7 +116,7 @@ describe("buildDepositAlert (V1-33)", () => {
       }).text;
 
     const text = failed(9, 570_820_434n);
-    expect(text).toContain("<b>⚠️ SWEEP FAILED</b> · 🧪 Devnet");
+    expect(text).toContain("<b>⚠️ SWEEP FAILED</b>");
     expect(text).toContain("after 9 attempts. Check the worker logs.");
     expect(text).toContain("Balance: 0.570820434 SOL");
     expect(text).toContain("Reason: RPC_UNAVAILABLE");

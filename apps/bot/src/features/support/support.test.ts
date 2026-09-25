@@ -32,7 +32,7 @@ describe("buildSupportScreen (§11.1, V1-40)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>🆘 SUPPORT</b> · 🧪 Devnet",
+        "<b>🆘 SUPPORT</b>",
         "",
         "Need help? Contact our support team.",
         "Tell us what happened, on which screen, and add a screenshot if you can.",

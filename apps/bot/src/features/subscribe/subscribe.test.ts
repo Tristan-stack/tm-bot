@@ -33,7 +33,7 @@ const active = (plan: "CLASSIC" | "PREMIUM", expiresAt: Date): PlanStatus => ({
 const NONE: PlanStatus = { kind: "NONE" };
 const EXPIRED_CLASSIC: PlanStatus = { kind: "EXPIRED", subscription: subscription("CLASSIC", NOW) };
 
-const HEADER = "<b>⭐ SUBSCRIBE</b> · 🧪 Devnet";
+const HEADER = "<b>⭐ SUBSCRIBE</b>";
 const DESCRIPTION = "Choose a pass to unlock Launch Coin. Prices are in USD, paid in SOL.";
 const OFFERS = [
   "<b>🔹 CLASSIC</b>\n┌ 2 days · $49\n└ 1 month · $169",
@@ -135,7 +135,7 @@ describe("warning Classic → Premium", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>⭐ PREMIUM · 1 MONTH</b> · 🧪 Devnet",
+        "<b>⭐ PREMIUM · 1 MONTH</b>",
         "⚠️ Your remaining Classic time will be lost.",
         "Premium starts right away when your payment is received.",
         "📋 Current plan: Classic · 1d 4h left\n💎 New plan: Premium · 1 month · $179",
@@ -171,6 +171,14 @@ describe("offer clicks (§8.4)", () => {
 
     expect(h.api.of("editMessageText")[0]?.payload).toMatchObject({ message_id: 55 });
     expect(h.screen()).toContain("📋 Current plan: None");
+  });
+
+  it("says « coming soon » while the bot has no AI provider, as in V1 (§15)", async () => {
+    const h = harness();
+
+    await feed(h.bot, callbackUpdate(MENU.subscribe));
+
+    expect(h.screen()).toContain("✅ AI token generator (AI model coming soon)");
   });
 
   it("refuses Classic during Premium: alert, and the line on the screen", async () => {

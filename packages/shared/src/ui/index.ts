@@ -23,16 +23,14 @@ export type { SplitOptions } from "./split.js";
 
 /**
  * Proposal: shared never reads the environment, so each process binds the cluster-dependent
- * helpers once at startup with `createUi(env.SOLANA_CLUSTER)`. Throws on an unsupported cluster.
+ * helpers once at startup with `createUi(env.SOLANA_CLUSTER)`: the explorer links. The headers
+ * name no network (D24). Throws on an unsupported cluster.
  */
 export function createUi(cluster: SolanaCluster) {
-  const config = getClusterConfig(cluster);
+  getClusterConfig(cluster);
   return {
-    /** `networkName` serves the network mentions outside the badge (§9.5, V1-39). */
-    config,
-    screenHeader: (title: string, counter?: string) => screenHeader(title, counter, config.badge),
-    flowHeader: ({ flow, step }: { flow: FlowName; step: number }) =>
-      flowHeader(flow, step, config.badge),
+    screenHeader: (title: string, counter?: string) => screenHeader(title, counter),
+    flowHeader: ({ flow, step }: { flow: FlowName; step: number }) => flowHeader(flow, step),
     explorerAddressUrl: (address: string) => explorerAddressUrl(address, cluster),
     explorerTxUrl: (signature: string) => explorerTxUrl(signature, cluster),
   };

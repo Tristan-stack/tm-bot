@@ -1,19 +1,15 @@
 import { en } from "../i18n/en.js";
 
-// Not exported by the package: screens get their headers from `createUi(cluster)`, which binds
-// the badge, so that no caller can drop the Devnet badge by mistake.
-
-const withBadge = (title: string, badge: string | null): string =>
-  badge === null ? `<b>${title}</b>` : `<b>${title}</b> · ${badge}`;
+// Not exported by the package: screens get their headers from `createUi(cluster)`, like the
+// other helpers of a screen. No header names the network (D24).
 
 /**
- * Screen header: bold title (proposal) and cluster badge. `title` and `counter` are trusted
- * HTML from en.ts.
+ * Screen header: bold title (proposal). `title` and `counter` are trusted HTML from en.ts.
  *
- *     <b>👛 WALLETS · 2/5</b> · 🧪 Devnet
+ *     <b>👛 WALLETS · 2/5</b>
  */
-export const screenHeader = (title: string, counter: string | undefined, badge: string | null) =>
-  withBadge(counter === undefined ? title : `${title} · ${counter}`, badge);
+export const screenHeader = (title: string, counter: string | undefined): string =>
+  `<b>${counter === undefined ? title : `${title} · ${counter}`}</b>`;
 
 export const FLOWS = en.flows;
 export type FlowName = keyof typeof FLOWS;
@@ -30,19 +26,19 @@ export function progressBar(done: number, total: number): string {
 /**
  * Flow header (§5): title with step counter, progress bar, step names.
  *
- *     <b>📊 SIMULATION · STEP 1/3</b> · 🧪 Devnet
+ *     <b>📊 SIMULATION · STEP 1/3</b>
  *     ▰▱▱
  *     Token › Dev buy › Recap
  *
  * The summary of the choices already made is the `info` block of each screen.
  */
-export function flowHeader(flow: FlowName, step: number, badge: string | null): string {
+export function flowHeader(flow: FlowName, step: number): string {
   const { title, steps } = FLOWS[flow];
   if (!Number.isInteger(step) || step < 1 || step > steps.length) {
     throw new RangeError(`Step of ${flow} must be from 1 to ${steps.length}, got ${step}`);
   }
   return [
-    withBadge(`${title} · ${en.common.step(step, steps.length)}`, badge),
+    `<b>${title} · ${en.common.step(step, steps.length)}</b>`,
     progressBar(step, steps.length),
     steps.join(" › "),
   ].join("\n");

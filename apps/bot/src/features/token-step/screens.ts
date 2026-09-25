@@ -164,12 +164,19 @@ export const buildGeneratingScreen = (ui: Ui, flow: TokenFlow): Screen =>
     keyboard: [],
   });
 
-/** Edit (§5): which of the three fields to change. */
-export const buildEditChoiceScreen = (ui: Ui, flow: TokenFlow, draft: TokenDraftView): Screen =>
+/** Edit (§5): which of the three fields to change, under the choices of the flow (§15). */
+export const buildEditChoiceScreen = (
+  ui: Ui,
+  flow: TokenFlow,
+  draft: TokenDraftView,
+  summaryLines: string[] = [],
+): Screen =>
   renderScreen({
     header: tokenStepHeader(ui, flow),
     description: token.edit.description,
-    info: tree(token.block, editableLines(draft)),
+    info: [summaryLines.join("\n"), tree(token.block, editableLines(draft))]
+      .filter((block) => block !== "")
+      .join("\n\n"),
     keyboard: [
       [
         cbBtn(token.edit.btnName, TOKEN_CB.editField(flow, "name")),
@@ -201,15 +208,16 @@ function currentOf(field: TokenInputField, draft: TokenDraftView): string | null
 }
 
 /**
- * The input of one field (§4.5): the prompt, the current value, the rule, the error of the
- * last try, and Cancel — with Remove for an optional field that is filled.
+ * The input of one field (§4.5): the choices of the flow (§15), the prompt, the current value,
+ * the rule, the error of the last try, and Cancel — with Remove for an optional field that is
+ * filled.
  */
 export function buildFieldInputScreen(
   ui: Ui,
   flow: TokenFlow,
   field: TokenInputField,
   draft: TokenDraftView,
-  options: { flags?: OptionalLine[] } = {},
+  options: { flags?: OptionalLine[]; summaryLines?: string[] } = {},
 ): Screen {
   const texts = token.inputs[field];
   const remove: Button[] =
@@ -219,6 +227,7 @@ export function buildFieldInputScreen(
   return renderInputScreen({
     header: tokenStepHeader(ui, flow),
     prompt: texts.prompt,
+    summary: options.summaryLines,
     current: currentOf(field, draft),
     rules: [texts.rules],
     flags: options.flags,

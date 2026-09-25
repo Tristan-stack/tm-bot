@@ -229,6 +229,25 @@ describe("step 2/4 Bundle (V1-36, decision of 25/09/2026)", () => {
     expect(h.read).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the choices above Edit and above each field input of the Token step (§15)", async () => {
+    const h = harness();
+    const choices = "👛 Wallet: Main · 4.200 SOL\n💰 Dev buy: 1 SOL\n📦 Bundle: 3 SOL";
+
+    await atBundle(h);
+    await h.click(LAUNCH_CB.preset(3));
+    await h.click(TOKEN_CB.edit("LAUNCH"));
+    const edit = h.screen();
+    await h.click(TOKEN_CB.editField("LAUNCH", "name"));
+    const nameInput = h.screen();
+    await h.click(TOKEN_CB.input("LAUNCH", "website"));
+
+    for (const screen of [edit, nameInput, h.screen()]) {
+      expect(screen).toContain("<b>🚀 LAUNCH · STEP 3/4</b>");
+      expect(screen).toContain(choices);
+    }
+    expect(nameInput).toContain(`${choices}\nCurrent: —`);
+  });
+
   it("Refresh after funding the wallet: the note goes, the bundle passes", async () => {
     const h = harness();
 

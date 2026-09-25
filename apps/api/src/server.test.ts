@@ -202,13 +202,36 @@ describe("errors", () => {
     },
   );
 
-  it("answers 404 in JSON for an unknown route", async () => {
+  it("answers 404 in JSON for an unknown route, 401 under /api without a valid initData", async () => {
     const { app } = await build();
 
-    const response = await app.inject({ method: "GET", url: "/api/unknown" });
+    const outside = await app.inject({ method: "GET", url: "/unknown" });
+    const signed = await app.inject({ method: "GET", url: "/api/unknown", headers: validHeader() });
+    const anonymous = await app.inject({ method: "GET", url: "/api/unknown" });
 
-    expect(response.statusCode).toBe(404);
-    expect(response.json()).toEqual({ error: "not_found" });
+    expect(outside.statusCode).toBe(404);
+    expect(outside.json()).toEqual({ error: "not_found" });
+    expect(signed.statusCode).toBe(404);
+    expect(anonymous.statusCode).toBe(401);
+    expect(anonymous.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("answers 401 to anything under /api without a valid initData, with no route at all (D21)", async () => {
+    const { app } = await build({ routes: undefined });
+
+    for (const url of [
+      "/api",
+      "/api/",
+      "/api/simulations/cjld2cjxh0000qzrmn831i7rn",
+      "/api/x?y=1",
+    ]) {
+      const response = await app.inject({
+        method: "GET",
+        url,
+        headers: { [INIT_DATA_HEADER]: forged() },
+      });
+      expect([url, response.statusCode]).toEqual([url, 401]);
+    }
   });
 
   it("answers a malformed URL with the same fixed body, not Fastify's own", async () => {

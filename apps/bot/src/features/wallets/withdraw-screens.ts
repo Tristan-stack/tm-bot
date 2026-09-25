@@ -183,7 +183,6 @@ export const buildWithdrawConfirmScreen = (
       withdraw.to(code(quote.to)),
       quote.mode === "max" ? withdraw.confirm.amountMax(amount) : withdraw.confirm.amount(amount),
       withdraw.confirm.fees(formatSolExact(quote.fee.totalFeeLamports)),
-      withdraw.confirm.network(ui.config.networkName),
     ],
     flags: options.flags,
     keyboard: [[cbBtn(en.btn.confirm, WITHDRAW_CB.confirm(token)), cancel(view)]],

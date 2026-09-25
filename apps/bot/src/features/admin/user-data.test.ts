@@ -102,7 +102,7 @@ describe("buildWhoisScreen (V1-43)", () => {
   it("an account without plan or payment", () => {
     expect(whois(supportData())).toBe(
       [
-        "<b>👤 WHOIS</b> · 🧪 Devnet",
+        "<b>👤 WHOIS</b>",
         "",
         "Check the plan before answering a support request.",
         "",
@@ -379,7 +379,29 @@ describe("buildGetAllBlocks (V1-43)", () => {
     expect(parts.length).toBeGreaterThan(1);
     for (const part of parts) {
       expect(part.length).toBeLessThanOrEqual(TG.MESSAGE_MAX_CHARS);
-      expect(part.startsWith("<b>🗂 USER DATA</b> · 🧪 Devnet\n\nPart ")).toBe(true);
+      expect(part.startsWith("<b>🗂 USER DATA</b>\n\nPart ")).toBe(true);
+    }
+  });
+
+  it("escapes what the user wrote, in /whois as in /getall: a first name, a wallet name", () => {
+    const hostile = "<b>x</b> & co";
+    const data = supportData({
+      user: { ...TARGET, username: null, firstName: hostile },
+      wallets: [
+        {
+          id: MAIN_WALLET.id,
+          name: hostile,
+          publicKey: MAIN_WALLET.publicKey,
+          source: "CREATED",
+          createdAt: NOW,
+        },
+      ],
+    });
+    const getall = buildGetAllMessages(ui, { data, balances: TEST_BALANCES, solUsd: 1, now: NOW });
+
+    for (const text of [whois(data), ...getall]) {
+      expect(text).toContain("&lt;b&gt;x&lt;/b&gt; &amp; co");
+      expect(text).not.toContain(hostile);
     }
   });
 });
@@ -463,7 +485,7 @@ describe("/getall and Reveal keys (V1-43)", () => {
 
     await feed(h.bot, textUpdate(`/getall ${TARGET.telegramId}`));
 
-    expect(h.api.text("sendMessage", -1)).toContain("<b>🗂 USER DATA</b> · 🧪 Devnet");
+    expect(h.api.text("sendMessage", -1)).toContain("<b>🗂 USER DATA</b>");
     expect(buttonTexts({ inline_keyboard: h.buttons() })).toEqual([
       ["🔑 Reveal keys", "❌ Cancel"],
     ]);
@@ -500,7 +522,7 @@ describe("/getall and Reveal keys (V1-43)", () => {
     const explorer = `<a href="https://explorer.solana.com/tx/${SIGNATURE}?cluster=devnet">Explorer</a>`;
     expect(h.api.text("sendMessage")).toBe(
       [
-        "<b>🗂 USER DATA</b> · 🧪 Devnet",
+        "<b>🗂 USER DATA</b>",
         "",
         "❌ User not found.",
         "Searched: 777000",
@@ -531,7 +553,7 @@ describe("/getall and Reveal keys (V1-43)", () => {
     const message = keys[0]?.payload ?? {};
     expect(message).toMatchObject({ parse_mode: "HTML", protect_content: false });
     const text = String(message["text"]);
-    expect(text).toContain("<b>🔑 WALLET KEYS</b> · 🧪 Devnet");
+    expect(text).toContain("<b>🔑 WALLET KEYS</b>");
     expect(text).toContain("@alice · 🆔 <code>555000111</code> · 2 wallets");
     expect(text).toContain("🌱 Seed phrase: none (imported with a private key)");
     expect(text).toContain("This message will be deleted in 60 s.");

@@ -11,6 +11,7 @@
     { "path": "./apps/api" },
     { "path": "./apps/bot" },
     { "path": "./apps/worker" },
-    { "path": "./apps/webapp" }
+    { "path": "./apps/webapp" },
+    { "path": "./scripts" }
   ]
 }

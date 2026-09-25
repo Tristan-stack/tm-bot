@@ -249,12 +249,20 @@ export function createTokenStep({
     field: TokenInputField,
     options: { mode?: ShowMode; flags?: OptionalLine[] } = {},
   ): Promise<void> {
-    const draft = (await loadDraft(ctx, flow)) ?? EMPTY_DRAFT;
-    await showScreen(ctx, buildFieldInputScreen(ui, flow, field, draft, { flags: options.flags }), {
+    const [draft, summaryLines] = await Promise.all([loadDraft(ctx, flow), summaryOf(ctx, flow)]);
+    const screen = buildFieldInputScreen(ui, flow, field, draft ?? EMPTY_DRAFT, {
+      flags: options.flags,
+      summaryLines,
+    });
+    await showScreen(ctx, screen, {
       mode: options.mode,
       input: { kind: "token_field", flow, field, since: now() },
     });
   }
+
+  /** The choices of the flow above the screens of the step (§15): none for a simulation. */
+  const summaryOf = (ctx: BotContext, flow: TokenFlow): Promise<string[]> =>
+    configOf(flow).summaryLines?.(ctx) ?? Promise.resolve([]);
 
   /** Generate (§5): a new local token; the image and the links stay. */
   async function generate(ctx: BotContext, flow: TokenFlow): Promise<void> {
@@ -343,8 +351,14 @@ export function createTokenStep({
         ai: withFlow((ctx, flow) => hooks.onAiGenerate(ctx, flow)),
         ed: withFlow(async (ctx, flow, arg) => {
           if (arg === undefined) {
-            const draft = (await loadDraft(ctx, flow)) ?? EMPTY_DRAFT;
-            return showScreen(ctx, buildEditChoiceScreen(ui, flow, draft));
+            const [draft, summaryLines] = await Promise.all([
+              loadDraft(ctx, flow),
+              summaryOf(ctx, flow),
+            ]);
+            return showScreen(
+              ctx,
+              buildEditChoiceScreen(ui, flow, draft ?? EMPTY_DRAFT, summaryLines),
+            );
           }
           const field = editableFieldOf(arg);
           return field === undefined

@@ -22,3 +22,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Review page of `pnpm screens:catalog` (V1-46)
+scripts/out/

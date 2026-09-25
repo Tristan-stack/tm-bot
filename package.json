@@ -18,6 +18,8 @@
     "test:devnet": "cross-env RUN_DEVNET_TESTS=1 vitest run",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:i18n": "tsx scripts/check-i18n.ts",
+    "screens:catalog": "tsx scripts/screens-catalog.ts",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @launchbot/db db:generate",

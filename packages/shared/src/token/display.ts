@@ -1,5 +1,6 @@
 import { TOKEN_LINK_DISPLAY_MAX_CHARS } from "../constants.js";
 import { codePointLength } from "../format/text.js";
+import { en } from "../i18n/en.js";
 
 export type RequiredTokenField = "name" | "ticker";
 
@@ -45,7 +46,7 @@ export function formatLinkForDisplay(field: "website" | "x" | "telegram", value:
       return truncate(value.replace(/^https:\/\//i, ""), TOKEN_LINK_DISPLAY_MAX_CHARS);
     case "x":
       return X_COMMUNITY.test(value)
-        ? "X community"
+        ? en.token.xCommunity
         : `@${value.slice(value.lastIndexOf("/") + 1)}`;
     case "telegram": {
       const path = value.slice("https://".length);

@@ -22,6 +22,7 @@ import type {
 } from "@launchbot/db";
 import { AI_GENERATIONS_PER_DAY, computeMaxAmount, getOffer } from "@launchbot/shared";
 import type { AiProviders } from "@launchbot/shared";
+import { catalogScreen, screenIssues } from "@launchbot/shared/test";
 import { FALLBACK_CURVE_PARAMS } from "@launchbot/sim-engine";
 import type { Simulation, SimulationStore } from "@launchbot/db";
 import type { TransferQuote } from "@launchbot/solana";
@@ -29,6 +30,7 @@ import type { Env, TelegramFile, TokenImageService } from "@launchbot/shared/ser
 import { BotError, GrammyError } from "grammy";
 import type { Bot } from "grammy";
 import type { ApiResponse, ChatMember, InlineKeyboardMarkup, Update } from "grammy/types";
+import { afterEach, expect } from "vitest";
 import type { BotContext, SessionData } from "./context.js";
 import type { AdminServices } from "./features/admin/admin.js";
 import type { InvoicePayments } from "./features/subscribe/invoice.js";
@@ -59,17 +61,48 @@ const BOT_INFO = {
   supports_join_request_queries: false,
 };
 
+/** What the screens of the tests break of §4.5, reported by the test that drew them. */
+const screenFaults: string[] = [];
+
+afterEach(() => {
+  const faults = screenFaults.splice(0);
+  if (faults.length > 0) throw new Error(`Screens that break §4.5 (V1-46):\n${faults.join("\n")}`);
+});
+
+/**
+ * Every message to a user is checked against the rules of §4.5 (V1-46): a test that draws a
+ * faulty screen fails. Posts in a channel (`-100…`, `@name`) are the admin's text, not a screen.
+ * With `SCREENS_CATALOG_DIR` set, the message is also written for `pnpm screens:catalog`.
+ */
+function checkScreen(call: ApiCall): void {
+  const chatId = call.payload["chat_id"];
+  const chat = typeof chatId === "string" || typeof chatId === "number" ? String(chatId) : "";
+  if (chat.startsWith("-") || chat.startsWith("@")) return;
+  const issues = screenIssues(call);
+  const { currentTestName, testPath } = expect.getState();
+  if (issues.length > 0) {
+    screenFaults.push(`- ${call.method} in "${currentTestName ?? "?"}": ${issues.join("; ")}`);
+  }
+  catalogScreen(call, { test: currentTestName, file: testPath });
+}
+
 /**
  * Replaces the Telegram transport: nothing leaves the process, and a test can make any method
- * fail with a real GrammyError to exercise the fallbacks of `showScreen`.
+ * fail with a real GrammyError to exercise the fallbacks of `showScreen`. `screens: false`
+ * for the tests of the navigation itself, whose screens are placeholders.
  */
-export function interceptApi(bot: Bot<BotContext>, replies: ApiReplies = {}) {
+export function interceptApi(
+  bot: Bot<BotContext>,
+  replies: ApiReplies = {},
+  options: { screens?: boolean } = {},
+) {
   const calls: ApiCall[] = [];
   let nextMessageId = FIRST_MESSAGE_ID;
   bot.botInfo = BOT_INFO;
 
   bot.api.config.use((_prev, method, payload) => {
     calls.push({ method, payload });
+    if (options.screens !== false) checkScreen({ method, payload });
     const reply = replies[method];
     if (reply instanceof GrammyError) return Promise.reject(reply);
     const result = reply ?? defaultResult(method, payload, () => nextMessageId++);

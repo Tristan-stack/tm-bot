@@ -59,7 +59,7 @@ describe("/start", () => {
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
     });
-    expect(sent?.payload["text"]).toContain("<b>🚀 LAUNCH BOT</b> · 🧪 Devnet");
+    expect(sent?.payload["text"]).toContain("<b>🚀 LAUNCH BOT</b>");
     expect(sent?.payload["text"]).toContain("<code>123456789</code>");
     expect(api.of("editMessageText")).toEqual([]);
     expect(prisma.upserts).toHaveLength(1);

@@ -56,6 +56,17 @@ describe("createSimulation", () => {
     expect(createSimulation(config({ seed: 43 })).step(180)).not.toEqual(wholeEvents);
   });
 
+  it("replays the same run with a dev buy of 1 SOL and a bundle (D22)", () => {
+    const bundled = config({ devBuySol: 1, bundleSol: 5, preset: presetForAmount(5) });
+    const first = createSimulation(bundled).step(180);
+
+    expect(first.length).toBeGreaterThan(50);
+    expect(createSimulation(JSON.parse(JSON.stringify(bundled)) as SimConfig).step(180)).toEqual(
+      first,
+    );
+    expect(createSimulation({ ...bundled, seed: 43 }).step(180)).not.toEqual(first);
+  });
+
   it("replays the same trades with a sell of the dev at the same simulated instant", () => {
     const a = run(createSimulation(config()), 1, { at: 30, fraction: 0.5 });
     const b = run(createSimulation(config()), 1 / 64, { at: 30, fraction: 0.5 });

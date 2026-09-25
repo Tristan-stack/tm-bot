@@ -88,6 +88,8 @@ export type InputScreenParams = {
   header: string;
   /** What the user must send. */
   prompt: string;
+  /** In a flow, the choices already made (§15), above the current value. */
+  summary?: string[];
   /** Plain text, escaped here. `null`: the field is empty. Omitted: no "Current" line. */
   current?: string | null;
   /** Length, format, bounds. */
@@ -99,7 +101,7 @@ export type InputScreenParams = {
 
 /** Input screen (§4.5): shows the current value and the rules, and always has a Cancel button. */
 export function renderInputScreen(params: InputScreenParams): Screen {
-  const { header, prompt, current, rules, flags, keyboard } = params;
+  const { header, prompt, summary = [], current, rules, flags, keyboard } = params;
   // §15: every input has a "Cancel".
   if (!keyboard.flat().some((button) => button.text === en.btn.cancel)) {
     throw new Error(`An input screen needs a "${en.btn.cancel}" button`);
@@ -109,7 +111,7 @@ export function renderInputScreen(params: InputScreenParams): Screen {
   return renderScreen({
     header,
     description: prompt,
-    info: [...currentLine, ...rules],
+    info: [...summary, ...currentLine, ...rules],
     flags,
     keyboard,
   });

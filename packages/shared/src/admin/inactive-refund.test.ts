@@ -23,7 +23,7 @@ describe("buildInactiveRefundAlert (V1-45)", () => {
     });
 
     expect(screen.text.split("\n")).toEqual([
-      "<b>⚠️ MANUAL REFUND</b> · 🧪 Devnet",
+      "<b>⚠️ MANUAL REFUND</b>",
       "",
       "The user became active while their inactive account was being deleted. Their SOL was already moved to the treasury and the account was kept. Refund the user by hand.",
       "",

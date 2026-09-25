@@ -117,7 +117,7 @@ describe("buildPurgeSummaryScreen (V1-44)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>🗑 PURGE USER</b> · 🧪 Devnet",
+        "<b>🗑 PURGE USER</b>",
         "",
         "Delete all data of this user. Their SOL goes to the treasury first, then the wallet keys are erased.",
         "",
@@ -184,6 +184,20 @@ describe("buildPurgeSummaryScreen (V1-44)", () => {
       ],
     ]);
   });
+
+  it("escapes what the user wrote: a first name, a wallet name", () => {
+    const hostile = "<b>x</b> & co";
+    const { text } = buildPurgeSummaryScreen(ui, {
+      now: NOW,
+      summary: summary({
+        user: { ...TARGET, username: null, firstName: hostile },
+        wallets: [{ ...MAIN_WALLET, name: hostile, lamports: 0n }],
+      }),
+    });
+
+    expect(text).toContain("&lt;b&gt;x&lt;/b&gt; &amp; co");
+    expect(text).not.toContain(hostile);
+  });
 });
 
 describe("buildPurgeResultScreen (V1-44)", () => {
@@ -192,7 +206,7 @@ describe("buildPurgeResultScreen (V1-44)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>🗑 PURGE USER</b> · 🧪 Devnet",
+        "<b>🗑 PURGE USER</b>",
         "",
         "✅ User data deleted. Payment records kept for accounting, detached from the account.",
         "",

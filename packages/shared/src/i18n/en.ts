@@ -248,7 +248,6 @@ export const en = {
     // Import (§9.4). The two formats, their inputs, and what a failed attempt says.
     import: {
       title: `${E.import} IMPORT WALLET`,
-      warning: `${E.warning} Never import a wallet that holds real funds. The same key also works on mainnet.`,
       description: "Choose the format of the key you want to import.",
       // proposed text (D19): the counter of the plan, on the screen that adds a wallet
       counter: (count: number, limit: number) => `${E.wallets} Wallets: ${count}/${limit}`,
@@ -353,8 +352,6 @@ export const en = {
         amount: (amount: string) => `${E.balance} Amount: ${amount}`,
         amountMax: (amount: string) => `${E.balance} Amount: ${amount} (Max)`,
         fees: (fee: string) => `${E.fees} Fees: ≈ ${fee}`,
-        /** `name` is `ui.config.networkName`: `Solana Devnet`. */
-        network: (name: string) => `${E.devnet} Network: Solana ${name}`,
         inProgress: warn("A withdrawal is already in progress."),
         tooMany: warn("Too many withdrawals. Try again in a few minutes."),
         previousMayLand: `${E.warning} A previous attempt may still go through. Check the explorer first.`,
@@ -388,6 +385,8 @@ export const en = {
     image: (value: string) => `${E.image} Image: ${value}`,
     website: (value: string) => `${E.website} Website: ${value}`,
     x: (value: string) => `${E.x} X: ${value}`,
+    /** The short form of an x.com/i/communities link, in place of an @handle. */
+    xCommunity: "X community",
     telegram: (value: string) => `${E.telegram} Telegram: ${value}`,
     imageAdded: `${E.confirm} Added`,
     /**
@@ -823,7 +822,8 @@ export const en = {
       BLOCKHASH_EXPIRED: "The network didn't confirm the transaction in time.",
       CONFIRMATION_UNKNOWN:
         "The transaction was sent but is not confirmed yet. Check the explorer before trying again.",
-      RPC_UNAVAILABLE: "Solana devnet is not responding. Try again in a moment.",
+      // No network name (D8): the cluster comes from the configuration, never from a text.
+      RPC_UNAVAILABLE: "Solana is not responding. Try again in a moment.",
     } satisfies Record<TxFailureCode, string | ((amount: string) => string)>,
     /** Added to a failure whose `landed` is `no`, and only then: nothing left the wallet. */
     nothingSent: "Nothing was sent.",

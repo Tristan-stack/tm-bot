@@ -63,9 +63,7 @@ describe("buildImportScreen", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>📥 IMPORT WALLET</b> · 🧪 Devnet",
-        "",
-        "⚠️ Never import a wallet that holds real funds. The same key also works on mainnet.",
+        "<b>📥 IMPORT WALLET</b>",
         "",
         "Choose the format of the key you want to import.",
         "",
@@ -105,7 +103,7 @@ describe("buildImportInputScreen", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>🔑 IMPORT PRIVATE KEY</b> · 🧪 Devnet",
+        "<b>🔑 IMPORT PRIVATE KEY</b>",
         "",
         "Send your private key in one message. It is deleted from the chat right after reading.",
         "",
@@ -122,7 +120,7 @@ describe("buildImportInputScreen", () => {
       flags: [en.wallets.import.invalid.SEED],
     }).text;
 
-    expect(text).toContain("<b>🌱 IMPORT SEED PHRASE</b> · 🧪 Devnet");
+    expect(text).toContain("<b>🌱 IMPORT SEED PHRASE</b>");
     expect(text).toContain(
       "Format: 12 or 24 words separated by spaces. The first account (m/44'/501'/0'/0') is imported: same address as Phantom or Solflare. Your seed phrase is stored encrypted. Only support can recover it for you.",
     );
@@ -143,8 +141,8 @@ describe("import handlers", () => {
     await feed(bot, callbackUpdate(WALLET_CB.import));
 
     const text = api.text("editMessageText");
-    expect(text).toContain("<b>📥 IMPORT WALLET</b> · 🧪 Devnet");
-    expect(text).toContain("⚠️ Never import a wallet that holds real funds.");
+    expect(text).toContain("<b>📥 IMPORT WALLET</b>");
+    expect(text).toContain("Choose the format of the key you want to import.");
     expect(text).toContain(QUOTA);
   });
 

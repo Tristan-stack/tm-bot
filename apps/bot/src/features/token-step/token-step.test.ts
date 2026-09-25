@@ -59,11 +59,7 @@ const view = (overrides: Partial<TokenStepView> = {}): TokenStepView => ({
   ...overrides,
 });
 
-const HEADER_SIM = [
-  "<b>📊 SIMULATION · STEP 1/3</b> · 🧪 Devnet",
-  "▰▱▱",
-  "Token › Bundle › Recap",
-].join("\n");
+const HEADER_SIM = ["<b>📊 SIMULATION · STEP 1/3</b>", "▰▱▱", "Token › Bundle › Recap"].join("\n");
 
 const BLOCK_OTTER = [
   "<b>🪙 TOKEN</b>",
@@ -110,7 +106,7 @@ describe("renderTokenStep", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>🚀 LAUNCH · STEP 3/4</b> · 🧪 Devnet\n▰▰▰▱\nWallet › Bundle › Token › Recap",
+        "<b>🚀 LAUNCH · STEP 3/4</b>\n▰▰▰▱\nWallet › Bundle › Token › Recap",
         en.token.description,
         summaryLines.join("\n"),
         BLOCK_OTTER,

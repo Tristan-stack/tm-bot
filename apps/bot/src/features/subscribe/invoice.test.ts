@@ -35,7 +35,7 @@ const CHECKED_AT = new Date("2026-09-24T14:32:00Z");
 // Every click counts against the global limit of the user (V1-04).
 beforeEach(resetRateLimits);
 
-const HEADER = "<b>⭐ PREMIUM · 2 DAYS</b> · 🧪 Devnet";
+const HEADER = "<b>⭐ PREMIUM · 2 DAYS</b>";
 const SEND = `Send exactly 0.5709 SOL ($59.00) to:\n<code>${TEST_DEPOSIT}</code>`;
 const PARTIAL = testInvoice({ receivedLamports: 300_000_000n, remainingLamports: 270_820_434n });
 
@@ -70,7 +70,7 @@ describe("invoice screens (§8.3)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>⭐ CLASSIC · 1 MONTH</b> · 🧪 Devnet",
+        "<b>⭐ CLASSIC · 1 MONTH</b>",
         `Send exactly ${invoiceSol(expected)} ($169.00) to:\n<code>${TEST_DEPOSIT}</code>`,
         "⏳ Waiting for payment · expires in 4:05",
       ].join("\n\n"),
@@ -156,7 +156,7 @@ describe("invoice screens (§8.3)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>⭐ SUBSCRIBE</b> · 🧪 Devnet",
+        "<b>⭐ SUBSCRIBE</b>",
         "✅ Payment received. Premium is active until 26 Sep 2026, 12:05 UTC.",
       ].join("\n\n"),
     );

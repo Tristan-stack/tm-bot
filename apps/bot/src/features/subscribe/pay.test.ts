@@ -59,7 +59,7 @@ const choices = (overrides: Partial<PayChoices> = {}): PayChoices => ({
   ...overrides,
 });
 
-const HEADER = "<b>👛 PAY FROM WALLET</b> · 🧪 Devnet";
+const HEADER = "<b>👛 PAY FROM WALLET</b>";
 const INVOICE_LINE = "⭐ Premium · 2 days · 0.5709 SOL ($59.00)";
 
 describe("Pay from my wallet screens (§8.3)", () => {
@@ -145,7 +145,7 @@ describe("Pay from my wallet screens (§8.3)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>👛 CONFIRM PAYMENT</b> · 🧪 Devnet",
+        "<b>👛 CONFIRM PAYMENT</b>",
         "Check the payment, then tap Confirm. The SOL is sent right away.",
         [
           "⭐ For: Premium · 2 days",
@@ -153,7 +153,6 @@ describe("Pay from my wallet screens (§8.3)", () => {
           "💰 Amount: 0.5709 SOL ($59.00)",
           `To: <code>${TEST_DEPOSIT}</code>`,
           "⛽ Fees: ≈ 0.000015 SOL",
-          "🧪 Network: Solana Devnet",
         ].join("\n"),
       ].join("\n\n"),
     );
@@ -188,7 +187,7 @@ describe("Pay from my wallet screens (§8.3)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>👛 SENDING PAYMENT</b> · 🧪 Devnet",
+        "<b>👛 SENDING PAYMENT</b>",
         "Sending 0.5709 SOL from Main. This can take a few seconds.",
       ].join("\n\n"),
     );
@@ -205,7 +204,7 @@ describe("Pay from my wallet screens (§8.3)", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>❌ PAYMENT FAILED</b> · 🧪 Devnet",
+        "<b>❌ PAYMENT FAILED</b>",
         "The payment could not be sent. Your invoice is still open.",
         [
           "Reason: The network rejected the transaction.",

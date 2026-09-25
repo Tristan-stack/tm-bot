@@ -20,7 +20,6 @@ import {
   webAppBtn,
 } from "./index.js";
 
-const badge = "🧪 Devnet";
 const keyboard = [navRow(NAV_HOME)];
 
 describe("tree", () => {
@@ -56,15 +55,9 @@ describe("html", () => {
 });
 
 describe("screenHeader", () => {
-  it("writes the title in bold, then the badge", () => {
-    expect(screenHeader("🚀 LAUNCH BOT", undefined, badge)).toBe(
-      "<b>🚀 LAUNCH BOT</b> · 🧪 Devnet",
-    );
-    expect(screenHeader("👛 WALLETS", "2/5", badge)).toBe("<b>👛 WALLETS · 2/5</b> · 🧪 Devnet");
-  });
-
-  it("drops the badge on a cluster without one", () => {
-    expect(screenHeader("🚀 LAUNCH BOT", undefined, null)).toBe("<b>🚀 LAUNCH BOT</b>");
+  it("writes the title in bold, with its counter, and never the network (D24)", () => {
+    expect(screenHeader("🚀 LAUNCH BOT", undefined)).toBe("<b>🚀 LAUNCH BOT</b>");
+    expect(screenHeader("👛 WALLETS", "2/5")).toBe("<b>👛 WALLETS · 2/5</b>");
   });
 });
 
@@ -74,8 +67,8 @@ describe("flowHeader", () => {
     [2, "▰▰▱"],
     [3, "▰▰▰"],
   ])("renders SIMULATION step %d/3", (step, bar) => {
-    expect(flowHeader("SIMULATION", step, badge)).toBe(
-      `<b>📊 SIMULATION · STEP ${step}/3</b> · 🧪 Devnet\n${bar}\nToken › Bundle › Recap`,
+    expect(flowHeader("SIMULATION", step)).toBe(
+      `<b>📊 SIMULATION · STEP ${step}/3</b>\n${bar}\nToken › Bundle › Recap`,
     );
   });
 
@@ -84,25 +77,24 @@ describe("flowHeader", () => {
     [2, "▰▰▱▱"],
     [4, "▰▰▰▰"],
   ])("renders LAUNCH step %d/4", (step, bar) => {
-    expect(flowHeader("LAUNCH", step, badge)).toBe(
-      `<b>🚀 LAUNCH · STEP ${step}/4</b> · 🧪 Devnet\n${bar}\nWallet › Bundle › Token › Recap`,
+    expect(flowHeader("LAUNCH", step)).toBe(
+      `<b>🚀 LAUNCH · STEP ${step}/4</b>\n${bar}\nWallet › Bundle › Token › Recap`,
     );
   });
 
   it.each([0, 4, -1, 1.5, Number.NaN])("rejects step %d of SIMULATION", (step) => {
-    expect(() => flowHeader("SIMULATION", step, badge)).toThrow(RangeError);
+    expect(() => flowHeader("SIMULATION", step)).toThrow(RangeError);
   });
 });
 
 describe("createUi", () => {
-  it("binds the headers and explorer links to the cluster", () => {
+  it("binds the explorer links to the cluster, the headers name no network", () => {
     const ui = createUi("devnet");
 
-    expect(ui.screenHeader("👛 WALLETS", "2/5")).toBe("<b>👛 WALLETS · 2/5</b> · 🧪 Devnet");
-    expect(ui.screenHeader("🚀 LAUNCH BOT")).toBe("<b>🚀 LAUNCH BOT</b> · 🧪 Devnet");
-    expect(ui.flowHeader({ flow: "LAUNCH", step: 2 })).toContain("STEP 2/4</b> · 🧪 Devnet");
+    expect(ui.screenHeader("👛 WALLETS", "2/5")).toBe("<b>👛 WALLETS · 2/5</b>");
+    expect(ui.screenHeader("🚀 LAUNCH BOT")).toBe("<b>🚀 LAUNCH BOT</b>");
+    expect(ui.flowHeader({ flow: "LAUNCH", step: 2 })).toContain("STEP 2/4</b>");
     expect(ui.explorerTxUrl("SIG")).toBe("https://explorer.solana.com/tx/SIG?cluster=devnet");
-    expect(ui.config.networkName).toBe("Devnet");
   });
 
   it("refuses a cluster V1 does not define", () => {
@@ -111,7 +103,7 @@ describe("createUi", () => {
 });
 
 describe("renderScreen", () => {
-  const header = screenHeader("👛 WALLETS", undefined, badge);
+  const header = screenHeader("👛 WALLETS", undefined);
 
   it("orders the blocks, separated by an empty line", () => {
     const screen = renderScreen({
@@ -125,7 +117,7 @@ describe("renderScreen", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>👛 WALLETS</b> · 🧪 Devnet",
+        "<b>👛 WALLETS</b>",
         "Manage your wallets.",
         "┌ Main · 2.500 SOL\n└ Sniper · 1.750 SOL",
         "⚠️ Sniper: Insufficient funds (0.650 SOL missing)",
@@ -154,12 +146,12 @@ describe("renderScreen", () => {
       keyboard,
     });
 
-    expect(screen.text).toBe("<b>👛 WALLETS</b> · 🧪 Devnet\n\nState");
+    expect(screen.text).toBe("<b>👛 WALLETS</b>\n\nState");
   });
 
   it("puts the summary before the description on request (Bundle, §6)", () => {
     const screen = renderScreen({
-      header: flowHeader("SIMULATION", 2, badge),
+      header: flowHeader("SIMULATION", 2),
       description: "How much SOL should the bundle buy?",
       info: [`🪙 ${escapeHtml("Moon Otter")} · $OTTR`, "📦 Bundle: not selected yet"],
       flags: ["⚠️ Flag"],
@@ -169,7 +161,7 @@ describe("renderScreen", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>📊 SIMULATION · STEP 2/3</b> · 🧪 Devnet\n▰▰▱\nToken › Bundle › Recap",
+        "<b>📊 SIMULATION · STEP 2/3</b>\n▰▰▱\nToken › Bundle › Recap",
         "🪙 Moon Otter · $OTTR\n📦 Bundle: not selected yet",
         "How much SOL should the bundle buy?",
         "⚠️ Flag",

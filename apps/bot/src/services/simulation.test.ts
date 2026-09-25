@@ -1,4 +1,7 @@
 import {
+  BUNDLE_MAX_SOL,
+  BUNDLE_PRESETS_SOL,
+  DEV_BUY_SOL,
   HOUR_MS,
   RATE_LIMITS,
   SIM_DURATION_SEC,
@@ -47,6 +50,33 @@ describe("buildSimConfig", () => {
     expect(simConfigSchema.parse(stored)).toEqual(config);
     expect(() => createSimulation(simConfigSchema.parse(stored)).step(1)).not.toThrow();
   });
+});
+
+describe("acceptance (§15, D22): no sale of the dev, the price ends above the opening buys", () => {
+  // The model of 25/09/2026: 1 SOL of dev buy then the bundle, the preset of the bundle, the
+  // config the bot really builds. Presets 3, 5 and 10, and the top of Custom (20 SOL).
+  it.each([...BUNDLE_PRESETS_SOL, BUNDLE_MAX_SOL])(
+    "ends above the price after 1 SOL + a %s SOL bundle for seeds 1 to 1 000",
+    (bundleSol) => {
+      let above = 0;
+      for (let seed = 1; seed <= 1_000; seed += 1) {
+        const sim = createSimulation(
+          buildSimConfig({
+            seed,
+            devBuySol: DEV_BUY_SOL,
+            bundleSol,
+            curve: FALLBACK_CURVE_PARAMS,
+            solUsdPrice: 150,
+          }),
+        );
+        const [devBuy, bundle] = sim.openingBuys();
+        expect([devBuy.sol, bundle?.sol]).toEqual([DEV_BUY_SOL, bundleSol]);
+        sim.step(SIM_DURATION_SEC);
+        if (sim.state().price > (bundle?.price ?? Infinity)) above += 1;
+      }
+      expect(above).toBe(1_000);
+    },
+  );
 });
 
 describe("drawSeed", () => {

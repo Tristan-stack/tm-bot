@@ -129,7 +129,6 @@ export function buildPayConfirmScreen(
       withdraw.confirm.amount(invoiceAmount(invoice, invoice.remainingLamports)),
       texts.confirm.to(code(invoice.depositAddress)),
       withdraw.confirm.fees(feeText(quote.feeLamports)),
-      withdraw.confirm.network(ui.config.networkName),
     ],
     flags: options.flags,
     keyboard: [

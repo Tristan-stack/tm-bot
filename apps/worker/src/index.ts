@@ -200,7 +200,7 @@ export function createWorkerService(): Service {
 
 /**
  * A transfer under the rent-exempt minimum to an account that does not exist fails (§9.5):
- * the treasury must be funded once at the faucet. A warning, not a refusal.
+ * the treasury must be funded once. A warning, not a refusal.
  */
 async function warnIfTreasuryEmpty(
   readLamports: (addresses: readonly string[]) => Promise<Map<string, bigint>>,
@@ -209,7 +209,7 @@ async function warnIfTreasuryEmpty(
   try {
     const lamports = (await readLamports([treasury])).get(treasury) ?? 0n;
     if (lamports === 0n) {
-      log.warn("TREASURY_WALLET has no account on devnet: fund it once at the faucet");
+      log.warn("TREASURY_WALLET has no account yet: send it SOL once");
     }
   } catch (error) {
     log.warn({ err: error }, "TREASURY_WALLET could not be read");

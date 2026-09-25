@@ -11,7 +11,6 @@ export const E = {
   wallets: "👛",
   support: "🆘",
   refresh: "🔄",
-  devnet: "🧪",
 
   // Navigation
   back: "⬅️",

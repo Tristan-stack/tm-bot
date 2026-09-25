@@ -40,7 +40,7 @@ Hors périmètre :
 | Canal | Rôle |
 |---|---|
 | Canal du bot | Canal principal du projet, à rejoindre pour accéder au bot (voir 4.2). Il publie aussi les annonces, les promotions et des avis d'utilisateurs. Les avis viennent de vrais utilisateurs, publiés avec leur accord et sans modification. |
-| Succès | Post automatique de chaque launch confirmé, en V2 (format en 10.4). Chaque post indique le réseau (devnet). Une simulation n'y est jamais présentée comme un vrai launch. |
+| Succès | Post automatique de chaque launch confirmé, en V2 (format en 10.4). Une simulation n'y est jamais présentée comme un vrai launch. |
 | Annonces | Annonces officielles : nouveautés, maintenance, changements d'offres. Publication avec `/announce` (voir 11.4), qui peut aussi relayer le message dans le canal du bot. |
 
 Le bot doit être administrateur des trois canaux. C'est nécessaire pour y publier et pour vérifier qu'un utilisateur est membre (`getChatMember`). Les identifiants et les liens publics des canaux sont dans les variables d'environnement.
@@ -60,7 +60,7 @@ Avant de voir le menu, un nouvel utilisateur rejoint le canal du bot : c'est le 
 Écran canal :
 
 ```
-📢 ONE LAST STEP · 🧪 Devnet
+📢 ONE LAST STEP
 
 Join our channel to follow updates and new features.
 
@@ -77,7 +77,7 @@ L'adhésion est re-vérifiée à chaque `/start` avec un cache de 10 minutes, et
 Exemple pour un utilisateur avec deux wallets et sans abonnement :
 
 ```
-🚀 LAUNCH BOT · 🧪 Devnet
+🚀 LAUNCH BOT
 
 👤 ACCOUNT
 ┌ @username
@@ -150,7 +150,7 @@ Aucun écran ne montre seulement des boutons, quel que soit le menu, la section 
 
 | Bloc | Contenu |
 |---|---|
-| En-tête | Nom de l'écran ou du parcours, badge `🧪 Devnet` pendant le developpement en devnet et enlevé une fois en main net. Dans un parcours : compteur d'étape et barre de progression (voir 5). |
+| En-tête | Nom de l'écran ou du parcours. Dans un parcours : compteur d'étape et barre de progression (voir 5). |
 | Description | Une ou deux phrases : à quoi sert l'écran et ce que l'utilisateur doit faire |
 | Infos | L'état utile pour décider : soldes, choix déjà faits, offre active, montants, frais |
 | Flags | Tout blocage ou avertissement, écrit en clair (`⚠️ Insufficient funds`, `⚠️ Missing image`, `🔒 Premium only`), avec le nom de l'objet concerné (wallet, champ, offre) et ce qui manque |
@@ -177,7 +177,7 @@ Une alerte Telegram (notification au clic) ne remplace jamais une info à l'écr
 Cet écran sert à Simulate a Launch et à Launch Coin. Le bouton « 🎲 Generate » propose un nouveau token complet à chaque clic. L'utilisateur ajoute ensuite l'image et les liens, puis valide avec « ➡️ Continue ».
 
 ```
-📊 SIMULATION · STEP 1/3 · 🧪 Devnet
+📊 SIMULATION · STEP 1/3
 ▰▱▱
 Token › Bundle › Recap
 
@@ -239,7 +239,7 @@ La simulation est accessible sans abonnement. Elle se joue **entièrement dans l
 Écran Bundle :
 
 ```
-📊 SIMULATION · STEP 2/3 · 🧪 Devnet
+📊 SIMULATION · STEP 2/3
 ▰▰▱
 Token › Bundle › Recap
 
@@ -257,7 +257,7 @@ The dev buys 1 SOL at launch, then the bundle buys in the next block. How much S
 Écran Récap :
 
 ```
-📊 SIMULATION · STEP 3/3 · 🧪 Devnet
+📊 SIMULATION · STEP 3/3
 ▰▰▰
 Token › Bundle › Recap
 
@@ -296,7 +296,7 @@ Le rendu est une image PNG produite côté serveur (bougies et histogramme de vo
 │  ▂▃ ▅▂▃▂▅▃        volume                   │
 │  0:00   0:30   1:00   1:30                 │
 └──────────────────────────────────────────┘
-📊 SIMULATION · 🧪 Devnet
+📊 SIMULATION
 ⚠️ DEMO — Bullish scenario. Not a prediction or a real result.
 
 🪙 Moon Otter · $OTTR
@@ -355,7 +355,7 @@ La simulation s'arrête dans trois cas : 3 minutes simulées écoulées, 100 % d
 │ Position     ≡ 5.708                 │
 │ SIMULATION · Not a real result       │
 ╰──────────────────────────────────────╯
-📊 SIMULATION ENDED · 🧪 Devnet
+📊 SIMULATION ENDED
 ⚠️ DEMO — Bullish scenario. Not a prediction or a real result.
 
 🪙 $OTTR | +42.7%
@@ -571,7 +571,7 @@ Quand l'abonnement expire ou passe à une offre inférieure, les wallets en trop
 ### 8.2 Écran des offres
 
 ```
-⭐ SUBSCRIBE · 🧪 Devnet
+⭐ SUBSCRIBE
 
 📋 Current plan: None
 
@@ -600,7 +600,7 @@ Avec un abonnement actif, « Current plan » affiche l'offre et le temps restant
 Chaque achat crée une facture (`Payment`) avec un wallet de dépôt neuf, généré par le bot et dédié à cette facture.
 
 ```
-⭐ PREMIUM · 2 DAYS · 🧪 Devnet
+⭐ PREMIUM · 2 DAYS
 
 Send exactly 0.5708 SOL ($59.00) to:
 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM
@@ -659,7 +659,7 @@ Les wallets sont de vrais wallets Solana gérés par le bot. Il n'y a pas de wal
 ### 9.1 Liste
 
 ```
-👛 WALLETS · 2/5 · 🧪 Devnet
+👛 WALLETS · 2/5
 
 Your wallets on the bot. Tap one to see its address, withdraw or rename it.
 
@@ -681,7 +681,7 @@ Sans wallet, l'écran affiche « No wallet yet. Create or import one to get star
 ### 9.2 Détail d'un wallet
 
 ```
-👛 Main · 🧪 Devnet
+👛 Main
 
 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
 
@@ -711,7 +711,7 @@ L'adresse complète est en `<code>`, copiable d'un tap. « Explorer » ouvre l'a
 Confirmation de suppression :
 
 ```
-🗑 DELETE WALLET · 🧪 Devnet
+🗑 DELETE WALLET
 
 Delete wallet "Main" (7xKX…gAsU)?
 Its encrypted key will be erased. This cannot be undone.
@@ -722,7 +722,7 @@ Its encrypted key will be erased. This cannot be undone.
 Si le solde dépasse les frais d'une transaction, la suppression est bloquée :
 
 ```
-🗑 DELETE WALLET · 🧪 Devnet
+🗑 DELETE WALLET
 
 ⚠️ Main still holds 2.500 SOL ($258.40). Withdraw it before deleting: a deleted wallet can't be recovered.
 
@@ -735,9 +735,7 @@ Si le solde dépasse les frais d'une transaction, la suppression est bloquée :
 ### 9.4 Import
 
 ```
-📥 IMPORT WALLET · 🧪 Devnet
-
-⚠️ Never import a wallet that holds real funds. The same key also works on mainnet.
+📥 IMPORT WALLET
 
 Choose the format of the key you want to import.
 
@@ -769,7 +767,7 @@ Librairies proposées : `@scure/bip39` pour la seed phrase, et une dérivation S
 | 1 | Adresse | « Send the destination address. » avec « ❌ Cancel ». Clé publique Solana valide, différente du wallet source. |
 | 1 bis | Avertissement | Seulement si l'adresse n'est pas sur la courbe ed25519 (souvent un compte de programme) : « ⚠️ Continue anyway » et « ❌ Cancel ». |
 | 2 | Montant | Solde disponible affiché. Clavier : `[ 25% ][ 50% ][ Max ]`, puis `[ ✏️ Custom ]`, puis `[ ❌ Cancel ]`. Max = solde − frais. Custom demande un montant en SOL, avec « ❌ Cancel ». |
-| 3 | Confirmation | Wallet source, adresse complète de destination, montant, frais estimés, réseau. « ✅ Confirm » et « ❌ Cancel ». |
+| 3 | Confirmation | Wallet source, adresse complète de destination, montant, frais estimés. « ✅ Confirm » et « ❌ Cancel ». |
 | 4 | Résultat | Succès : montant envoyé, signature en lien vers l'explorer, « ⬅️ Back to wallet » et « 🏠 Menu ». Échec : raison, « 🔁 Try again » (retour à la confirmation) et « ⬅️ Back to wallet ». |
 
 « ❌ Cancel » ramène toujours au détail du wallet.
@@ -802,7 +800,7 @@ Avant tout, le bot vérifie l'adhésion au canal, sans cache (voir 4.2). Sans ab
 Étape 1, Wallet :
 
 ```
-🚀 LAUNCH · STEP 1/4 · 🧪 Devnet
+🚀 LAUNCH · STEP 1/4
 ▰▱▱▱
 Wallet › Bundle › Token › Recap
 
@@ -822,7 +820,7 @@ Un wallet aux fonds insuffisants reste cliquable : le clic met à jour l'écran 
 Étape 2, Bundle, après un clic sur un bundle trop élevé :
 
 ```
-🚀 LAUNCH · STEP 2/4 · 🧪 Devnet
+🚀 LAUNCH · STEP 2/4
 ▰▰▱▱
 Wallet › Bundle › Token › Recap
 
@@ -851,7 +849,7 @@ Les lignes d'état par montant sont toujours affichées. La note « INSUFFICIENT
 Étape 4, Récap :
 
 ```
-🚀 LAUNCH · STEP 4/4 · 🧪 Devnet
+🚀 LAUNCH · STEP 4/4
 ▰▰▰▰
 Wallet › Bundle › Token › Recap
 
@@ -891,7 +889,7 @@ En V1, « Create token » ne crée rien : l'écran indique déjà « 🚧 Token 
 | 6 | Post automatique dans le canal Succès (section 10.4) |
 
 ```
-✅ TOKEN LAUNCHED · 🧪 Devnet
+✅ TOKEN LAUNCHED
 
 MOON OTTER · $OTTR
 Mint: OTTRk3…9fQ2
@@ -912,7 +910,7 @@ Le programme pump.fun a la même adresse sur mainnet et sur devnet (`6EF8rrecthR
 En V2, l'écran Launch Coin propose deux boutons : « 🚀 New launch » et « 🪙 My launches ». Son texte explique les deux choix et affiche le nombre de launchs de l'utilisateur. My launches liste les tokens créés par l'utilisateur, du plus récent au plus ancien, avec la part encore détenue. Chaque token ouvre son détail. My launches reste accessible sans abonnement actif, pour que l'utilisateur puisse toujours vendre ses tokens : seul « 🚀 New launch » exige un abonnement.
 
 ```
-🪙 MOON OTTER · $OTTR · 🧪 Devnet
+🪙 MOON OTTER · $OTTR
 
 Status: Bonding curve 34%
 Market cap: 42.10 SOL ($4,351.46)
@@ -940,7 +938,7 @@ Value if sold now: ≈ 3.95 SOL ($408.27)
 Chaque launch confirmé est publié automatiquement dans le canal Succès, avec le logo en image (ou l'image par défaut du bot) :
 
 ```
-🚀 NEW LAUNCH · 🧪 Devnet
+🚀 NEW LAUNCH
 
 MOON OTTER · $OTTR
 
@@ -961,7 +959,7 @@ Le post n'affiche pas le nom Telegram du créateur. Il ne contient ni chiffres d
 ### 11.1 Support
 
 ```
-🆘 SUPPORT · 🧪 Devnet
+🆘 SUPPORT
 
 Need help? Contact our support team.
 Tell us what happened, on which screen, and add a screenshot if you can.

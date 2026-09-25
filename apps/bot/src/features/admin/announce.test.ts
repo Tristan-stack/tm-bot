@@ -25,7 +25,7 @@ const CHAT_ID = 777;
 const BOLD: MessageEntity[] = [{ type: "bold", offset: 0, length: 3 }];
 
 const INPUT_SCREEN = [
-  "<b>📣 ANNOUNCE</b> · 🧪 Devnet",
+  "<b>📣 ANNOUNCE</b>",
   "",
   "Send the announcement (text or photo with caption).",
   "",
@@ -36,7 +36,7 @@ const INPUT_SCREEN = [
 
 const previewScreen = (type: string, channels: [string, string]) =>
   [
-    "<b>📣 ANNOUNCE · PREVIEW</b> · 🧪 Devnet",
+    "<b>📣 ANNOUNCE · PREVIEW</b>",
     "",
     "Check the preview above, choose the channels, then tap Publish.",
     "",
@@ -46,7 +46,7 @@ const previewScreen = (type: string, channels: [string, string]) =>
   ].join("\n");
 
 const PUBLISHED = [
-  "<b>📣 ANNOUNCE</b> · 🧪 Devnet",
+  "<b>📣 ANNOUNCE</b>",
   "",
   "✅ Published.",
   "",
@@ -120,7 +120,7 @@ describe("/announce: the input (V1-38)", () => {
 
     expect(h.api.text("sendMessage")).toBe(
       [
-        "<b>📣 ANNOUNCE</b> · 🧪 Devnet",
+        "<b>📣 ANNOUNCE</b>",
         "",
         "❌ Invalid command.",
         "Usage: /announce",
@@ -312,7 +312,7 @@ describe("/announce: the preview (V1-38)", () => {
     });
     expect(h.api.screen()).toBe(
       [
-        "<b>📣 ANNOUNCE</b> · 🧪 Devnet",
+        "<b>📣 ANNOUNCE</b>",
         "",
         "Send the announcement (text or photo with caption).",
         "",
@@ -339,7 +339,7 @@ describe("/announce: the preview (V1-38)", () => {
     await feed(h.bot, callbackUpdate(`adm:ann:cancel:${draftId(h)}`));
 
     expect(h.api.screen()).toBe(
-      ["<b>📣 ANNOUNCE</b> · 🧪 Devnet", "", "❌ Canceled. Nothing was published."].join("\n"),
+      ["<b>📣 ANNOUNCE</b>", "", "❌ Canceled. Nothing was published."].join("\n"),
     );
     expect(buttonTexts({ inline_keyboard: h.api.keyboard("editMessageText", -1) })).toEqual([
       ["🏠 Menu"],
@@ -444,7 +444,7 @@ describe("/announce: the posts (V1-38)", () => {
 
     expect(h.api.screen()).toBe(
       [
-        "<b>📣 ANNOUNCE</b> · 🧪 Devnet",
+        "<b>📣 ANNOUNCE</b>",
         "",
         "⚠️ Published in 1 of 2 channels.",
         "",
@@ -479,7 +479,7 @@ describe("/announce: the posts (V1-38)", () => {
 
     expect(h.api.screen()).toBe(
       [
-        "<b>📣 ANNOUNCE</b> · 🧪 Devnet",
+        "<b>📣 ANNOUNCE</b>",
         "",
         "❌ Nothing was published.",
         "",
@@ -533,7 +533,7 @@ describe("/announce: the posts (V1-38)", () => {
     expect(h.api.lastAlert()).toMatchObject({ text: "This preview is no longer active." });
     expect(h.api.screen()).toBe(
       [
-        "<b>📣 ANNOUNCE</b> · 🧪 Devnet",
+        "<b>📣 ANNOUNCE</b>",
         "",
         "⚠️ Published in 1 of 2 channels.",
         "",

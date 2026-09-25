@@ -33,7 +33,7 @@ describe("buildLiveCaption", () => {
   it("renders the mock-up of §6.1", () => {
     expect(buildLiveCaption(ui, view())).toBe(
       [
-        "<b>📊 SIMULATION</b> · 🧪 Devnet",
+        "<b>📊 SIMULATION</b>",
         "⚠️ DEMO — Bullish scenario. Not a prediction or a real result.",
         "",
         "🪙 Moon Otter · $OTTR",
@@ -102,7 +102,7 @@ describe("helpers", () => {
   it("renders the caption of the card, with the dollars when there is a price", () => {
     expect(buildEndedCaption(ui, pnlCard())).toBe(
       [
-        "<b>📊 SIMULATION ENDED</b> · 🧪 Devnet",
+        "<b>📊 SIMULATION ENDED</b>",
         "⚠️ DEMO — Bullish scenario. Not a prediction or a real result.",
         "",
         "🪙 <b>$OTTR</b> | +42.7%",

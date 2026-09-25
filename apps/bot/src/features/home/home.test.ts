@@ -61,7 +61,7 @@ describe("buildHomeScreen", () => {
   it("renders the mockup of §4.3", () => {
     expect(textOf(home())).toBe(
       [
-        "<b>🚀 LAUNCH BOT</b> · 🧪 Devnet",
+        "<b>🚀 LAUNCH BOT</b>",
         "",
         "<b>👤 ACCOUNT</b>",
         "┌ @username",
@@ -277,7 +277,7 @@ describe("home handlers", () => {
 
     expect(api.of("sendMessage")).toEqual([]);
     expect(api.of("editMessageText")[0]?.payload).toMatchObject({ message_id: 55 });
-    expect(api.text("editMessageText")).toContain("<b>🚀 LAUNCH BOT</b> · 🧪 Devnet");
+    expect(api.text("editMessageText")).toContain("<b>🚀 LAUNCH BOT</b>");
     // Only a Refresh may skip the balance cache.
     expect(getUserBalances).toHaveBeenCalledExactlyOnceWith(TEST_USER.id, { skipCache: false });
     expect(api.of("answerCallbackQuery")[0]?.payload["text"]).toBeUndefined();
@@ -315,6 +315,36 @@ describe("home handlers", () => {
       { skipCache: false },
     ]);
     expect(api.text("editMessageText", 1)).not.toContain("Too many");
+  });
+
+  it("reads fresh balances again for a Refresh 10 s after the previous one (§15)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { bot, getUserBalances } = harness();
+      vi.setSystemTime(NOW);
+
+      await feed(bot, callbackUpdate(MENU.refresh));
+      vi.setSystemTime(NOW.getTime() + 9_999);
+      await feed(bot, callbackUpdate(MENU.refresh));
+      vi.setSystemTime(NOW.getTime() + 10_000);
+      await feed(bot, callbackUpdate(MENU.refresh));
+
+      expect(getUserBalances.mock.calls.map(([, options]) => options)).toEqual([
+        { skipCache: true },
+        { skipCache: false },
+        { skipCache: true },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the number of active subscribers the database counts (§15)", async () => {
+    const { bot, api } = harness({ countActiveSubscribers: () => Promise.resolve(42) });
+
+    await feed(bot, textUpdate("/start"));
+
+    expect(api.text("sendMessage")).toContain("⭐ 42 active subscribers");
   });
 
   it("answers Already up to date, as a toast, when nothing changed", async () => {

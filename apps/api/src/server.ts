@@ -60,6 +60,11 @@ export async function buildApiServer(deps: ApiDeps): Promise<FastifyInstance> {
   await app.register(
     async (api) => {
       api.addHook("preHandler", api.requireTelegramUser);
+      // An unknown path answers 401 before 404 (§15, V1-46): without a valid initData the API
+      // says nothing, not even which routes exist. None does since D21.
+      api.setNotFoundHandler({ preHandler: api.requireTelegramUser }, (_request, reply) =>
+        reply.code(404).send(errorBody(404)),
+      );
       await routes?.(api);
     },
     { prefix: "/api" },

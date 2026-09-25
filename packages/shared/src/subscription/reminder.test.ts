@@ -28,7 +28,7 @@ describe("buildReminderScreen", () => {
 
     expect(screen.text).toBe(
       [
-        "<b>⭐ SUBSCRIPTION ENDING</b> · 🧪 Devnet",
+        "<b>⭐ SUBSCRIPTION ENDING</b>",
         "Your Premium plan ends soon. Renew it to keep access to Launch Coin.",
         "⭐ Premium · 5h left\n🕒 Ends 17 Sep 2026, 14:32 UTC",
         "Buying the same plan again extends your current plan.",

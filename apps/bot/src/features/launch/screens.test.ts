@@ -15,9 +15,7 @@ import type { LaunchRecapView } from "./screens.js";
 
 const ui = createUi("devnet");
 const HEADER = (step: number, bar: string) =>
-  [`<b>🚀 LAUNCH · STEP ${step}/4</b> · 🧪 Devnet`, bar, "Wallet › Bundle › Token › Recap"].join(
-    "\n",
-  );
+  [`<b>🚀 LAUNCH · STEP ${step}/4</b>`, bar, "Wallet › Bundle › Token › Recap"].join("\n");
 
 /** The wallets of the mockups with the balances of the tickets: Main 4.200 SOL, Test 0.400 SOL. */
 const MAIN: WalletBalance = { ...MAIN_WALLET, lamports: sol(4.2) };

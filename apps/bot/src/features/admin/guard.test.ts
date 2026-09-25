@@ -123,7 +123,7 @@ describe("the common errors (V1-38)", () => {
   it("reminds the syntax with an example, the placeholders escaped", () => {
     expect(renderAdminUsageError(ui, "grant").text).toBe(
       [
-        "<b>⭐ GRANT</b> · 🧪 Devnet",
+        "<b>⭐ GRANT</b>",
         "",
         "❌ Invalid command.",
         "Usage: /grant &lt;id or support code&gt; &lt;classic|premium&gt; &lt;2d|1m&gt;",
@@ -136,9 +136,7 @@ describe("the common errors (V1-38)", () => {
     const screen = renderAdminUserNotFound(ui, "whois", "P-<42>");
 
     expect(screen.text).toBe(
-      ["<b>👤 WHOIS</b> · 🧪 Devnet", "", "❌ User not found.", "Searched: P-&lt;42&gt;"].join(
-        "\n",
-      ),
+      ["<b>👤 WHOIS</b>", "", "❌ User not found.", "Searched: P-&lt;42&gt;"].join("\n"),
     );
     expect(screen.reply_markup.inline_keyboard).toEqual([]);
   });

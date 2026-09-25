@@ -55,7 +55,7 @@ describe("Start simulation (V1-26)", () => {
       protect_content: true,
       parse_mode: "HTML",
     });
-    expect(h.caption(photo!)).toContain("<b>📊 SIMULATION</b> · 🧪 Devnet");
+    expect(h.caption(photo!)).toContain("<b>📊 SIMULATION</b>");
     expect(h.caption(photo!)).toContain(en.sim.demoBanner);
     expect(h.caption(photo!)).toContain("🪙 Moon Otter · $OTTR");
     expect(h.caption(photo!)).toContain("⏱ 0:00 / 3:00 · Speed x2");
@@ -164,6 +164,12 @@ describe("the buttons under the picture", () => {
     const card = h.edits().at(-1)!;
     expect(card).not.toBe(sold);
     expect(card.payload["media"]).toMatchObject({ type: "animation" });
+    // §15: the card is the protected photo edited in place, so protect_content stays with it;
+    // it never leaves as a message of its own.
+    expect(card.payload["message_id"]).toBe(100);
+    expect(h.photos()).toHaveLength(1);
+    expect(h.photos()[0]?.payload["protect_content"]).toBe(true);
+    expect(h.api.of("sendAnimation")).toEqual([]);
     expect(h.caption(card)).toContain("<b>📊 SIMULATION ENDED</b>");
     expect(h.caption(card)).toContain("💰 Profit:");
     expect(h.api.keyboard("editMessageMedia", -1)[0]?.map((button) => button.text)).toEqual([

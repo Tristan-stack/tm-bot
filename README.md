@@ -23,6 +23,8 @@ packages/
   solana/      wallets, soldes, retraits, chiffrement ; pump.fun et PumpSwap en V2
   db/          schéma Prisma, client et services métier partagés
   shared/      types, constantes, schémas zod, textes du bot ; env et logger côté serveur
+scripts/       contrôles du dépôt (V1-46) : textes hors en.ts, catalogue d'écrans
+docs/          recette V1 (V1-46)
 ```
 
 Dépendances internes autorisées. pnpm n'expose à un package que les dépendances de son
@@ -39,9 +41,9 @@ Dépendances internes autorisées. pnpm n'expose à un package que les dépendan
 | `bot`          | `shared`, `db`, `solana`, `sim-engine`, `api`                         |
 | `webapp`       | `shared` (entrée universelle, sans `en` ni `E`)                       |
 
-`@launchbot/shared` a deux entrées : `.` (navigateur + Node) et `./server` (Node uniquement :
-`loadEnv`, `parseEnv`, `createLogger`, `scrubSecrets`, `runEvery`…). La Mini App n'importe jamais `./server`,
-`db` ni `solana`.
+`@launchbot/shared` a trois entrées : `.` (navigateur + Node), `./server` (Node uniquement :
+`loadEnv`, `parseEnv`, `createLogger`, `scrubSecrets`, `runEvery`…) et `./test` (les règles d'écran du
+§4.5 pour les tests, V1-46). La Mini App n'importe jamais `./server`, `db` ni `solana`.
 
 L'entrée universelle fournit les briques de tous les écrans : textes `en` et emojis `E`
 (`src/i18n/`), gabarit `renderScreen` / `renderInputScreen`, boutons, `navRow` et découpage des
@@ -49,8 +51,9 @@ messages longs `splitHtmlMessage` (`src/ui/`), codec
 `encodeCallback` / `decodeCallback`, constantes métier, config de cluster, formateurs
 (`src/format/`, tout en UTC, SOL en lamports `bigint`) et schémas zod. ESLint y interdit tout import
 `node:*` ou `server`, et `sideEffects: false` laisse Vite retirer ce que la Mini App n'utilise pas.
-Chaque process lie le cluster une fois au démarrage : `const ui = createUi(env.SOLANA_CLUSTER)`, puis
-`ui.screenHeader(title, counter?)` et `ui.flowHeader({ flow, step })` portent le badge du cluster.
+Chaque process lie le cluster une fois au démarrage : `const ui = createUi(env.SOLANA_CLUSTER)` donne
+les liens explorer du cluster, et `ui.screenHeader(title, counter?)` et `ui.flowHeader({ flow, step })`
+les en-têtes. Aucun écran ne nomme le réseau (décision du 25/09/2026).
 
 Emplacement des services : logique Telegram dans `apps/bot`, accès Solana dans `packages/solana`,
 services métier Prisma partagés entre apps dans `packages/db/src/services/`, avec dépendances
@@ -95,12 +98,14 @@ machine. Pour en changer : `POSTGRES_PORT` dans `.env`, et adapter `DATABASE_URL
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`               | bot, worker et webapp en mode watch (`tsx watch`, `vite`)                                                                           |
 | `pnpm build`             | `tsc -b` sur tout le graphe, puis `vite build` pour la webapp                                                                       |
-| `pnpm typecheck`         | `tsc -b` sur les 8 projets (références de projets)                                                                                  |
+| `pnpm typecheck`         | `tsc -b` sur tout le graphe (références de projets, `scripts/` compris)                                                             |
 | `pnpm lint`              | ESLint (typescript-eslint avec types, `no-console`)                                                                                 |
 | `pnpm format`            | Prettier (`pnpm format:check` pour vérifier)                                                                                        |
 | `pnpm test`              | Vitest, un projet par app/package (`pnpm test:watch` en continu)                                                                    |
 | `pnpm test:db`           | avec `RUN_DB_TESTS=1` : tests d'intégration sur `launchbot_test`                                                                    |
 | `pnpm test:devnet`       | avec `RUN_DEVNET_TESTS=1` : tests qui appellent le RPC devnet                                                                       |
+| `pnpm check:i18n`        | aucun texte affiché hors `packages/shared/src/i18n/en.ts` (V1-46, aussi joué par `pnpm test`)                                       |
+| `pnpm screens:catalog`   | relance les tests du bot et du worker et écrit la page de revue des écrans `scripts/out/screens.html` (V1-46)                       |
 | `sim:report`             | `pnpm --filter @launchbot/sim-engine sim:report [seeds]` : réglage du moteur (V1-19)                                                |
 | `render:sample`          | `pnpm --filter @launchbot/sim-render render:sample [seed] [dossier]` : images d'exemple dans `packages/sim-render/out/` (V1-25)     |
 | `job`                    | `pnpm --filter @launchbot/worker job <accounts.delete-inactive\|data.expired-cleanup> [--now <ISO>]` : un passage à la main (V1-45) |
@@ -1533,7 +1538,7 @@ redémarrage fige les messages en cours et leurs boutons répondent « This simu
   en `{ type: "photo" }` avec la légende dans le média, `{ type: "animation" }` pour la carte ;
   `isNotModified` de V1-04 vaut `edited`, `isUneditable` vaut `gone`.
 - **Légende et boutons** ([caption.ts](apps/bot/src/features/simulation/caption.ts), purs) : l'en-tête
-  `📊 SIMULATION · 🧪 Devnet`, la mention DEMO (`en.sim.demoBanner`),
+  `📊 SIMULATION`, la mention DEMO (`en.sim.demoBanner`),
   `🪙 Moon Otter · $OTTR`, `⏱ 1:32 / 3:00 · Speed x2` (ou `⏸ Paused`), `📈 Market cap: $5,176.27
 (50.08 SOL)` (SOL seul sans prix), `Bonding curve: 34.2% ▰▰▰▱▱▱▱▱▱▱`, `Volume · Buys / Sells`
   (dev inclus, proposition), puis la position par `buildPositionView` (V1-25) et `Sold so far` après
@@ -1844,11 +1849,44 @@ Vecteurs testés : 3 SOL → 96 657 870.79 tokens (9.666 %), x = 32.97, market c
 immédiate → 2.9403 SOL et état initial retrouvé (tolérance 1e-9, jamais d'égalité stricte) ; 200 SOL
 sur curve neuve → plafonné à 793 100 000 tokens pour 85.864 SOL payés, curve complète.
 
+## Recette V1 (V1-46)
+
+Le document de recette est [docs/recette-v1.md](docs/recette-v1.md) : chaque critère du §15 avec sa
+preuve (test et/ou scénario manuel), la revue du §4.5, les contrôles du §14, les scénarios manuels
+R0 à R10 à cocher sur devnet, les frais observés, les écarts et les décisions ouvertes. Les outils
+de la recette restent en place :
+
+- **Règles d'écran dans les tests** : le faux transport Telegram des tests du bot (`interceptApi`
+  de `apps/bot/src/test-harness.ts`) passe chaque message envoyé à un utilisateur par
+  `screenIssues` (`@launchbot/shared/test`) : en-tête qui s'ouvre sur le nom de l'écran en gras, texte au-dessus du
+  clavier, limites de Telegram (4 096 caractères, 1 024 pour une légende, 64 octets de callback
+  data, 200 caractères d'alerte), HTML accepté par Telegram, aperçus de liens désactivés. Un test
+  qui dessine un écran fautif échoue en nommant la règle. Un message sans bouton ni HTML est un
+  avis (garde des messages sensibles, erreur générique, « Your data has been deleted. ») ou la
+  copie d'un message de l'utilisateur (aperçu de `/announce`) : seules ses limites sont vérifiées.
+  Les posts dans un canal ne sont pas des écrans. `interceptApi(bot, replies, { screens: false })`
+  pour les tests de la navigation elle-même. Les messages du worker ont leur test
+  (`apps/worker/src/screens.test.ts`).
+- **Catalogue d'écrans** : `pnpm screens:catalog` relance ces tests avec `SCREENS_CATALOG_DIR`,
+  chaque message est enregistré (`catalogScreen`), puis `scripts/screens-catalog.ts` écrit la page
+  `scripts/out/screens.html` (non versionnée) : les écrans avec leurs variantes, leur clavier et
+  les tests qui les produisent, les alertes à part, les clés de test masquées.
+- **Textes** : `pnpm check:i18n` (`scripts/check-i18n.ts`, API du compilateur TypeScript) refuse
+  une chaîne littérale passée à Telegram, à un écran ou à un bouton, et une phrase écrite ailleurs
+  que dans une erreur, un log, du SQL ou un message zod ; son test parcourt tout le dépôt dans
+  `pnpm test`.
+- **Secrets** : `apps/bot/src/no-secrets-in-logs.test.ts` (logger en debug, sortie de grammY
+  capturée) et `packages/solana/src/tx/no-secrets-in-logs.test.ts` (signature d'un transfert).
+- **Callback data** : `apps/bot/src/callback-data.test.ts`, chaque builder avec ses arguments les
+  plus longs.
+
 ## Devnet
 
 SOL de test : https://faucet.solana.com. Le bot refuse de démarrer hors devnet, et rien ne contourne
 ce garde-fou, pas même les tests (le RPC est simulé). Aucune valeur « devnet » n'est codée en dur :
-tout dérive de `SOLANA_CLUSTER` (centralisé en V1-03).
+tout dérive de `SOLANA_CLUSTER` (centralisé en V1-03). Depuis le 25/09/2026, aucun écran ne
+mentionne le réseau : la config de cluster ne garde que le paramètre `?cluster=` des liens explorer
+et le hash genesis du garde-fou.
 
 ## Branches
 
@@ -1921,3 +1959,4 @@ main ──► develop ──► feat/token ──► (merge) develop ──► 
 | 25/09/2026 | **/purge transfère les SOL à la trésorerie au lieu de bloquer** (Tristan, V1-44) : les wallets au-dessus des frais d'un transfert partent vers `TREASURY_WALLET` avant la suppression, comme pour un compte inactif ; un seul mécanisme, `createAccountSweeper` (`account-sweep.ts`), sert aux deux, avec une relecture de l'activité pour l'inactivité seulement. Les transferts sont des `Withdrawal` de type `PURGE_SWEEP` (migration `purge_sweep`) avec l'ID Telegram. Une facture encore payable et des soldes illisibles bloquent toujours ; un transfert raté arrête la purge sans rien supprimer.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 25/09/2026 | **Un compte est supprimé après 24 h sans activité, et non plus 48 h** (Tristan, `INACTIVITY_DELETE_MS`) : ses SOL partent vers la trésorerie, puis le compte est supprimé, sans avertissement ; les admins restent exemptés. Le contrôle tourne toutes les 15 min, donc un compte part entre 24 h et 24 h 15 après sa dernière activité. Une facture restant payable 24 h 30 après sa création, un paiement tardif peut désormais arriver après la suppression : il n'active rien, le dépôt part à la trésorerie avec l'alerte de remboursement manuel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 25/09/2026 | **Plus de Terms of Service ni de Privacy Policy** (Tristan, V1-41 devenu le retrait) : plus d'écran « I accept » au premier accès (l'écran canal est le seul), plus de boutons dans le menu, plus de pages `/terms` et `/privacy`, plus de `TERMS_VERSION` ni de `legal.ts` ; colonnes `termsVersion` et `termsAcceptedAt` supprimées (migration `drop_terms`). La Mini App et l'API restent en place, sans page. Conséquence acceptée : aucun accord de l'utilisateur n'est plus enregistré (transferts vers la trésorerie, publication dans le canal Succès, durées de conservation).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 25/09/2026 | **Plus aucune mention du réseau à l'écran** (Tristan, D24) : ni badge `🧪 Devnet` dans les en-têtes, ni ligne « Network: Solana Devnet » sur les confirmations de retrait et de paiement, ni avertissement « …works on mainnet » à l'import, ni réseau dans les posts du canal Succès (§3, §4.5, §9.4, §9.5, §10.4 du contexte). Seuls les deux développeurs utilisent le bot, aucun risque de confusion. `ClusterConfig` ne garde que `explorerCluster` et `genesisHash`, l'emoji `E.devnet` disparaît. Le bot tourne toujours sur devnet et le garde-fou refuse toujours tout autre réseau ; la règle d'écran de la recette vérifie désormais le titre en gras au lieu du badge.                                                                                                                                                                                                                                                                                                                                                                                      |

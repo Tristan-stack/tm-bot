@@ -36,7 +36,8 @@ function minimalBot(
   initial = initialSession(),
 ) {
   const bot = new Bot<BotContext>(TEST_ENV.BOT_TOKEN);
-  const api = interceptApi(bot, replies);
+  // The screens of these tests are placeholders: the rules of §4.5 are the other tests' job.
+  const api = interceptApi(bot, replies, { screens: false });
   const results: ShowResult[] = [];
 
   bot.use(ensureAnswered);

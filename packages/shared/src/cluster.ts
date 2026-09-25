@@ -1,14 +1,12 @@
-import { E } from "./i18n/emoji.js";
-
 export const SOLANA_CLUSTERS = ["devnet", "testnet", "mainnet-beta"] as const;
 export type SolanaCluster = (typeof SOLANA_CLUSTERS)[number];
 
+/**
+ * What the code needs of a cluster. Nothing here is shown to a user: since D24 (25/09/2026) no
+ * screen names the network, neither as a badge nor in a text.
+ */
 export type ClusterConfig = {
-  /** Shown in every screen header. `null` on mainnet: the badge disappears (§4.5). */
-  badge: string | null;
-  /** Network name outside the badge: withdrawal confirmation, "NEW LAUNCH · Devnet" post. */
-  networkName: string;
-  /** Value of the `?cluster=` parameter of explorer.solana.com. */
+  /** Value of the `?cluster=` parameter of explorer.solana.com, without which a link opens mainnet. */
   explorerCluster: string;
   /** Checked at startup against the RPC endpoint (V1-04). */
   genesisHash: string;
@@ -18,8 +16,6 @@ export type ClusterConfig = {
 // comes with DEC-05.
 const CLUSTER_CONFIGS: Partial<Record<SolanaCluster, ClusterConfig>> = {
   devnet: {
-    badge: `${E.devnet} Devnet`,
-    networkName: "Devnet",
     explorerCluster: "devnet",
     genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
   },

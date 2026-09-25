@@ -29,8 +29,6 @@ import { en } from "./i18n/en.js";
 describe("cluster", () => {
   it("describes devnet", () => {
     expect(getClusterConfig("devnet")).toEqual({
-      badge: "🧪 Devnet",
-      networkName: "Devnet",
       explorerCluster: "devnet",
       genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
     });
@@ -131,7 +129,6 @@ describe("texts", () => {
 
   it("has no empty emoji", () => {
     for (const emoji of Object.values(E)) expect(emoji).not.toBe("");
-    expect(E.devnet).toBe("🧪");
     expect(E.ok).toBe("✅");
   });
 });

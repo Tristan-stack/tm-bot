@@ -27,6 +27,10 @@ export default defineConfig({
       })),
       // jsdom project, configured in apps/webapp/vite.config.ts
       "apps/webapp",
+      // The checks of the whole repository (V1-46): texts outside en.ts.
+      {
+        test: { name: "scripts", root: "scripts", environment: "node", include: ["*.test.ts"] },
+      },
     ],
   },
 });

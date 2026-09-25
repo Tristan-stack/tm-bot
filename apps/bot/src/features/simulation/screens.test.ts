@@ -14,7 +14,7 @@ import {
 const ui = createUi("devnet");
 
 const HEADER = (step: number, bar: string) =>
-  [`<b>📊 SIMULATION · STEP ${step}/3</b> · 🧪 Devnet`, bar, "Token › Bundle › Recap"].join("\n");
+  [`<b>📊 SIMULATION · STEP ${step}/3</b>`, bar, "Token › Bundle › Recap"].join("\n");
 
 /** The token of the mockup of §6, image added, no link. */
 const OTTER = {
