@@ -54,7 +54,7 @@ describe("getUserBalances", () => {
     const balances = await getUserBalances("u1");
 
     expect(findMany).toHaveBeenCalledExactlyOnceWith({
-      where: { userId: "u1" },
+      where: { userId: "u1", kind: "USER" },
       orderBy: { createdAt: "asc" },
       select: { id: true, name: true, publicKey: true, createdAt: true },
     });

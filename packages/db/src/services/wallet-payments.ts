@@ -8,6 +8,7 @@ import { createLogger } from "@launchbot/shared/server";
 import type { KeyVault, TxFailure, TxSuccess } from "@launchbot/solana";
 import { tryLockScope } from "../client.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
+import { MANAGED_WALLET } from "./balances.js";
 import type { BalancesService, WalletBalance } from "./balances.js";
 import { isAwaitingPayment } from "./payments.js";
 import type { AwaitingCheck, InvoiceCheck, InvoiceView, PaymentService } from "./payments.js";
@@ -219,7 +220,7 @@ export function createWalletPaymentService(deps: WalletPaymentsDeps): WalletPaym
       return quote.status === "ok" ? { ...quote, status: "amount_changed" } : quote;
     }
     const row = await prisma.wallet.findFirst({
-      where: { id: walletId, userId },
+      where: { id: walletId, userId, ...MANAGED_WALLET },
       select: WALLET_SIGNER_SELECT,
     });
     if (row === null) {

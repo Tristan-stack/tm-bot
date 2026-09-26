@@ -11,21 +11,27 @@ import type { HomeSources } from "./data.js";
 import { buildHomeScreen } from "./screen.js";
 import type { HomeEnv } from "./screen.js";
 
-export type HomeDeps = { ui: Ui; env: HomeEnv; data: HomeSources };
+export type HomeDeps = {
+  ui: Ui;
+  env: HomeEnv;
+  data: HomeSources;
+  /** `LAUNCH_TEST_DIVISOR` (decision of 26/09/2026): « Fund a wallet » counts test amounts. */
+  launchDivisor: bigint;
+};
 
 /** /start, `nav:home` (the one target of every Back and Menu), Refresh and the `home` resume. */
 export function registerHome(
   bot: Composer<BotContext>,
   router: CallbackRouter,
   access: Access,
-  { ui, env, data }: HomeDeps,
+  { ui, env, data, launchDivisor }: HomeDeps,
 ): void {
   async function showHome(
     ctx: BotContext,
     options: { display?: ShowMode; skipBalanceCache?: boolean } = {},
   ): Promise<ShowResult> {
     const { display, skipBalanceCache = false } = options;
-    const home = await loadHomeData(data, ctx.user, { skipBalanceCache });
+    const home = await loadHomeData(data, ctx.user, { skipBalanceCache, launchDivisor });
     return showScreen(ctx, buildHomeScreen(ui, env, home), { mode: display });
   }
 

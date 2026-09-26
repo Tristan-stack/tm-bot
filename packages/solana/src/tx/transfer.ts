@@ -74,6 +74,34 @@ export async function estimateTransferFee(ctx: TxContext, from: string): Promise
   return transferFeeLamports(await estimatePriorityFee(ctx.rpc, [from], ctx.priorityFee));
 }
 
+/**
+ * What a transfer takes from the wallet: an `exact` amount the fees are added to, `max` (the
+ * whole balance, fees included), or a `debit` the fees come out of — the funding of a launch
+ * wallet, where the user pays the dev buy and the bundle, fees included (decision of 26/09/2026).
+ */
+export type TransferAmount = Lamports | "max" | { debit: Lamports };
+
+/**
+ * What a `debit` takes from the wallet: its total, or the whole balance when what would stay is
+ * dust under the rent-exempt minimum, which could never move again.
+ */
+const debitTotal = (debit: Lamports, balance: Lamports, rentMin: Lamports): Lamports => {
+  const left = balance - debit;
+  return left > 0n && left < rentMin ? balance : debit;
+};
+
+/** What moves once the fee of the attempt is known: `max` and `debit` pay it out of their total. */
+const movedAmount = (
+  amount: TransferAmount,
+  chain: { balance: Lamports; rentMin: Lamports },
+  totalFee: Lamports,
+): Lamports =>
+  amount === "max"
+    ? computeMaxAmount(chain.balance, totalFee)
+    : typeof amount === "bigint"
+      ? amount
+      : computeMaxAmount(debitTotal(amount.debit, chain.balance, chain.rentMin), totalFee);
+
 /** The balance of `from`, the lamports of `to` and the rent-exempt minimum, in two calls. */
 async function readChain(
   ctx: TxContext,
@@ -90,17 +118,18 @@ async function readChain(
 /**
  * Everything the confirmation screen of a withdrawal needs (§9.5), with nothing signed and no
  * key decrypted: the balances read without the cache of V1-07, the rent-exempt minimum, the
- * fees of the real transaction, then the rules. `max` means « the whole balance minus fees ».
+ * fees of the real transaction, then the rules. `max` means « the whole balance minus fees »,
+ * `debit` « this total minus fees » (the whole balance rather than a dust left behind).
  *
  * The address of `to` must already be valid (`solanaAddressSchema`): an address that cannot be
  * decoded is a bug of the caller, not a failure of the transfer.
  */
 export async function prepareTransfer(
   ctx: TxContext,
-  params: { from: string; to: string; amount: Lamports | "max" },
+  params: { from: string; to: string; amount: TransferAmount },
 ): Promise<TransferQuote | TxFailure> {
   const { from, to, amount } = params;
-  const mode = amount === "max" ? "max" : "exact";
+  const mode = amount === "max" ? "max" : typeof amount === "bigint" ? "exact" : "debit";
 
   let balance: Lamports;
   let destination: Lamports;
@@ -113,24 +142,24 @@ export async function prepareTransfer(
 
   // What costs nothing to refuse is refused before the simulation.
   if (amount !== "max") {
-    if (amount <= 0n) return notSent("INVALID_AMOUNT");
-    if (amount > balance) {
-      return notSent("INSUFFICIENT_FUNDS", { missingLamports: amount - balance });
+    const total = typeof amount === "bigint" ? amount : amount.debit;
+    if (total <= 0n) return notSent("INVALID_AMOUNT");
+    if (total > balance) {
+      return notSent("INSUFFICIENT_FUNDS", { missingLamports: total - balance });
     }
-    if (destination === 0n && amount < rentMin) {
+    if (typeof amount === "bigint" && destination === 0n && amount < rentMin) {
       return notSent("DESTINATION_BELOW_RENT", { rentMinLamports: rentMin });
     }
   }
 
-  // The compute units of a transfer do not depend on the amount: `max` simulates a small one,
-  // never the whole balance, which would fail for want of fees.
-  const simulated = amount === "max" ? (balance < rentMin ? 0n : rentMin) : amount;
+  // The compute units of a transfer do not depend on the amount: `max` and `debit` simulate a
+  // small one, never their whole total, which would fail for want of fees.
+  const simulated = typeof amount === "bigint" ? amount : balance < rentMin ? 0n : rentMin;
   const fee = await estimateFees(ctx, transferDraft(from, to, simulated));
   // The runtime refuses on rent without saying the minimum: the screen needs it (§9.5).
   if (isTxFailure(fee)) return { ...fee, rentMinLamports: rentMin };
 
-  const amountLamports =
-    amount === "max" ? computeMaxAmount(balance, fee.totalFeeLamports) : amount;
+  const amountLamports = movedAmount(amount, { balance, rentMin }, fee.totalFeeLamports);
   const [failure] = validateTransfer({
     balance,
     amount: amountLamports,
@@ -152,8 +181,19 @@ export async function prepareTransfer(
   };
 }
 
-/** What identifies a transfer to send: a quote, or the four fields a screen kept of it. */
+/**
+ * What identifies a transfer to send: a quote, or the four fields a screen kept of it.
+ * `amountLamports` is the amount of an `exact` transfer, unread for `max`, and the total that
+ * leaves the wallet for `debit` — not the amount of its quote, which the fees came out of.
+ */
 export type TransferRequest = Pick<TransferQuote, "from" | "to" | "mode" | "amountLamports">;
+
+const transferAmountOf = (request: TransferRequest): TransferAmount =>
+  request.mode === "max"
+    ? "max"
+    : request.mode === "debit"
+      ? { debit: request.amountLamports }
+      : request.amountLamports;
 
 /**
  * Signs and sends a transfer. The quote is made again first — the balances move, and the fees
@@ -169,19 +209,21 @@ export async function sendTransfer(
     onPrepared?: (quote: TransferQuote) => Promise<void>;
   } = {},
 ): Promise<TxSuccess | TxFailure> {
-  const { from, to, mode } = request;
-  const fresh = await prepareTransfer(ctx, {
-    from,
-    to,
-    amount: mode === "max" ? "max" : request.amountLamports,
-  });
+  const { from, to } = request;
+  const amount = transferAmountOf(request);
+  const fresh = await prepareTransfer(ctx, { from, to, amount });
   if (isTxFailure(fresh)) return fresh;
   await options.onPrepared?.(fresh);
 
-  // The amount of an attempt follows its fee: `max` leaves exactly 0 lamport, whatever the
-  // priority fee of a second attempt, and the rules of §9.5 are checked again for it.
+  // The amount of an attempt follows its fee: `max` leaves exactly 0 lamport and `debit` takes
+  // exactly its total, whatever the priority fee of a second attempt, and the rules of §9.5 are
+  // checked again for it.
   const amountFor = (totalFee: Lamports): Lamports =>
-    mode === "max" ? computeMaxAmount(fresh.balanceLamports, totalFee) : fresh.amountLamports;
+    movedAmount(
+      amount,
+      { balance: fresh.balanceLamports, rentMin: fresh.rentMinLamports },
+      totalFee,
+    );
   const build = (fee: FeeEstimate): TxDraft | TxFailure => {
     const amount = amountFor(fee.totalFeeLamports);
     const [failure] = validateTransfer({

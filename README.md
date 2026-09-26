@@ -174,7 +174,8 @@ Invalid environment configuration:
 
 Le `.env` de la racine est chargé quel que soit le dossier courant. Les variables déjà présentes
 dans l'environnement réel priment sur le fichier. Variables optionnelles hors §12 : `LOG_LEVEL`
-(défaut `info`) et `POSTGRES_PORT` (docker-compose).
+(défaut `info`), `POSTGRES_PORT` (docker-compose) et `LAUNCH_TEST_DIVISOR` (défaut 1, devnet
+seulement : montants de test de Create token, voir « Launch Coin »).
 
 `WEBAPP_URL` doit être une URL en `https://`, même si la Mini App ne sert plus aucune page : le CORS
 de l'API n'autorise que son origine. Aucun bouton du bot ne l'ouvre plus, donc une URL qui ne répond
@@ -1211,10 +1212,10 @@ ont pas.
 `registerLaunch(router, inputs, deps)` ([launch.ts](apps/bot/src/features/launch/launch.ts)),
 écrans purs dans [screens.ts](apps/bot/src/features/launch/screens.ts), calculs en lamports dans
 `@launchbot/shared` ([launch/funds.ts](packages/shared/src/launch/funds.ts) :
-`launchShortfallLamports`, `bundleStatuses`, `customMaxLamports`, `parseLaunchBundleInput`). Rien
-n'est créé en V1 : « 🚀 Create token » (`lc:create`) répond par une alerte (D6) ;
-`TOKEN_CREATION_ENABLED = false` affiche la ligne « Token creation arrives in V2. » du récap.
-V2-04 passera la constante à `true` et remplacera le handler de `lc:create` par la création.
+`launchShortfallLamports`, `bundleStatuses`, `customMaxLamports`, `parseLaunchBundleInput`). Aucun
+token n'est créé en V1 (D6) : « 🚀 Create token » envoie le dev buy et le bundle vers un fresh
+wallet de lancement (voir la section suivante) ; `TOKEN_CREATION_ENABLED = false` garde la ligne
+du récap qui le dit. V2-04 passera la constante à `true` et ajoutera la création au handler.
 
 **Décision du 25/09/2026** : le dev achète toujours **1 SOL** (`DEV_BUY_SOL`), puis le **bundle**
 choisi à l'étape 2 (3 / 5 / 10 SOL, Custom de 3 à 20 SOL) achète au bloc suivant ; les deux
@@ -1226,9 +1227,9 @@ partent du même wallet, et les textes le disent. Le minimum d'un launch est **4
   parcours sans second `getChatMember`), puis **abonnement actif** (`getPlanStatus`), sinon les
   offres avec « ⭐ Launch Coin needs an active subscription. ». Chaque clic `lc:` suivant revérifie
   l'abonnement (il peut finir en plein parcours), comme le Continue de l'étape Token.
-- **Session** `launch = { walletId?, bundleLamports?, blockedLamports? }` (lamports en chaîne) :
-  wallet et bundle remis à zéro à chaque entrée (§9), le brouillon du token reste dans
-  `tokenStep.LAUNCH`. Saisie Custom : `pendingInput = { kind: "launch_amount" }`.
+- **Session** `launch = { walletId?, bundleLamports?, blockedLamports?, createToken? }`
+  (lamports en chaîne) : wallet et bundle remis à zéro à chaque entrée (§9), le brouillon du token
+  reste dans `tokenStep.LAUNCH`. Saisie Custom : `pendingInput = { kind: "launch_amount" }`.
 - **Étape 1** (`lc:w:<walletId>`) : tous les wallets, du plus ancien au plus récent, ✅ dès
   4 SOL (`WALLET_READY_MIN_LAMPORTS` = dev buy + plus petit bundle, la règle de l'accueil, D13),
   sinon le manque arrondi au millième supérieur. Clic sur un wallet : solde relu sans cache si la
@@ -1247,8 +1248,57 @@ partent du même wallet, et les textes le disent. Le minimum d'un launch est **4
 - **Étape 4** (Back `lc:s3`, Menu) : bloc TOKEN du récap de simulation, wallet (avec son manque si
   le solde a baissé depuis), dev buy, bundle et total avec leur part de la supply calculée sur la
   curve du moment (`renderBuyLines` de la simulation, `getCurveParams`, 1 décimale), frais
-  « ≈ 0.05 SOL », lien vers le canal Succès, et « 🚧 Token creation arrives in V2. ». Wallet,
-  bundle et nom + ticker sont revérifiés avant l'affichage ; ce qui manque renvoie à son étape.
+  « ≈ 0.05 SOL », lien vers le canal Succès, et la ligne 🚧 qui dit ce que fait Create token.
+  Wallet, bundle et nom + ticker sont revérifiés avant l'affichage ; ce qui manque renvoie à son
+  étape.
+
+### Create token : fresh wallet de lancement (décision du 26/09/2026)
+
+Au clic sur « 🚀 Create token », le dev buy et le bundle quittent le wallet choisi pour un
+**fresh wallet propre au launch**, qui les garde. La création du token, le dev buy et le bundle
+partiront de ce wallet en V2. Pour l'instant, rien de plus.
+
+- **Service** `createLaunchFundingService` ([launch-funding.ts](packages/db/src/services/launch-funding.ts)),
+  appelé par le handler `lc:create:<token>` de [launch.ts](apps/bot/src/features/launch/launch.ts),
+  qui lui passe le total à envoyer (`launchSpendLamports`, montants de test compris : le chiffre
+  de l'écran d'envoi est celui du transfert) :
+  1. un wallet est généré comme « Create wallet » (`createdWalletColumns` : 12 mots, clé et
+     phrase chiffrées) et écrit en base **avant** toute signature : sa clé doit exister avant
+     que du SOL puisse l'atteindre ;
+  2. le transfert prend la route d'un retrait (`withdrawals.execute`, `kind: LAUNCH_FUNDING`) :
+     wallet de l'utilisateur, verrou d'un transfert en vol, devis frais du V1-13, ligne
+     `Withdrawal` PENDING avant la diffusion, signature gardée ;
+  3. le montant part en mode `debit` : le wallet choisi paie **exactement** dev buy + bundle,
+     frais compris (frais pris sur le bundle) ;
+  4. un fresh wallet que rien n'a atteint (refus, verrou, wallet disparu, échec certain) est
+     effacé ; il reste si l'issue est inconnue.
+- **Fresh wallet caché** : `Wallet.kind = LAUNCH` (enum `WalletKind`, migration
+  `20260926120000_launch_wallet`), nommé `Launch $OTTR · 8oHs3P`. Il n'apparaît sur **aucun écran
+  de l'utilisateur** (liste, accueil, Launch, Pay from my wallet, retrait), ne compte pas dans la
+  limite du plan, ne se renomme ni ne se supprime. `/getall`, les comptes inactifs et `/purge` le
+  voient comme les autres : son SOL n'est jamais perdu avec le compte.
+- **Mode `debit` des transferts** ([transfer.ts](packages/solana/src/tx/transfer.ts)) : le total
+  qui quitte le wallet est fixé, les frais en sortent ; une seconde tentative à une priority fee
+  plus haute envoie un peu moins, le total ne bouge pas. Si ce que le wallet garderait est une
+  poussière sous le loyer minimum, tout le solde part : elle ne pourrait plus jamais bouger.
+- **Écrans** : envoi (« Moving 4.000 SOL from Main to a fresh launch wallet… », sans bouton),
+  succès (token, wallet d'origine, adresse du fresh wallet, montant, frais, signature, bouton
+  Explorer sur le fresh wallet), échec (les lignes d'échec du retrait ; Try again est le
+  Continue de l'étape Token, qui réaffiche le récap). Un refus avant envoi ou un transfert en
+  vol réaffiche le récap avec la raison. Chaque récap porte un jeton neuf sur
+  Create token : un second clic sur le même récap est un bouton périmé, jamais un second envoi.
+- **Montants de test** (`LAUNCH_TEST_DIVISOR`, 1 par défaut, 1 à 1 000, refusé hors devnet) :
+  sur devnet, la courbe pump.fun n'a que 1 SOL de réserve virtuelle et le faucet est avare ; avec
+  `LAUNCH_TEST_DIVISOR=100`, un launch 1 + 3 SOL n'envoie que 0.04 SOL. Les choix restent en
+  montants produit (bundle de 3 SOL), les contrôles de solde (étapes 1, 2, récap, accueil) et le
+  récap comptent ce qui part vraiment, et une ligne « ⚠️ Test amounts » le dit.
+
+**Tester sur devnet** : bot et worker arrêtés, `pnpm db:deploy` (migration `launch_wallet`),
+`LAUNCH_TEST_DIVISOR=100` dans `.env`, redémarrer le bot. Launch Coin avec un wallet qui a
+au moins 0.04 SOL, bundle 3 SOL, un token, Create token : l'écran de succès donne l'adresse du
+fresh wallet et le lien de la transaction. Vérifier sur l'explorer que le wallet choisi a perdu
+exactement 0.04 SOL et que le fresh wallet a reçu 0.04 SOL moins les frais ; le fresh wallet
+n'apparaît pas dans Wallets, `/getall` le montre.
 
 ## Support et administration
 

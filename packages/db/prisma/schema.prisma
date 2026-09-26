@@ -46,6 +46,14 @@ enum WalletSource {
   IMPORTED_SEED
 }
 
+// A wallet the user manages (§9), or the fresh wallet a launch is funded to (decision of
+// 26/09/2026): hidden from the user's screens and outside the limit of the plan, but seen by
+// the admin commands, the inactive accounts and /purge like any other.
+enum WalletKind {
+  USER
+  LAUNCH
+}
+
 enum WithdrawalStatus {
   PENDING
   CONFIRMED
@@ -60,6 +68,8 @@ enum WithdrawalKind {
   DEPOSIT_SWEEP
   // The SOL of a purged account moved to the treasury (V1-44, decision of 25/09/2026).
   PURGE_SWEEP
+  // The dev buy and the bundle of a launch moved to its fresh wallet (decision of 26/09/2026).
+  LAUNCH_FUNDING
 }
 
 enum AiGenerationKind {
@@ -201,6 +211,7 @@ model Wallet {
   name            String
   publicKey       String
   source          WalletSource
+  kind            WalletKind   @default(USER)
   derivationPath  String?
   encSecretKey    Bytes
   iv              Bytes

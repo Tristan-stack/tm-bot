@@ -30,7 +30,7 @@ const buttons = (screen: Screen) => buttonTexts(screen.reply_markup);
 
 describe("step 1/4 Wallet (V1-35, decision of 25/09/2026)", () => {
   const DESCRIPTION = [
-    "Choose the wallet that creates the token and pays the dev buy and the bundle.",
+    "Choose the wallet that pays the dev buy and the bundle.",
     "The smallest launch needs 4 SOL (1 SOL dev buy + 3 SOL bundle).",
   ].join("\n");
 
@@ -206,10 +206,11 @@ describe("step 4/4 Recap (V1-37)", () => {
     bundleLamports: sol(3),
     curve: FALLBACK_CURVE_PARAMS,
     successUrl: "https://t.me/launchbot_success",
+    createToken: "0a1b2c3d",
     ...overrides,
   });
 
-  it("sums up the launch, and says nothing is created in V1", () => {
+  it("sums up the launch, and says Create token only funds a launch wallet", () => {
     const screen = buildLaunchRecapScreen(ui, view());
 
     expect(screen.text).toBe(
@@ -231,11 +232,11 @@ describe("step 4/4 Recap (V1-37)", () => {
           "⛽ Fees: ≈ 0.05 SOL",
         ].join("\n"),
         '🏆 Your launch will be posted in the <a href="https://t.me/launchbot_success">Success channel</a>.',
-        "🚧 Token creation arrives in V2.",
+        "🚧 Create token moves the dev buy and the bundle to a fresh launch wallet. The token itself arrives in V2.",
       ].join("\n\n"),
     );
     expect(keyboardOf(screen)).toEqual([
-      [{ text: "🚀 Create token", callback_data: "lc:create" }],
+      [{ text: "🚀 Create token", callback_data: "lc:create:0a1b2c3d" }],
       [
         { text: "⬅️ Back", callback_data: "lc:s3" },
         { text: "🏠 Menu", callback_data: "nav:home" },
@@ -291,7 +292,7 @@ it("keeps every callback data of the flow within 64 bytes", () => {
     LAUNCH_CB.wallet("3f0c1b2a-9d8e-4f7a-b6c5-d4e3f2a1b0c9"),
     LAUNCH_CB.preset(10),
     LAUNCH_CB.refresh,
-    LAUNCH_CB.create,
+    LAUNCH_CB.create("ffffffff"),
   ];
   for (const data of all) expect(isCallbackDataSize(data)).toBe(true);
 });

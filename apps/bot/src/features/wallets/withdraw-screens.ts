@@ -201,6 +201,10 @@ export const buildWithdrawSendingScreen = (ui: Ui, amount: string): Screen =>
 const signatureLink = (ui: Ui, signature: string): string =>
   a(shortAddress(signature), ui.explorerTxUrl(signature));
 
+/** The line of a transfer's signature, when it has one: the withdrawal and a launch wallet. */
+export const signatureLines = (ui: Ui, signature: string | null): string[] =>
+  signature === null ? [] : [withdraw.result.signature(signatureLink(ui, signature))];
+
 /** Step 4, success: what moved, where, for how much, and the transaction. */
 export const buildWithdrawSuccessScreen = (
   ui: Ui,
@@ -214,9 +218,7 @@ export const buildWithdrawSuccessScreen = (
       withdraw.result.amount(exactWithUsd(withdrawal.lamports, view.solUsd)),
       withdraw.to(code(withdrawal.toAddress)),
       withdraw.result.fees(formatSolExact(withdrawal.feeLamports ?? 0n)),
-      ...(withdrawal.signature === null
-        ? []
-        : [withdraw.result.signature(signatureLink(ui, withdrawal.signature))]),
+      ...signatureLines(ui, withdrawal.signature),
     ],
     keyboard: [
       [
@@ -251,26 +253,30 @@ const REFUSALS: Partial<Record<TxFailureCode, (amount?: string) => Block>> =
 export const refusalOf = (failure: TxFailure): Block =>
   REFUSALS[failure.code]?.(ruleAmount(failure)) ?? warn(txFailureText(failure));
 
+/** Why a transfer failed, and whether anything left: only a `no` says so (§9.5). */
+export const failureLines = (failure: TxFailure): string[] => [
+  withdraw.result.reason(txFailureText(failure)),
+  ...(failure.landed === "no" ? [en.tx.nothingSent] : []),
+];
+
 /**
- * Step 4, failure: the reason, whether anything left (only a `no` says so), and the attempt.
- * An outcome still unknown shows the signature: the explorer is the place to look.
+ * An outcome still unknown shows the signature: the explorer is the place to look. Nothing to
+ * look at for a failure that is certain.
  */
+export const unknownSignatureLines = (ui: Ui, view: WithdrawFailureView): string[] =>
+  view.failure.landed === "unknown" ? signatureLines(ui, view.withdrawal.signature) : [];
+
+/** Step 4, failure: the reason, whether anything left, and the attempt. */
 export const buildWithdrawFailureScreen = (ui: Ui, view: WithdrawFailureView): Screen => {
   const { withdrawal, failure } = view;
   return renderScreen({
     header: ui.screenHeader(withdraw.title),
-    description: [
-      withdraw.result.failed,
-      withdraw.result.reason(txFailureText(failure)),
-      ...(failure.landed === "no" ? [en.tx.nothingSent] : []),
-    ],
+    description: [withdraw.result.failed, ...failureLines(failure)],
     info: [
       fromLine(view.wallet),
       withdraw.to(shortAddress(withdrawal.toAddress)),
       withdraw.result.amount(formatSolExact(withdrawal.lamports)),
-      ...(failure.landed === "unknown" && withdrawal.signature !== null
-        ? [withdraw.result.signature(signatureLink(ui, withdrawal.signature))]
-        : []),
+      ...unknownSignatureLines(ui, view),
     ],
     keyboard: [
       [

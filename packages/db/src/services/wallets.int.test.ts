@@ -210,6 +210,36 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("wallet service (db)", () => {
     });
   });
 
+  it("leaves a launch wallet out of the list, the limit, the names, Rename and Delete", async () => {
+    const user = await createUser();
+    const wallets = service();
+    for (const name of ["Wallet 1", "Wallet 2"]) {
+      await wallets.create(user.id);
+      expect((await wallets.listWithBalances(user.id)).wallets.at(-1)?.name).toBe(name);
+    }
+    const hidden = await prisma.wallet.create({
+      data: {
+        ...testWalletData(user.id, "Launch $OTTR · 8oHs3P", generateMnemonicWallet().address),
+        kind: "LAUNCH",
+      },
+    });
+
+    // No plan: 3 wallets. The third one is created, and named after the two the user sees.
+    const third = await wallets.create(user.id);
+    expect(third).toMatchObject({ ok: true, wallet: { name: "Wallet 3" } });
+    expect((await wallets.listWithBalances(user.id)).count).toBe(3);
+    expect(await wallets.getQuota(user.id)).toMatchObject({ count: 3, reached: true });
+    expect(await wallets.getOwned(user.id, hidden.id)).toBeNull();
+    expect(await wallets.rename(user.id, hidden.id, "Mine")).toEqual({
+      ok: false,
+      issue: { reason: "not_found" },
+    });
+    expect(await wallets.delete(user.id, hidden.id)).toEqual({ status: "not_found" });
+    expect(await prisma.wallet.findUnique({ where: { id: hidden.id } })).toMatchObject({
+      name: "Launch $OTTR · 8oHs3P",
+    });
+  });
+
   it("creates one wallet for two concurrent clicks at limit − 1", async () => {
     const user = await createUser();
     await prisma.wallet.createMany({

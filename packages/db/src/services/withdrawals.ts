@@ -17,7 +17,7 @@ import type {
   TxSuccess,
 } from "@launchbot/solana";
 import type { Prisma, PrismaClient, Withdrawal } from "../generated/prisma/client.js";
-import { readFreshWallet, WALLET_SUMMARY_SELECT } from "./balances.js";
+import { MANAGED_WALLET, readFreshWallet, WALLET_SUMMARY_SELECT } from "./balances.js";
 import type { BalancesService, WalletDetailData } from "./balances.js";
 import type { WalletSummary } from "./wallets.js";
 
@@ -28,6 +28,11 @@ export type WithdrawAmount =
   { kind: "pct"; pct: WithdrawalPresetPct } | { kind: "max" } | { kind: "exact"; lamports: bigint };
 /** What is sent: a share has been resolved to a number by then. */
 export type WithdrawRequest = Exclude<WithdrawAmount, { kind: "pct" }>;
+/**
+ * What `execute` sends: a withdrawal, or a `debit`, a total the fees come out of — the funding
+ * of a launch wallet (decision of 26/09/2026), never a withdrawal screen.
+ */
+export type SendAmount = WithdrawRequest | { kind: "debit"; lamports: bigint };
 
 /** The lamports of a choice of the amount step: a share is floored to the lamport (proposal). */
 export const resolveWithdrawAmount = (balance: bigint, amount: WithdrawAmount): bigint | "max" =>
@@ -106,13 +111,15 @@ export type WithdrawalService = {
    * The withdrawal itself (§13): V1-13 quotes on a fresh balance, the row is recorded PENDING
    * from that quote before the broadcast, then CONFIRMED or FAILED. An attempt whose outcome
    * the RPC could not give stays PENDING with its signature, for `resolve`. A wallet with an
-   * attempt still in flight refuses another one — the lock that survives a restart.
+   * attempt still in flight refuses another one — the lock that survives a restart. `kind`
+   * marks the funding of a launch wallet (decision of 26/09/2026), which takes the same road.
    */
   execute: (
     userId: string,
     walletId: string,
     to: string,
-    amount: WithdrawRequest,
+    amount: SendAmount,
+    options?: { kind?: "USER" | "LAUNCH_FUNDING" },
   ) => Promise<WithdrawOutcome>;
   /**
    * The latest attempt of the wallet that was still PENDING, brought up to date from the chain;
@@ -329,9 +336,12 @@ export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalServic
         : { status: "ok", check: checked, quote: result };
     },
 
-    async execute(userId, walletId, to, amount) {
+    async execute(userId, walletId, to, amount, { kind = "USER" } = {}) {
       const [wallet, pending] = await Promise.all([
-        prisma.wallet.findFirst({ where: { id: walletId, userId }, select: WALLET_SIGNER_SELECT }),
+        prisma.wallet.findFirst({
+          where: { id: walletId, userId, ...MANAGED_WALLET },
+          select: WALLET_SIGNER_SELECT,
+        }),
         prisma.withdrawal.findFirst({
           where: { walletId, status: "PENDING" },
           orderBy: { createdAt: "desc" },
@@ -350,7 +360,8 @@ export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalServic
       const from = summary.publicKey;
       const sent = await sendRecorded(
         { prisma, send: transfer.send },
-        // In `max` mode the amount is whatever V1-13 quotes: the field is not read.
+        // In `max` mode the amount is whatever V1-13 quotes: the field is not read. In `debit`
+        // mode it is the total that leaves the wallet, fees included.
         {
           from,
           to,
@@ -358,7 +369,7 @@ export function createWithdrawalService(deps: WithdrawalsDeps): WithdrawalServic
           amountLamports: amount.kind === "max" ? 0n : amount.lamports,
         },
         { kind: "vault", vault, enc: { encSecretKey, iv, authTag }, address: from },
-        { userId, walletId, kind: "USER" },
+        { userId, walletId, kind },
       );
       if (sent.status === "refused") return sent;
       const { row } = sent;

@@ -3,15 +3,11 @@ import {
   MICROLAMPORTS_PER_LAMPORT,
   TRANSFER_COMPUTE_UNIT_LIMIT,
   WALLET_LIMITS,
-  WALLET_READY_MIN_LAMPORTS,
 } from "./constants.js";
 import type { Plan } from "./constants.js";
 
 /** 3 wallets without a subscription, 5 in Classic, 10 in Premium (§8.1, §9.1, D1). */
 export const getWalletLimit = (plan: Plan | null): number => WALLET_LIMITS[plan ?? "NONE"];
-
-/** A wallet can launch from 4 SOL: the 1 SOL dev buy plus the smallest bundle (D13). */
-export const isWalletReady = (lamports: bigint): boolean => lamports >= WALLET_READY_MIN_LAMPORTS;
 
 const MICROLAMPORTS = BigInt(MICROLAMPORTS_PER_LAMPORT);
 

@@ -63,7 +63,7 @@ export {
   sendTransfer,
   validateTransfer,
 } from "./tx/transfer.js";
-export type { TransferChecks, TransferRequest } from "./tx/transfer.js";
+export type { TransferAmount, TransferChecks, TransferRequest } from "./tx/transfer.js";
 export { createTransferApi } from "./tx/transfer-api.js";
 export type { TransferApi } from "./tx/transfer-api.js";
 export type {

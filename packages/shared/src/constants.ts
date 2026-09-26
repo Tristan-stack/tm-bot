@@ -127,7 +127,8 @@ export const TX_FAILURE_CODES = [
 export type TxFailureCode = (typeof TX_FAILURE_CODES)[number];
 
 // Dev buy and bundle (§6, §10.1, decision of 25/09/2026): the dev buys 1 SOL at the launch,
-// then the bundle buys in the next block, from the same wallet. The user picks the bundle, in
+// then the bundle buys in the next block, from the same wallet — a fresh wallet of the launch,
+// funded by the wallet the user chose (decision of 26/09/2026). The user picks the bundle, in
 // a simulation as in a launch.
 /** The dev buy of every launch and every simulation: fixed. */
 export const DEV_BUY_SOL = 1;
@@ -146,8 +147,15 @@ export const WALLET_READY_MIN_LAMPORTS = DEV_BUY_LAMPORTS + BUNDLE_MIN_LAMPORTS;
 /** 21 SOL: the most the dev buys at t = 0, the dev buy and the largest bundle. */
 export const MAX_OPENING_BUY_SOL = DEV_BUY_SOL + BUNDLE_MAX_SOL;
 /**
- * Launch Coin creates nothing in V1 (§10.1, D6): the recap says so and Create token only
- * answers an alert. V2-04 turns it on, which also drops the notice of the recap.
+ * `LAUNCH_TEST_DIVISOR` (devnet only, decision of 26/09/2026): the most the dev buy and the
+ * bundle can be divided by. The smallest launch then moves 0.004 SOL, above the rent-exempt
+ * minimum a new account needs.
+ */
+export const LAUNCH_TEST_DIVISOR_MAX = 1_000;
+/**
+ * Launch Coin creates no token yet (§10.1, D6): Create token moves the dev buy and the bundle
+ * to a fresh launch wallet (decision of 26/09/2026), and the recap says the token comes in V2.
+ * V2-04 turns it on, which also drops the notice of the recap.
  */
 export const TOKEN_CREATION_ENABLED = false;
 

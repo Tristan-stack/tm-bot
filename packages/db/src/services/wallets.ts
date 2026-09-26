@@ -17,8 +17,8 @@ import type {
 import { lockUserScope } from "../client.js";
 import type { Db } from "../client.js";
 import { isUniqueViolation } from "../errors.js";
-import type { PrismaClient, WalletSource } from "../generated/prisma/client.js";
-import { readFreshWallet, WALLET_SUMMARY_SELECT } from "./balances.js";
+import type { PrismaClient, WalletKind, WalletSource } from "../generated/prisma/client.js";
+import { MANAGED_WALLET, readFreshWallet, WALLET_SUMMARY_SELECT } from "./balances.js";
 import type { BalancesService, UserBalances, WalletBalance, WalletDetailData } from "./balances.js";
 
 export type { WalletDetailData } from "./balances.js";
@@ -141,16 +141,36 @@ type KeyColumns = {
 } & EncryptedSecret &
   Partial<EncryptedMnemonic>;
 
+/**
+ * The key columns of a wallet the bot makes (§9.6): its key and its 12-word phrase, encrypted.
+ * Create wallet, and the launch wallet of Create token (decision of 26/09/2026).
+ */
+export const createdWalletColumns = (
+  vault: WalletVault,
+  generated: GeneratedWallet,
+): KeyColumns => ({
+  publicKey: generated.address,
+  source: "CREATED",
+  derivationPath: generated.derivationPath,
+  ...vault.encrypt(generated.secretKey, generated.address),
+  ...vault.encryptMnemonic(generated.mnemonic, generated.address),
+});
+
 const defaultName = (n: number): string => `Wallet ${n}`;
 
-/** The wallets of the user, as the insertion needs them: a name to pick, an address to refuse. */
-type TakenWallet = { name: string; publicKey: string };
+/**
+ * The wallets of the user, as the insertion needs them: a name to pick, an address to refuse,
+ * launch wallets included — only the wallets the user manages count against the limit.
+ */
+type TakenWallet = { name: string; publicKey: string; kind: WalletKind };
 const walletsOf = (db: Db, userId: string): Promise<TakenWallet[]> =>
-  db.wallet.findMany({ where: { userId }, select: { name: true, publicKey: true } });
+  db.wallet.findMany({ where: { userId }, select: { name: true, publicKey: true, kind: true } });
+const managedCount = (taken: TakenWallet[]): number =>
+  taken.filter((wallet) => wallet.kind === MANAGED_WALLET.kind).length;
 
 function nextName(taken: TakenWallet[]): string {
   const names = new Set(taken.map((wallet) => wallet.name));
-  let n = taken.length + 1;
+  let n = managedCount(taken) + 1;
   while (names.has(defaultName(n))) n++;
   return defaultName(n);
 }
@@ -191,7 +211,7 @@ export function createWalletService(deps: WalletsDeps): WalletService {
         const outcome = await prisma.$transaction(async (tx) => {
           await lockUserScope(tx, "wallet", userId);
           const taken = await walletsOf(tx, userId);
-          if (taken.length >= (await limitOf(tx, userId))) return LIMIT_REACHED;
+          if (managedCount(taken) >= (await limitOf(tx, userId))) return LIMIT_REACHED;
           // Per user (§13): the same key imported by someone else is another wallet.
           if (taken.some((wallet) => wallet.publicKey === columns.publicKey)) return DUPLICATE;
           const wallet = await tx.wallet.create({
@@ -247,13 +267,7 @@ export function createWalletService(deps: WalletsDeps): WalletService {
       // Generation and encryption (PBKDF2, tens of ms) happen before the lock is taken.
       const generated = generateWallet();
       try {
-        const result = await insertWallet(userId, {
-          publicKey: generated.address,
-          source: "CREATED",
-          derivationPath: generated.derivationPath,
-          ...vault.encrypt(generated.secretKey, generated.address),
-          ...vault.encryptMnemonic(generated.mnemonic, generated.address),
-        });
+        const result = await insertWallet(userId, createdWalletColumns(vault, generated));
         if (result.ok) return result;
         // An address out of the CSPRNG is new: a duplicate here is a bug, not a user error.
         if (result.reason === "duplicate") {
@@ -291,7 +305,7 @@ export function createWalletService(deps: WalletsDeps): WalletService {
 
     async rename(userId, walletId, rawName) {
       const wallets = await prisma.wallet.findMany({
-        where: { userId },
+        where: { userId, ...MANAGED_WALLET },
         select: WALLET_SUMMARY_SELECT,
       });
       const current = wallets.find((wallet) => wallet.id === walletId);
@@ -312,7 +326,7 @@ export function createWalletService(deps: WalletsDeps): WalletService {
       try {
         // `updateMany` with the owner in the filter: a wallet deleted meanwhile updates nothing.
         const { count } = await prisma.wallet.updateMany({
-          where: { id: walletId, userId },
+          where: { id: walletId, userId, ...MANAGED_WALLET },
           data: { name },
         });
         if (count === 0) return { ok: false, issue: { reason: "not_found" } };
@@ -331,7 +345,9 @@ export function createWalletService(deps: WalletsDeps): WalletService {
       // SOL can arrive between the confirmation screen and the click: checked again.
       const check = await checkDeletable(userId, walletId);
       if (check.status !== "confirm") return check;
-      const { count } = await prisma.wallet.deleteMany({ where: { id: walletId, userId } });
+      const { count } = await prisma.wallet.deleteMany({
+        where: { id: walletId, userId, ...MANAGED_WALLET },
+      });
       if (count === 0) return { status: "not_found" };
       log.info({ userId, walletId }, "wallet.deleted");
       balances.invalidateUserBalances(userId);

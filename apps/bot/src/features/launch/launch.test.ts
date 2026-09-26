@@ -2,17 +2,24 @@ import type { UserBalances, WalletBalance } from "@launchbot/db";
 import { DAY_MS, LAUNCH_COIN, solToLamports as sol } from "@launchbot/shared";
 import type { PlanStatus, SubscriptionPeriod } from "@launchbot/shared";
 import { resetRateLimits } from "@launchbot/shared/server";
+import type { Env } from "@launchbot/shared/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   botHarness,
   callbackUpdate,
   chatMember,
+  fakeLaunchFunding,
   feed,
   MAIN_WALLET,
   storedSession,
   telegramError,
   TEST_BALANCES,
+  TEST_FEE,
+  TEST_LAUNCH_WALLET,
+  TEST_SIGNATURE,
+  TEST_USER,
   TEST_WALLET,
+  testWithdrawal,
   textUpdate,
 } from "../../test-harness.js";
 import type { DataServices } from "../../services/data.js";
@@ -43,7 +50,13 @@ beforeEach(resetRateLimits);
  * every balance read, `plan` at every check of the plan.
  */
 function harness(
-  options: { plan?: PlanStatus; wallets?: WalletBalance[]; replies?: ApiReplies } = {},
+  options: {
+    plan?: PlanStatus;
+    wallets?: WalletBalance[];
+    replies?: ApiReplies;
+    env?: Partial<Env>;
+    launchFunding?: ReturnType<typeof fakeLaunchFunding>;
+  } = {},
 ) {
   const world = {
     plan: options.plan ?? activePlan(),
@@ -56,6 +69,8 @@ function harness(
   const h = botHarness({
     replies,
     data: { getPlanStatus: plans, getUserBalances: read },
+    env: options.env,
+    launchFunding: options.launchFunding,
   });
   const click = (data: string) => feed(h.bot, callbackUpdate(data, { messageId: 55 }));
   return {
@@ -382,7 +397,9 @@ describe("steps 3/4 Token and 4/4 Recap (V1-37)", () => {
     expect(h.screen()).toContain("<b>🚀 LAUNCH · STEP 4/4</b>");
     expect(h.screen()).toContain("📦 Bundle: 3 SOL (≈ 9.1% of supply)");
     expect(h.screen()).toContain("🧮 Total: 4 SOL (≈ 12.5% of supply)");
-    expect(h.screen()).toContain("🚧 Token creation arrives in V2.");
+    expect(h.screen()).toContain(
+      "🚧 Create token moves the dev buy and the bundle to a fresh launch wallet. The token itself arrives in V2.",
+    );
   });
 
   it("Continue without a token: the alert and the Missing flag of the step", async () => {
@@ -396,21 +413,146 @@ describe("steps 3/4 Token and 4/4 Recap (V1-37)", () => {
     expect(h.screen()).toContain("⚠️ Missing: name, ticker");
   });
 
-  it("Create token creates nothing: the alert only", async () => {
-    const h = harness();
+  describe("Create token funds a fresh launch wallet (decision of 26/09/2026)", () => {
+    /** The recap, then its Create token. */
+    async function create(h: ReturnType<typeof harness>) {
+      await atToken(h);
+      await h.click(TOKEN_CB.next("LAUNCH"));
+      await h.click(LAUNCH_CB.create(h.launch()?.createToken ?? ""));
+    }
 
-    await atToken(h);
-    await h.click(TOKEN_CB.next("LAUNCH"));
-    const writes = h.drafts.rows.size;
-    const edits = h.api.of("editMessageText").length;
-    await h.click(LAUNCH_CB.create);
+    it("moves the dev buy and the bundle, then shows the launch wallet", async () => {
+      const h = harness();
 
-    expect(h.lastAlert()).toMatchObject({
-      text: "🚧 Token creation arrives in V2.",
-      show_alert: true,
+      await create(h);
+
+      expect(h.launchFunding.requests).toEqual([
+        {
+          userId: TEST_USER.id,
+          walletId: "w1",
+          debitLamports: sol(4),
+          symbol: expect.any(String) as string,
+        },
+      ]);
+      const screens = h.api.of("editMessageText").map((call) => String(call.payload["text"]));
+      expect(screens.at(-2)).toContain("⏳ Moving 4.000 SOL from Main to a fresh launch wallet…");
+      expect(h.screen()).toContain("✅ Launch wallet funded.");
+      expect(h.screen()).toContain(
+        `🚀 Launch wallet: <code>${TEST_LAUNCH_WALLET.publicKey}</code>`,
+      );
+      expect(h.screen()).toContain("👛 From: Main");
+      expect(h.api.keyboard("editMessageText", -1)).toContainEqual([
+        {
+          text: "🔍 Explorer",
+          url: `https://explorer.solana.com/address/${TEST_LAUNCH_WALLET.publicKey}?cluster=devnet`,
+        },
+      ]);
     });
-    expect(h.api.of("editMessageText")).toHaveLength(edits);
-    expect(h.drafts.rows.size).toBe(writes);
+
+    it("funds once for a recap: a second click on it is a stale button", async () => {
+      const h = harness();
+      await atToken(h);
+      await h.click(TOKEN_CB.next("LAUNCH"));
+      const token = h.launch()?.createToken ?? "";
+
+      await h.click(LAUNCH_CB.create(token));
+      await h.click(LAUNCH_CB.create(token));
+
+      expect(h.launchFunding.requests).toHaveLength(1);
+      expect(h.lastAlert()?.["text"]).toBe("This button has expired. Please use the menu.");
+    });
+
+    it("counts test amounts: 1/100 leaves the wallet, as the screens say", async () => {
+      const h = harness({ env: { LAUNCH_TEST_DIVISOR: 100 } });
+
+      await h.click(LAUNCH_COIN);
+      // 0.400 SOL covers the smallest launch divided by 100.
+      expect(h.screen()).not.toContain("Insufficient funds");
+      expect(h.screen()).toContain(
+        "⚠️ Test amounts: only 1/100 of the dev buy and the bundle leaves the wallet.",
+      );
+
+      await h.click(LAUNCH_CB.wallet("w1"));
+      await h.click(LAUNCH_CB.preset(3));
+      await h.click(TOKEN_CB.generate("LAUNCH"));
+      await h.click(TOKEN_CB.next("LAUNCH"));
+      expect(h.screen()).toContain("💰 Dev buy: 0.01 SOL");
+      await h.click(LAUNCH_CB.create(h.launch()?.createToken ?? ""));
+
+      const screens = h.api.of("editMessageText").map((call) => String(call.payload["text"]));
+      expect(screens.at(-2)).toContain("⏳ Moving 0.040 SOL from Main to a fresh launch wallet…");
+      // What the screen said leaves the wallet is what the service is asked to send.
+      expect(h.launchFunding.requests[0]?.debitLamports).toBe(sol(0.04));
+    });
+
+    it("shows the recap again with why when nothing left the wallet", async () => {
+      const h = harness({
+        launchFunding: fakeLaunchFunding({
+          fund: () =>
+            Promise.resolve({
+              status: "refused",
+              failure: {
+                ok: false,
+                code: "INSUFFICIENT_FUNDS",
+                landed: "no",
+                missingLamports: 12_000_000n,
+              },
+            }),
+        }),
+      });
+
+      await create(h);
+
+      expect(h.screen()).toContain("<b>🚀 LAUNCH · STEP 4/4</b>");
+      expect(h.screen()).toContain(
+        "⚠️ Not enough SOL for this amount plus fees (0.012 SOL missing).",
+      );
+      // A new recap, a new token.
+      expect(h.launch()?.createToken).toMatch(/^[0-9a-f]{8}$/);
+    });
+
+    it("says a transfer of the wallet is still in flight on the recap", async () => {
+      const h = harness({
+        launchFunding: fakeLaunchFunding({
+          fund: () => Promise.resolve({ status: "in_progress" }),
+        }),
+      });
+
+      await create(h);
+
+      expect(h.screen()).toContain("<b>🚀 LAUNCH · STEP 4/4</b>");
+      expect(h.screen()).toContain(
+        "⏳ A transfer from this wallet is still in progress. Try again in a minute.",
+      );
+    });
+
+    it("says why a funding failed, and Try again goes back to the recap", async () => {
+      const failed = testWithdrawal({
+        toAddress: TEST_LAUNCH_WALLET.publicKey,
+        lamports: sol(4) - TEST_FEE,
+        status: "FAILED",
+        kind: "LAUNCH_FUNDING",
+        signature: TEST_SIGNATURE,
+      });
+      const h = harness({
+        launchFunding: fakeLaunchFunding({
+          fund: () =>
+            Promise.resolve({
+              status: "failed",
+              wallet: MAIN_WALLET,
+              withdrawal: failed,
+              failure: { ok: false, code: "BLOCKHASH_EXPIRED", landed: "no" },
+            }),
+        }),
+      });
+
+      await create(h);
+
+      expect(h.screen()).toContain("❌ The launch wallet was not funded.");
+      expect(h.screen()).toContain("Nothing was sent.");
+      await h.click(TOKEN_CB.next("LAUNCH"));
+      expect(h.screen()).toContain("<b>🚀 LAUNCH · STEP 4/4</b>");
+    });
   });
 
   it("Back from the recap is the Token step, Back from the Token step is step 2", async () => {

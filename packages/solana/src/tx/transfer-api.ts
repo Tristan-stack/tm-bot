@@ -5,13 +5,13 @@ import { getRentExemptMinimum } from "./rent.js";
 import { lookupSignature } from "./status.js";
 import type { SignatureOutcome } from "./status.js";
 import { estimateTransferFee, prepareTransfer, sendTransfer } from "./transfer.js";
-import type { TransferRequest } from "./transfer.js";
+import type { TransferAmount, TransferRequest } from "./transfer.js";
 import type { SignerSource, TransferQuote, TxContext, TxSuccess } from "./types.js";
 
 /**
  * The transaction helpers of V1-13 bound to a process: what the withdrawal (V1-14), the payment
- * from a wallet (V1-31) and the treasury (V1-33) are handed — `@launchbot/db` does not load this
- * package, it is given these.
+ * from a wallet (V1-31), the treasury (V1-33) and the funding of a launch wallet are handed —
+ * `@launchbot/db` does not load this package, it is given these.
  */
 export type TransferApi = {
   estimateFee: (from: string) => Promise<bigint>;
@@ -19,7 +19,7 @@ export type TransferApi = {
   prepare: (params: {
     from: string;
     to: string;
-    amount: bigint | "max";
+    amount: TransferAmount;
   }) => Promise<TransferQuote | TxFailure>;
   send: (
     request: TransferRequest,

@@ -85,6 +85,11 @@ export type LaunchFlowState = {
   bundleLamports?: string;
   /** A bundle the wallet could not cover: the note of step 2 and its Refresh. */
   blockedLamports?: string;
+  /**
+   * The token of the Create token button the recap showed last: spent at the click, so a second
+   * click on the same recap cannot fund a second launch wallet (decision of 26/09/2026).
+   */
+  createToken?: string;
 };
 
 /**
@@ -235,11 +240,12 @@ const isOptionalLamports = (value: unknown): boolean => value === undefined || i
 
 const isLaunchState = (value: unknown): value is LaunchFlowState => {
   if (typeof value !== "object" || value === null) return false;
-  const { walletId, bundleLamports, blockedLamports } = value as LaunchFlowState;
+  const { walletId, bundleLamports, blockedLamports, createToken } = value as LaunchFlowState;
   return (
     isOptionalString(walletId) &&
     isOptionalLamports(bundleLamports) &&
-    isOptionalLamports(blockedLamports)
+    isOptionalLamports(blockedLamports) &&
+    isOptionalString(createToken)
   );
 };
 

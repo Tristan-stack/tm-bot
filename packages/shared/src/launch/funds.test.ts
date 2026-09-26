@@ -1,15 +1,45 @@
 import { describe, expect, it } from "vitest";
 import { WALLET_READY_MIN_LAMPORTS } from "../constants.js";
 import { solToLamports as sol } from "../format/sol.js";
-import { isWalletReady } from "../wallets.js";
 import {
   bundlePresetLamports,
   bundleStatuses,
   customMaxLamports,
+  isWalletReady,
   launchShortfallLamports,
+  launchSpendLamports,
   parseLaunchBundleInput,
   smallestLaunchShortfall,
 } from "./funds.js";
+
+describe("test amounts (LAUNCH_TEST_DIVISOR, decision of 26/09/2026)", () => {
+  it("divides what leaves the wallet, fees included, and nothing else", () => {
+    expect(launchSpendLamports(sol(3))).toBe(sol(4));
+    expect(launchSpendLamports(sol(3), 100n)).toBe(sol(0.04));
+    expect(launchSpendLamports(sol(20), 1_000n)).toBe(sol(0.021));
+  });
+
+  it("checks a balance against the divided amounts, and says what it lacks in real SOL", () => {
+    expect(launchShortfallLamports(sol(0.04), sol(3), 100n)).toBe(0n);
+    expect(launchShortfallLamports(sol(0.042), sol(5), 100n)).toBe(sol(0.018));
+    expect(smallestLaunchShortfall(sol(0.4), 100n)).toBe(0n);
+    expect(isWalletReady(sol(0.04), 100n)).toBe(true);
+    expect(isWalletReady(sol(0.039), 100n)).toBe(false);
+  });
+
+  it("keeps the choices in product amounts: Custom up to what the divided balance pays", () => {
+    // 0.042 SOL pays 4.2 SOL of dev buy and bundle once divided by 100: a 3.200 SOL bundle.
+    expect(customMaxLamports(sol(0.042), 100n)).toBe(sol(3.2));
+    expect(bundleStatuses(sol(0.042), 100n).presets[1]).toEqual({
+      lamports: sol(5),
+      shortfall: sol(0.018),
+    });
+    expect(parseLaunchBundleInput("3.2", sol(0.042), 100n)).toEqual({
+      ok: true,
+      lamports: sol(3.2),
+    });
+  });
+});
 
 describe("launchShortfallLamports (V1-35, decision of 25/09/2026)", () => {
   it("counts the 1 SOL dev buy plus the bundle, nothing on top, never below 0", () => {
@@ -24,9 +54,8 @@ describe("launchShortfallLamports (V1-35, decision of 25/09/2026)", () => {
     expect(smallestLaunchShortfall(sol(4))).toBe(0n);
     expect(smallestLaunchShortfall(3_999_999_999n)).toBe(1n);
     expect(smallestLaunchShortfall(sol(0.4))).toBe(sol(3.6));
-    for (const balance of [WALLET_READY_MIN_LAMPORTS - 1n, WALLET_READY_MIN_LAMPORTS]) {
-      expect(smallestLaunchShortfall(balance) === 0n).toBe(isWalletReady(balance));
-    }
+    expect(isWalletReady(WALLET_READY_MIN_LAMPORTS)).toBe(true);
+    expect(isWalletReady(WALLET_READY_MIN_LAMPORTS - 1n)).toBe(false);
   });
 });
 

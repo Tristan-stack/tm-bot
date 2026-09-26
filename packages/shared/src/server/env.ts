@@ -1,6 +1,7 @@
 import { writeSync } from "node:fs";
 import { z } from "zod";
 import { SOLANA_CLUSTERS } from "../cluster.js";
+import { LAUNCH_TEST_DIVISOR_MAX } from "../constants.js";
 import { isValidSolanaAddress } from "../solana-address.js";
 import { withoutTrailingSlash } from "../url.js";
 import { loadDotenvOnce } from "./dotenv.js";
@@ -29,6 +30,8 @@ const REASON = {
   adminIds: "must be positive integers separated by commas",
   treasury: "must be a base58 Solana address (32 bytes)",
   logLevel: `must be one of: ${LOG_LEVELS.join(", ")}`,
+  launchDivisor: `must be an integer from 1 to ${LAUNCH_TEST_DIVISOR_MAX}`,
+  launchDivisorCluster: "must be 1 outside devnet",
 } as const;
 
 const KNOWN_REASONS = new Set<string>(Object.values(REASON));
@@ -131,6 +134,9 @@ const envSchema = z.object({
   // 0.0.0.0 in a container; the loopback by default, so a dev machine exposes nothing.
   API_HOST: z.string().default("127.0.0.1"),
   LOG_LEVEL: z.enum(LOG_LEVELS, { error: REASON.logLevel }).default("info"),
+  // Test amounts of a launch, devnet only (decision of 26/09/2026): the dev buy and the bundle
+  // that leave the wallet are divided by it. 1: the real amounts.
+  LAUNCH_TEST_DIVISOR: integer(REASON.launchDivisor, 1, LAUNCH_TEST_DIVISOR_MAX).default(1),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -169,6 +175,15 @@ function feeBoundsIssue(variables: Record<string, string>): EnvIssue | undefined
   return { variable: "PRIORITY_FEE_MAX_MICROLAMPORTS", reason: REASON.maxBelowMin };
 }
 
+/** Test amounts are for devnet only: anywhere else a launch moves the real amounts. */
+function launchDivisorIssue(variables: Record<string, string>): EnvIssue | undefined {
+  const cluster = envSchema.shape.SOLANA_CLUSTER.safeParse(variables["SOLANA_CLUSTER"]);
+  const divisor = envSchema.shape.LAUNCH_TEST_DIVISOR.safeParse(variables["LAUNCH_TEST_DIVISOR"]);
+  if (!cluster.success || !divisor.success) return undefined;
+  if (divisor.data === 1 || cluster.data === "devnet") return undefined;
+  return { variable: "LAUNCH_TEST_DIVISOR", reason: REASON.launchDivisorCluster };
+}
+
 /** Pure: validates a set of variables. Throws EnvValidationError listing every faulty variable. */
 export function parseEnv(source: Record<string, string | undefined>): Env {
   const variables = pickVariables(source);
@@ -180,8 +195,9 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
     const reason = KNOWN_REASONS.has(issue.message) ? issue.message : REASON.invalid;
     if (!issues.some((known) => known.variable === variable)) issues.push({ variable, reason });
   }
-  const feeBounds = feeBoundsIssue(variables);
-  if (feeBounds !== undefined) issues.push(feeBounds);
+  for (const issue of [feeBoundsIssue(variables), launchDivisorIssue(variables)]) {
+    if (issue !== undefined) issues.push(issue);
+  }
 
   if (!result.success || issues.length > 0) throw new EnvValidationError(issues);
   return result.data;

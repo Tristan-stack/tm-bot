@@ -4,7 +4,6 @@ import {
   getWalletLimit,
   getWithdrawFeeBudgetLamports,
   isBalanceWithdrawable,
-  isWalletReady,
   priorityFeeLamports,
   transferFeeLamports,
   transferShortfall,
@@ -15,11 +14,6 @@ describe("wallet rules", () => {
     expect([getWalletLimit(null), getWalletLimit("CLASSIC"), getWalletLimit("PREMIUM")]).toEqual([
       3, 5, 10,
     ]);
-  });
-
-  it("calls a wallet ready from 4 SOL", () => {
-    expect(isWalletReady(4_000_000_000n)).toBe(true);
-    expect(isWalletReady(3_999_999_999n)).toBe(false);
   });
 
   it("rounds a priority fee up to the lamport", () => {

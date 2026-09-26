@@ -1,4 +1,4 @@
-import type { TokenDraftFields, WalletBalance } from "@launchbot/db";
+import type { TokenDraftFields, WalletBalance, WalletSummary, Withdrawal } from "@launchbot/db";
 import {
   a,
   BUNDLE_MAX_LAMPORTS,
@@ -7,12 +7,13 @@ import {
   cancelBtn,
   cbBtn,
   code,
-  DEV_BUY_SOL,
+  DEV_BUY_LAMPORTS,
   en,
   encodeCallback,
   escapeHtml,
   FEE_MARGIN_LAMPORTS,
   formatSol,
+  formatSolExact,
   formatSolWithUsd,
   formatTimeUtc,
   lamportsToSol,
@@ -25,12 +26,20 @@ import {
   smallestLaunchShortfall,
   TOKEN_CREATION_ENABLED,
   tree,
+  urlBtn,
 } from "@launchbot/shared";
 import type { OptionalLine, Screen, Ui } from "@launchbot/shared";
 import type { CurveParams } from "@launchbot/sim-engine";
-import { renderBuyLines, renderTokenRecapBlock } from "../simulation/screens.js";
+import { renderBuyLines, renderTokenRecapBlock, tokenLine } from "../simulation/screens.js";
 import type { ReadyToken } from "../simulation/screens.js";
+import { TOKEN_CB } from "../token-step/screens.js";
 import { WALLET_CB } from "../wallets/screens.js";
+import {
+  failureLines,
+  signatureLines,
+  unknownSignatureLines,
+} from "../wallets/withdraw-screens.js";
+import type { WithdrawFailureView } from "../wallets/withdraw-screens.js";
 
 /**
  * Callback data of Launch Coin (§4.4, `lc`, V1-35 to V1-37): the state of the flow is in the
@@ -50,10 +59,16 @@ export const LAUNCH_CB = {
   custom: encodeCallback("lc", "b", "c"),
   cancelCustom: encodeCallback("lc", "b", "cx"),
   refresh: encodeCallback("lc", "b", "r"),
-  create: encodeCallback("lc", "create"),
+  /** With the token of the recap it is on: a second click on the same recap is stale. */
+  create: (token: string) => encodeCallback("lc", "create", token),
 } as const;
 
 const { launch } = en;
+const { result } = en.wallets.withdraw;
+
+/** The flag of the screens that check amounts when `LAUNCH_TEST_DIVISOR` is above 1. */
+const testAmountsFlag = (divisor: bigint): OptionalLine =>
+  divisor > 1n && launch.testAmounts(Number(divisor));
 // The lines of a wallet that can pay or not: the ones of Pay from my wallet (V1-31).
 const { walletOk, walletShort } = en.subscribe.payFromWallet;
 
@@ -99,9 +114,9 @@ export const insufficientWalletNote = (wallet: WalletBalance, shortfall: bigint)
     code(wallet.publicKey),
   );
 
-const walletLine = (wallet: WalletBalance): string => {
+const walletLine = (wallet: WalletBalance, divisor: bigint): string => {
   if (wallet.lamports === null) return walletSummary(wallet);
-  const shortfall = smallestLaunchShortfall(wallet.lamports);
+  const shortfall = smallestLaunchShortfall(wallet.lamports, divisor);
   return shortfall === 0n
     ? walletOk(escapeHtml(wallet.name), formatSol(wallet.lamports))
     : shortWalletLine(wallet, wallet.lamports, shortfall);
@@ -114,24 +129,29 @@ const walletLine = (wallet: WalletBalance): string => {
 export function buildWalletStepScreen(
   ui: Ui,
   wallets: readonly WalletBalance[],
-  options: { flags?: OptionalLine[] } = {},
+  options: { flags?: OptionalLine[]; divisor?: bigint } = {},
 ): Screen {
+  const { divisor = 1n } = options;
   const description = [launch.wallet.description, launch.wallet.minimum];
   const header = ui.flowHeader({ flow: "LAUNCH", step: 1 });
+  const flags = [...(options.flags ?? []), testAmountsFlag(divisor)];
   if (wallets.length === 0) {
     return renderScreen({
       header,
       description,
       info: en.subscribe.payFromWallet.noWallet,
-      flags: options.flags,
+      flags,
       keyboard: [[cbBtn(en.menu.wallets, WALLET_CB.list), cbBtn(en.btn.back, NAV_HOME)]],
     });
   }
   return renderScreen({
     header,
     description,
-    info: tree(null, wallets.map(walletLine)),
-    flags: options.flags,
+    info: tree(
+      null,
+      wallets.map((wallet) => walletLine(wallet, divisor)),
+    ),
+    flags,
     keyboard: [
       // Button labels are plain text for Telegram: the name as it was typed.
       ...wallets.map((wallet) => [cbBtn(wallet.name, LAUNCH_CB.wallet(wallet.id))]),
@@ -149,6 +169,8 @@ export type BundleStepView = {
   blockedLamports?: bigint;
   /** After a Refresh: `🕒 Updated 14:32 UTC` (§4.5). */
   refreshedAt?: Date;
+  /** `LAUNCH_TEST_DIVISOR`: what leaves the wallet is divided by it (decision of 26/09/2026). */
+  divisor?: bigint;
 };
 
 /**
@@ -158,7 +180,7 @@ export type BundleStepView = {
  */
 export function buildBundleStepScreen(ui: Ui, view: BundleStepView): Screen {
   const t = launch.bundle;
-  const { wallet } = view;
+  const { wallet, divisor = 1n } = view;
   const balance = wallet.lamports;
 
   let statusBlock: string;
@@ -166,7 +188,7 @@ export function buildBundleStepScreen(ui: Ui, view: BundleStepView): Screen {
   if (balance === null) {
     statusBlock = t.unreadable;
   } else {
-    const { presets, customMaxLamports } = bundleStatuses(balance);
+    const { presets, customMaxLamports } = bundleStatuses(balance, divisor);
     statusBlock = tree(null, [
       ...presets.map(({ lamports, shortfall }) =>
         shortfall === 0n
@@ -174,11 +196,12 @@ export function buildBundleStepScreen(ui: Ui, view: BundleStepView): Screen {
           : t.short(amountText(lamports), missingText(shortfall)),
       ),
       customMaxLamports === null
-        ? t.customShort(missingText(smallestLaunchShortfall(balance)))
+        ? t.customShort(missingText(smallestLaunchShortfall(balance, divisor)))
         : t.custom(customMaxText(customMaxLamports)),
     ]);
     const blocked = view.blockedLamports;
-    const shortfall = blocked === undefined ? 0n : launchShortfallLamports(balance, blocked);
+    const shortfall =
+      blocked === undefined ? 0n : launchShortfallLamports(balance, blocked, divisor);
     if (blocked !== undefined && shortfall > 0n) {
       note = t.insufficient(escapeHtml(wallet.name), amountText(blocked), missingText(shortfall));
     }
@@ -194,7 +217,7 @@ export function buildBundleStepScreen(ui: Ui, view: BundleStepView): Screen {
       statusBlock,
       ...updated,
     ].join("\n\n"),
-    flags: [note],
+    flags: [note, testAmountsFlag(divisor)],
     keyboard: [
       BUNDLE_PRESETS_SOL.map((sol) => cbBtn(en.sim.bundle.btnPreset(sol), LAUNCH_CB.preset(sol))),
       [cbBtn(en.sim.bundle.btnCustom, LAUNCH_CB.custom)],
@@ -239,18 +262,28 @@ export type LaunchRecapView = {
   curve: CurveParams;
   /** `CHANNEL_SUCCESS_URL`: « Success channel » links to it (proposal). */
   successUrl: string;
+  /** The token of its Create token button (`LaunchFlowState.createToken`). */
+  createToken: string;
+  /** `LAUNCH_TEST_DIVISOR`: the buys show what really leaves the wallet (26/09/2026). */
+  divisor?: bigint;
 };
 
 /**
  * Step 4/4 (§10.1): the token as the simulation shows it, the wallet (with what it lacks if its
  * balance fell since step 2), the dev buy, the bundle and their total with their shares, the
- * estimated fees. Create token creates nothing while `TOKEN_CREATION_ENABLED` is off (D6).
+ * estimated fees. While `TOKEN_CREATION_ENABLED` is off (D6), Create token funds the launch
+ * wallet and nothing more (decision of 26/09/2026).
  */
-export function buildLaunchRecapScreen(ui: Ui, view: LaunchRecapView): Screen {
+export function buildLaunchRecapScreen(
+  ui: Ui,
+  view: LaunchRecapView,
+  options: { flags?: OptionalLine[] } = {},
+): Screen {
   const t = launch.recap;
-  const { wallet, bundleLamports } = view;
+  const { wallet, bundleLamports, divisor = 1n } = view;
   const balance = wallet.lamports;
-  const shortfall = balance === null ? 0n : launchShortfallLamports(balance, bundleLamports);
+  const shortfall =
+    balance === null ? 0n : launchShortfallLamports(balance, bundleLamports, divisor);
   return renderScreen({
     header: ui.flowHeader({ flow: "LAUNCH", step: 4 }),
     description: t.description,
@@ -262,12 +295,85 @@ export function buildLaunchRecapScreen(ui: Ui, view: LaunchRecapView): Screen {
             ? walletSummary(wallet)
             : shortWalletLine(wallet, balance, shortfall),
         ),
-        ...renderBuyLines(view.curve, DEV_BUY_SOL, lamportsToSol(bundleLamports)),
+        ...renderBuyLines(
+          view.curve,
+          lamportsToSol(DEV_BUY_LAMPORTS / divisor),
+          lamportsToSol(bundleLamports / divisor),
+        ),
         en.wallets.withdraw.confirm.fees(amountText(FEE_MARGIN_LAMPORTS)),
       ].join("\n"),
       t.success(a(t.successLabel, view.successUrl)),
     ].join("\n\n"),
-    flags: [!TOKEN_CREATION_ENABLED && t.v2Notice],
-    keyboard: [[cbBtn(t.btnCreate, LAUNCH_CB.create)], navRow(LAUNCH_CB.tokenStep, { menu: true })],
+    flags: [
+      ...(options.flags ?? []),
+      !TOKEN_CREATION_ENABLED && t.v2Notice,
+      testAmountsFlag(divisor),
+    ],
+    keyboard: [
+      [cbBtn(t.btnCreate, LAUNCH_CB.create(view.createToken))],
+      navRow(LAUNCH_CB.tokenStep, { menu: true }),
+    ],
   });
 }
+
+const { funding } = launch;
+
+/** While the launch wallet is funded: no button, nothing to click twice. */
+export const buildLaunchFundingScreen = (
+  ui: Ui,
+  view: { wallet: WalletSummary; debitLamports: bigint },
+): Screen =>
+  renderScreen({
+    header: ui.screenHeader(funding.title),
+    description: funding.sending(formatSol(view.debitLamports), escapeHtml(view.wallet.name)),
+    keyboard: [],
+  });
+
+/**
+ * The launch wallet funded (decision of 26/09/2026): what moved, from which wallet, to which
+ * address, for how much, and the transaction. Explorer opens the launch wallet, which no other
+ * screen lists.
+ */
+export const buildLaunchFundedScreen = (
+  ui: Ui,
+  view: {
+    draft: ReadyToken;
+    wallet: WalletSummary;
+    launchWallet: WalletSummary;
+    withdrawal: Withdrawal;
+  },
+): Screen => {
+  const { withdrawal, launchWallet } = view;
+  return renderScreen({
+    header: ui.screenHeader(funding.title),
+    description: [funding.funded, funding.held],
+    info: [
+      tokenLine(view.draft.name, view.draft.symbol),
+      funding.from(escapeHtml(view.wallet.name)),
+      funding.launchWallet(code(launchWallet.publicKey)),
+      result.amount(formatSolExact(withdrawal.lamports)),
+      result.fees(formatSolExact(withdrawal.feeLamports ?? 0n)),
+      ...signatureLines(ui, withdrawal.signature),
+    ],
+    keyboard: [
+      [urlBtn(en.wallets.btnExplorer, ui.explorerAddressUrl(launchWallet.publicKey))],
+      [cbBtn(en.btn.menu, NAV_HOME)],
+    ],
+  });
+};
+
+/**
+ * The launch wallet not funded, as a withdrawal says it failed. Try again is the Continue of
+ * the Token step: the recap again, checked again, with a new token.
+ */
+export const buildLaunchFundingFailedScreen = (ui: Ui, view: WithdrawFailureView): Screen =>
+  renderScreen({
+    header: ui.screenHeader(funding.title),
+    description: [funding.failed, ...failureLines(view.failure)],
+    info: [
+      funding.from(escapeHtml(view.wallet.name)),
+      result.amount(formatSolExact(view.withdrawal.lamports)),
+      ...unknownSignatureLines(ui, view),
+    ],
+    keyboard: [[cbBtn(result.btnTryAgain, TOKEN_CB.next("LAUNCH")), cbBtn(en.btn.menu, NAV_HOME)]],
+  });

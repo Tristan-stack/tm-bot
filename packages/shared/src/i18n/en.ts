@@ -598,7 +598,8 @@ export const en = {
   // line of `wallets.withdraw`.
   launch: {
     wallet: {
-      description: "Choose the wallet that creates the token and pays the dev buy and the bundle.",
+      // Decision of 26/09/2026: the token is created by a fresh launch wallet this one funds.
+      description: "Choose the wallet that pays the dev buy and the bundle.",
       /** The smallest launch (D13): the dev buy and the smallest bundle, nothing on top. */
       minimum: `The smallest launch needs ${DEV_BUY_SOL + BUNDLE_MIN_SOL} SOL (${DEV_BUY_SOL} SOL dev buy + ${BUNDLE_MIN_SOL} SOL bundle).`,
       // proposed text (D19)
@@ -643,9 +644,31 @@ export const en = {
       /** `link` is `successLabel`, already an <a> of the caller (proposal). */
       success: (link: string) => `${E.success} Your launch will be posted in the ${link}.`,
       successLabel: "Success channel",
-      /** §10.1, D6: the line of the recap, and the alert of Create token, while creation is off. */
-      v2Notice: `${E.construction} Token creation arrives in V2.`,
+      /**
+       * §10.1, D6: the line of the recap while creation is off. Create token funds the launch
+       * wallet (decision of 26/09/2026). Proposed text (D19).
+       */
+      v2Notice: `${E.construction} Create token moves the dev buy and the bundle to a fresh launch wallet. The token itself arrives in V2.`,
       btnCreate: `${E.createToken} Create token`,
+    },
+    // proposed text (D19): LAUNCH_TEST_DIVISOR above 1, devnet only (decision of 26/09/2026)
+    testAmounts: (divisor: number) =>
+      `${E.warning} Test amounts: only 1/${divisor} of the dev buy and the bundle leaves the wallet.`,
+    /**
+     * Create token (decision of 26/09/2026): the dev buy and the bundle leave the chosen wallet,
+     * fees included, for a fresh wallet of the launch that no screen of the user lists.
+     * Proposed texts (D19).
+     */
+    funding: {
+      title: `${E.createToken} LAUNCH`,
+      sending: (amount: string, name: string) =>
+        `${E.waiting} Moving ${amount} from ${name} to a fresh launch wallet…`,
+      funded: `${E.confirm} Launch wallet funded.`,
+      held: "The dev buy and the bundle wait in a fresh wallet made for this launch. The token itself arrives in V2.",
+      from: (name: string) => `${E.wallets} From: ${name}`,
+      launchWallet: (address: string) => `${E.createToken} Launch wallet: ${address}`,
+      failed: `${E.fail} The launch wallet was not funded.`,
+      inProgress: `${E.waiting} A transfer from this wallet is still in progress. Try again in a minute.`,
     },
   },
 

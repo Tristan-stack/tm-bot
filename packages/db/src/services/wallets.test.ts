@@ -40,7 +40,7 @@ const bytes = (label: string) => Uint8Array.from(Buffer.from(label));
  * The wallet table and the subscription read, in memory. `$transaction` runs the callbacks one
  * after the other: what the advisory lock does in PostgreSQL (the integration test covers it).
  */
-type Where = { userId: string; id?: string };
+type Where = { userId: string; id?: string; kind?: string };
 
 function harness(
   options: {
@@ -67,11 +67,15 @@ function harness(
     userId: USER,
     name,
     publicKey: `pk-${index + 1}`,
+    kind: "USER",
     createdAt: T0,
   }));
   const ofUser = (where: Where) =>
     rows.filter(
-      (row) => row.userId === where.userId && (where.id === undefined || row.id === where.id),
+      (row) =>
+        row.userId === where.userId &&
+        (where.id === undefined || row.id === where.id) &&
+        (where.kind === undefined || row["kind"] === where.kind),
     );
 
   const prisma = {
@@ -98,7 +102,7 @@ function harness(
       create: vi.fn(({ data }: { data: Columns }) => {
         const failure = failCreates.shift();
         if (failure !== undefined) return Promise.reject(failure);
-        const row: Row = { id: `w${rows.length + 1}`, createdAt: T0, ...data };
+        const row: Row = { id: `w${rows.length + 1}`, createdAt: T0, kind: "USER", ...data };
         rows.push(row);
         const { id, name, publicKey, createdAt } = row;
         return Promise.resolve({ id, name, publicKey, createdAt });
@@ -616,7 +620,9 @@ describe("checkDeletable / delete", () => {
 
     expect(await remove(USER, "w1")).toEqual({ status: "deleted" });
     expect(rows.map((row) => row.id)).toEqual(["w2"]);
-    expect(prisma.wallet.deleteMany).toHaveBeenCalledWith({ where: { id: "w1", userId: USER } });
+    expect(prisma.wallet.deleteMany).toHaveBeenCalledWith({
+      where: { id: "w1", userId: USER, kind: "USER" },
+    });
     expect(balances.invalidateUserBalances).toHaveBeenCalledWith(USER);
   });
 

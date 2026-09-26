@@ -11,6 +11,13 @@ import type { PrismaClient } from "../generated/prisma/client.js";
 const log = createLogger("db:balances");
 
 /** The columns of a wallet the screens show: never a key column (§9.6). */
+/**
+ * The wallets a user manages (§9), in the filter of every read their screens make: a launch
+ * wallet (decision of 26/09/2026) shows on none of them and counts in no limit. The admin
+ * commands, the inactive accounts and /purge read every wallet.
+ */
+export const MANAGED_WALLET = { kind: "USER" } as const;
+
 export const WALLET_SUMMARY_SELECT = {
   id: true,
   name: true,
@@ -78,7 +85,7 @@ export function createBalancesService(deps: BalancesDeps): BalancesService {
 
     async getUserBalances(userId, { skipCache = false } = {}) {
       const wallets = await prisma.wallet.findMany({
-        where: { userId },
+        where: { userId, ...MANAGED_WALLET },
         orderBy: { createdAt: "asc" },
         select: WALLET_SUMMARY_SELECT,
       });

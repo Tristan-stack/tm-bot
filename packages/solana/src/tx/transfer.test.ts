@@ -172,6 +172,56 @@ describe("prepareTransfer", () => {
     expect(transferredLamports(simulated[0]!)).toBe(0n);
   });
 
+  it("takes the fees out of a debit, simulated on a provisional amount", async () => {
+    const { ctx, from, to, simulated } = harness();
+    const debit = 100n * milliSol;
+
+    const quote = await prepareTransfer(ctx, { from, to, amount: { debit } });
+
+    expect(transferredLamports(simulated[0]!)).toBe(DEVNET_RENT_MIN);
+    expect(quote).toMatchObject({ mode: "debit", amountLamports: debit - FEE });
+  });
+
+  it("refuses a debit over the balance before it simulates anything", async () => {
+    const { ctx, from, to, of } = harness();
+
+    const failure = await prepareTransfer(ctx, {
+      from,
+      to,
+      amount: { debit: LAMPORTS_PER_SOL + 5n },
+    });
+
+    expect(failure).toMatchObject({ code: "INSUFFICIENT_FUNDS", missingLamports: 5n });
+    expect(of("simulateTransaction")).toHaveLength(0);
+  });
+
+  it("moves the whole balance rather than leave a dust under the rent-exempt minimum", async () => {
+    const { ctx, from, to } = harness();
+
+    expect(
+      await prepareTransfer(ctx, { from, to, amount: { debit: LAMPORTS_PER_SOL - 1n } }),
+    ).toMatchObject({ mode: "debit", amountLamports: LAMPORTS_PER_SOL - FEE });
+    // What stays is the rent-exempt minimum or more: the debit is taken as it is.
+    expect(
+      await prepareTransfer(ctx, {
+        from,
+        to,
+        amount: { debit: LAMPORTS_PER_SOL - DEVNET_RENT_MIN },
+      }),
+    ).toMatchObject({ amountLamports: LAMPORTS_PER_SOL - DEVNET_RENT_MIN - FEE });
+  });
+
+  it("refuses a debit of 0, or one the fees would eat whole", async () => {
+    const { ctx, from, to } = harness();
+
+    expect(await prepareTransfer(ctx, { from, to, amount: { debit: 0n } })).toMatchObject({
+      code: "INVALID_AMOUNT",
+    });
+    expect(await prepareTransfer(ctx, { from, to, amount: { debit: FEE } })).toMatchObject({
+      code: "INVALID_AMOUNT",
+    });
+  });
+
   it("reads the rent-exempt minimum once per connection", async () => {
     const { ctx, from, to, of } = harness();
 
@@ -336,6 +386,31 @@ describe("sendTransfer", () => {
       LAMPORTS_PER_SOL - FEE,
     );
     expect(transferredLamports(VersionedTransaction.deserialize(sent[1]!))).toBe(amount);
+  });
+
+  it("takes the fee of a second attempt out of a debit: the wallet pays exactly its total", async () => {
+    captureLogs();
+    const debit = 100n * milliSol;
+    const { ctx, from, to, signer, sent, state } = harness({
+      // The first blockhash expires with nothing landed; the second attempt is confirmed.
+      statuses: [null, { confirmationStatus: "confirmed" }],
+      heights: [201],
+      lastValidBlockHeight: 200,
+      onCall: (method) => {
+        if (method === "getLatestBlockhash") state.fees = [1_000_000];
+      },
+    });
+
+    const result = await sendTransfer(
+      ctx,
+      quoteOf({ from, to, mode: "debit", amountLamports: debit }),
+      signer,
+    );
+
+    expect(result).toMatchObject({ ok: true, amountLamports: debit - 5_540n });
+    expect(sent).toHaveLength(2);
+    expect(transferredLamports(VersionedTransaction.deserialize(sent[0]!))).toBe(debit - FEE);
+    expect(transferredLamports(VersionedTransaction.deserialize(sent[1]!))).toBe(debit - 5_540n);
   });
 
   it("hands the quote over before signing, then the signature before the confirmation", async () => {

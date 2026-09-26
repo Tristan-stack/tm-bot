@@ -1,4 +1,4 @@
-import type { UserBalances, WalletBalance } from "@launchbot/db";
+import type { LaunchFundingService, UserBalances, WalletBalance } from "@launchbot/db";
 import {
   BUNDLE_MIN_LAMPORTS,
   bundlePresetLamports,
@@ -6,14 +6,17 @@ import {
   en,
   escapeHtml,
   launchShortfallLamports,
+  launchSpendLamports,
   parseLaunchBundleInput,
   smallestLaunchShortfall,
+  warn,
 } from "@launchbot/shared";
-import type { Ui } from "@launchbot/shared";
+import type { OptionalLine, Ui } from "@launchbot/shared";
 import type { BotContext, LaunchFlowState } from "../../context.js";
 import { mayReadFreshBalances } from "../../middleware/rate-limit.js";
+import { newConfirmToken } from "../../navigation/confirm-token.js";
 import type { InputHandler, InputRouter } from "../../navigation/inputs.js";
-import { notify } from "../../navigation/notify.js";
+import { acknowledge, notify } from "../../navigation/notify.js";
 import { notifyIfUnchanged, presentScreen, showScreen } from "../../navigation/show-screen.js";
 import type { PresentOptions, ShowMode, ShowResult } from "../../navigation/show-screen.js";
 import type { CallbackHandler, CallbackRouter } from "../../router/callback-router.js";
@@ -21,9 +24,13 @@ import type { DataServices } from "../../services/data.js";
 import type { Access } from "../access/access.js";
 import type { Subscribe } from "../subscribe/subscribe.js";
 import type { ReadyTokenDraft, TokenStep } from "../token-step/token-step.js";
+import { txFailureText } from "../wallets/withdraw-screens.js";
 import {
   buildBundleStepScreen,
   buildLaunchCustomScreen,
+  buildLaunchFundedScreen,
+  buildLaunchFundingFailedScreen,
+  buildLaunchFundingScreen,
   buildLaunchRecapScreen,
   buildWalletStepScreen,
   insufficientWalletNote,
@@ -42,6 +49,10 @@ export type LaunchFlowDeps = {
   offers: Pick<Subscribe, "showOffersScreen">;
   /** `CHANNEL_SUCCESS_URL` (§3): the recap links « Success channel » to it (proposal). */
   successUrl: string;
+  /** Create token (decision of 26/09/2026): the dev buy and the bundle to a launch wallet. */
+  launchFunding: LaunchFundingService;
+  /** `LAUNCH_TEST_DIVISOR`: 1, or what the dev buy and the bundle are divided by (devnet). */
+  launchDivisor: bigint;
 };
 
 type Show = Pick<PresentOptions, "mode" | "flags">;
@@ -49,6 +60,8 @@ type Show = Pick<PresentOptions, "mode" | "flags">;
 type Loaded = { wallet: WalletBalance; balances: UserBalances };
 /** The wallet of the flow and its balance, read: what an amount is checked against. */
 type Funded = Loaded & { balance: bigint };
+/** The wallet of the flow and the bundle chosen for it: what the recap and Create token need. */
+type Chosen = Loaded & { bundleLamports: bigint };
 
 const walletIn = (balances: UserBalances, walletId: string | undefined) =>
   balances.wallets.find((wallet) => wallet.id === walletId);
@@ -56,15 +69,17 @@ const walletIn = (balances: UserBalances, walletId: string | undefined) =>
 /**
  * Launch Coin (§10.1, V1-35 to V1-37): the channel checked without cache and an active plan at
  * the entry, then Wallet → Bundle → Token → Recap; the dev buy is a fixed 1 SOL and the bundle
- * leaves the same wallet (decision of 25/09/2026). Nothing is created in V1: Create token
- * answers an alert (D6). The state is in the session (`launch`), the draft in the Token step.
+ * leaves the same wallet (decision of 25/09/2026). No token is created yet (D6): Create token
+ * moves the dev buy and the bundle to a fresh launch wallet (decision of 26/09/2026). The state
+ * is in the session (`launch`), the draft in the Token step.
  */
 export function registerLaunch(
   router: CallbackRouter,
   inputs: InputRouter,
   deps: LaunchFlowDeps,
 ): void {
-  const { ui, data, access, tokenStep, offers, successUrl } = deps;
+  const { ui, data, access, tokenStep, offers, successUrl, launchFunding } = deps;
+  const divisor = deps.launchDivisor;
   const stateOf = (ctx: BotContext): LaunchFlowState => (ctx.session.launch ??= {});
   const lamportsOf = (value: string | undefined) =>
     value === undefined ? undefined : BigInt(value);
@@ -86,7 +101,11 @@ export function registerLaunch(
   ): Promise<unknown> {
     const { balances, ...show } = options;
     const { wallets } = balances ?? (await data.getUserBalances(ctx.user.id));
-    return presentScreen(ctx, (flags) => buildWalletStepScreen(ui, wallets, { flags }), show);
+    return presentScreen(
+      ctx,
+      (flags) => buildWalletStepScreen(ui, wallets, { flags, divisor }),
+      show,
+    );
   }
 
   /** The wallet of the flow, still the user's; step 1 with why when it is not. */
@@ -137,7 +156,7 @@ export function registerLaunch(
     if (wallet === undefined) return refuse(en.launch.wallet.gone);
     if (wallet.lamports === null)
       return refuse(en.launch.wallet.unreadable(escapeHtml(wallet.name)));
-    const shortfall = smallestLaunchShortfall(wallet.lamports);
+    const shortfall = smallestLaunchShortfall(wallet.lamports, divisor);
     if (shortfall > 0n) return refuse(insufficientWalletNote(wallet, shortfall));
 
     const state = stateOf(ctx);
@@ -166,7 +185,7 @@ export function registerLaunch(
     if (
       blocked !== undefined &&
       balance !== null &&
-      launchShortfallLamports(balance, blocked) === 0n
+      launchShortfallLamports(balance, blocked, divisor) === 0n
     ) {
       delete state.blockedLamports;
     }
@@ -176,6 +195,7 @@ export function registerLaunch(
       bundleLamports: lamportsOf(state.bundleLamports),
       blockedLamports: lamportsOf(state.blockedLamports),
       refreshedAt: refresh ? loaded.balances.fetchedAt : undefined,
+      divisor,
     };
     return showScreen(ctx, buildBundleStepScreen(ui, view), { mode });
   }
@@ -200,7 +220,7 @@ export function registerLaunch(
   async function choosePreset(ctx: BotContext, lamports: bigint): Promise<unknown> {
     const funded = await fundedWallet(ctx);
     if (funded === null) return;
-    return launchShortfallLamports(funded.balance, lamports) > 0n
+    return launchShortfallLamports(funded.balance, lamports, divisor) > 0n
       ? refuseAmount(ctx, funded, lamports)
       : chooseBundle(ctx, funded.wallet, lamports);
   }
@@ -215,7 +235,7 @@ export function registerLaunch(
       data.getSolUsdPrice(),
     ]);
     if (funded === null) return;
-    const maxLamports = customMaxLamports(funded.balance);
+    const maxLamports = customMaxLamports(funded.balance, divisor);
     if (maxLamports === null) {
       return refuseAmount(ctx, funded, BUNDLE_MIN_LAMPORTS, options.mode);
     }
@@ -238,7 +258,7 @@ export function registerLaunch(
     if (!(await requireSubscription(ctx))) return;
     const funded = await fundedWallet(ctx, mode);
     if (funded === null) return;
-    const parsed = parseLaunchBundleInput(text ?? "", funded.balance);
+    const parsed = parseLaunchBundleInput(text ?? "", funded.balance, divisor);
     if (parsed.ok) {
       await chooseBundle(ctx, funded.wallet, parsed.lamports, mode);
     } else if (parsed.reason === "invalid") {
@@ -248,37 +268,107 @@ export function registerLaunch(
     }
   };
 
+  /** The wallet and the bundle of the flow, still there; else the step that chooses them. */
+  async function launchChoices(ctx: BotContext): Promise<Chosen | null> {
+    const loaded = await launchWallet(ctx);
+    if (loaded === null) return null;
+    const bundleLamports = lamportsOf(stateOf(ctx).bundleLamports);
+    if (bundleLamports !== undefined) return { ...loaded, bundleLamports };
+    await showBundleStep(ctx, { loaded });
+    return null;
+  }
+
   /** Step 3 again (Back of the recap): the wallet and the bundle must still be there. */
   async function showLaunchToken(ctx: BotContext): Promise<unknown> {
-    const loaded = await launchWallet(ctx);
-    if (loaded === null) return;
-    const bundleLamports = lamportsOf(stateOf(ctx).bundleLamports);
-    if (bundleLamports === undefined) return showBundleStep(ctx, { loaded });
+    const chosen = await launchChoices(ctx);
+    if (chosen === null) return;
     return tokenStep.showTokenStep(ctx, "LAUNCH", {
-      summaryLines: launchSummaryLines(loaded.wallet, bundleLamports),
+      summaryLines: launchSummaryLines(chosen.wallet, chosen.bundleLamports),
     });
   }
 
   /**
    * Step 4/4 (§10.1), from Continue on a token with its name and ticker: the plan, the wallet
-   * and the bundle are checked again; whatever is missing sends back to its step.
+   * and the bundle are checked again; whatever is missing sends back to its step. Every recap
+   * carries a new token on its Create token button.
    */
-  async function showRecap(ctx: BotContext, draft: ReadyTokenDraft): Promise<unknown> {
+  async function showRecap(
+    ctx: BotContext,
+    draft: ReadyTokenDraft,
+    options: { flags?: OptionalLine[] } = {},
+  ): Promise<unknown> {
     if (!(await requireSubscription(ctx))) return;
-    const [loaded, { curve }] = await Promise.all([launchWallet(ctx), data.getCurveParams()]);
-    if (loaded === null) return;
-    const bundleLamports = lamportsOf(stateOf(ctx).bundleLamports);
-    if (bundleLamports === undefined) return showBundleStep(ctx, { loaded });
+    const [chosen, { curve }] = await Promise.all([launchChoices(ctx), data.getCurveParams()]);
+    if (chosen === null) return;
+    const createToken = newConfirmToken();
+    stateOf(ctx).createToken = createToken;
     return showScreen(
       ctx,
-      buildLaunchRecapScreen(ui, {
-        draft,
-        wallet: loaded.wallet,
-        bundleLamports,
-        curve,
-        successUrl,
-      }),
+      buildLaunchRecapScreen(
+        ui,
+        {
+          draft,
+          wallet: chosen.wallet,
+          bundleLamports: chosen.bundleLamports,
+          curve,
+          successUrl,
+          createToken,
+          divisor,
+        },
+        options,
+      ),
     );
+  }
+
+  /**
+   * Create token (decision of 26/09/2026): the token of the recap spent first — a second click
+   * on the same recap is a stale button — then the draft, the wallet and the bundle checked
+   * again, and the dev buy and the bundle move to a fresh launch wallet, fees included. The
+   * screen says it is sending meanwhile, without a button (§9.5).
+   */
+  async function create(ctx: BotContext, token: string | undefined): Promise<unknown> {
+    const state = stateOf(ctx);
+    if (token === undefined || token !== state.createToken) {
+      return notify(ctx, en.common.staleButton);
+    }
+    const draft = await tokenStep.requireReadyDraft(ctx, "LAUNCH");
+    if (draft === null) return;
+    const chosen = await launchChoices(ctx);
+    if (chosen === null) return;
+    delete state.createToken;
+    await acknowledge(ctx);
+
+    const { wallet } = chosen;
+    // Computed once: what the screen says leaves the wallet is what the service sends.
+    const debitLamports = launchSpendLamports(chosen.bundleLamports, divisor);
+    await showScreen(ctx, buildLaunchFundingScreen(ui, { wallet, debitLamports }));
+    const outcome = await launchFunding.fund({
+      userId: ctx.user.id,
+      walletId: wallet.id,
+      debitLamports,
+      symbol: draft.symbol,
+    });
+    switch (outcome.status) {
+      case "funded":
+        return showScreen(
+          ctx,
+          buildLaunchFundedScreen(ui, {
+            draft,
+            wallet,
+            launchWallet: outcome.launchWallet,
+            withdrawal: outcome.withdrawal,
+          }),
+        );
+      case "failed":
+        return showScreen(ctx, buildLaunchFundingFailedScreen(ui, outcome));
+      case "refused":
+        // Nothing left the wallet: the recap again, with the balance of now and why.
+        return showRecap(ctx, draft, { flags: [warn(txFailureText(outcome.failure)).flag] });
+      case "in_progress":
+        return showRecap(ctx, draft, { flags: [en.launch.funding.inProgress] });
+      case "not_found":
+        return showWalletStep(ctx, { flags: [en.launch.wallet.gone] });
+    }
   }
 
   /** Every `lc` click after the entry checks the plan first (§8): it can end mid-flow. */
@@ -325,7 +415,7 @@ export function registerLaunch(
       const lamports = bundlePresetLamports(arg);
       return lamports === null ? notify(ctx, en.common.staleButton) : choosePreset(ctx, lamports);
     }),
-    // D6: nothing is written, nothing is signed; the recap already says it.
-    create: guarded((ctx) => notify(ctx, en.launch.recap.v2Notice, { alert: true })),
+    // D6: no token yet; the dev buy and the bundle go to a launch wallet (26/09/2026).
+    create: guarded((ctx, [token]) => create(ctx, token)),
   });
 }

@@ -83,7 +83,8 @@ export type TxSuccess = {
 export type TransferQuote = {
   from: string;
   to: string;
-  mode: "exact" | "max";
+  /** `debit`: the fees come out of a total (the funding of a launch wallet). */
+  mode: "exact" | "max" | "debit";
   amountLamports: Lamports;
   balanceLamports: Lamports;
   destinationLamports: Lamports;

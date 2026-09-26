@@ -26,6 +26,7 @@ import type {
   PrismaClient,
   Subscription,
 } from "../generated/prisma/client.js";
+import { MANAGED_WALLET } from "./balances.js";
 import { lockUserRow } from "./user.js";
 
 // The subscription domain on the database side (§8, V1-27). Reads are never cached (except the
@@ -114,7 +115,8 @@ export async function getWalletQuota(
   now: Date = new Date(),
 ): Promise<WalletQuota> {
   const [count, features] = await Promise.all([
-    prisma.wallet.count({ where: { userId } }),
+    // A launch wallet is outside the limit of the plan (decision of 26/09/2026).
+    prisma.wallet.count({ where: { userId, ...MANAGED_WALLET } }),
     activeFeatures(prisma, userId, now),
   ]);
   return { count, limit: features.maxWallets, reached: count >= features.maxWallets };

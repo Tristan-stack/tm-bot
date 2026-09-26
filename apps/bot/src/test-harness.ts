@@ -3,6 +3,8 @@ import type {
   AiQuotaStore,
   InvoiceCheck,
   InvoiceView,
+  LaunchFundingRequest,
+  LaunchFundingService,
   PayChoices,
   PayQuote,
   PrismaClient,
@@ -438,6 +440,8 @@ export const TEST_ENV = {
   SUPPORT_URL: "https://t.me/launchbot_support",
   // Nobody is an admin unless a test says so (`env: { ADMIN_TELEGRAM_IDS: [ADMIN_ID] }`).
   ADMIN_TELEGRAM_IDS: [],
+  // The real amounts, unless a test says otherwise (`env: { LAUNCH_TEST_DIVISOR: 100 }`).
+  LAUNCH_TEST_DIVISOR: 1,
 } as unknown as Env;
 
 /** The Telegram id of the user of the tests, to make them an admin. */
@@ -645,6 +649,42 @@ export function fakeWithdrawals(overrides: Partial<WithdrawalService> = {}): Wit
     },
     resolve: () => Promise.resolve(null),
     ...overrides,
+  };
+}
+
+/** The launch wallet the fake funding makes: an example address, no key behind it. */
+export const TEST_LAUNCH_WALLET: WalletSummary = {
+  id: "lw1",
+  name: "Launch $OTTR · 8oHs3P",
+  publicKey: "8oHs3PAZDzGEvN4mAXv5WxYt8Uj7Kkq1z9JcX2dRfLpM",
+  createdAt: new Date("2026-09-26T10:00:00Z"),
+};
+
+/**
+ * Create token on the fake balances (decision of 26/09/2026): every funding moves the debit of
+ * its request, the fee taken out, to `TEST_LAUNCH_WALLET`. The requests are kept, in order.
+ */
+export function fakeLaunchFunding(overrides: Partial<LaunchFundingService> = {}) {
+  const requests: LaunchFundingRequest[] = [];
+  const fund: LaunchFundingService["fund"] = (request) => {
+    const wallet = findTestWallet(request.walletId);
+    if (wallet === undefined) return Promise.resolve({ status: "not_found" });
+    const withdrawal = testWithdrawal({
+      walletId: wallet.id,
+      fromAddress: wallet.publicKey,
+      toAddress: TEST_LAUNCH_WALLET.publicKey,
+      lamports: request.debitLamports - TEST_FEE,
+      kind: "LAUNCH_FUNDING",
+    });
+    return Promise.resolve({ status: "funded", launchWallet: TEST_LAUNCH_WALLET, withdrawal });
+  };
+  const service: LaunchFundingService = { fund, ...overrides };
+  return {
+    requests,
+    fund: (request: LaunchFundingRequest) => {
+      requests.push(request);
+      return service.fund(request);
+    },
   };
 }
 
@@ -927,6 +967,7 @@ export function botHarness(
     simRunner?: Partial<Pick<SimRunnerDeps, "scheduler" | "maxActive">>;
     images?: ReturnType<typeof fakeImages>;
     admin?: AdminOverrides;
+    launchFunding?: ReturnType<typeof fakeLaunchFunding>;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });
@@ -941,6 +982,7 @@ export function botHarness(
   const aiQuota = options.aiQuota ?? fakeAiQuota();
   const images = options.images ?? fakeImages();
   const admin = fakeAdmin(options.admin);
+  const launchFunding = options.launchFunding ?? fakeLaunchFunding();
   const { bot, simRunner } = createBot({ ...TEST_ENV, ...options.env }, prisma, {
     data,
     wallets,
@@ -954,12 +996,14 @@ export function botHarness(
     simRunner: { render: fakeRender, ...options.simRunner },
     images,
     admin,
+    launchFunding,
   });
   return {
     bot,
     simRunner,
     images,
     admin,
+    launchFunding,
     api: interceptApi(bot, options.replies),
     prisma,
     data,

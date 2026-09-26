@@ -7,6 +7,7 @@ import {
   createAccountDeletionService,
   createAccountSweeper,
   createAiQuotaStore,
+  createLaunchFundingService,
   createPaymentService,
   createSensitiveMessageStore,
   createSimulationStore,
@@ -20,6 +21,7 @@ import {
 } from "@launchbot/db";
 import type {
   AiQuotaStore,
+  LaunchFundingService,
   PrismaClient,
   SimulationStore,
   TokenDraftService,
@@ -125,6 +127,8 @@ export function createBot(
     images?: TokenImageService;
     /** What the admin commands read and write (V1-42 to V1-44). */
     admin?: AdminServices;
+    /** Create token: the funding of a launch wallet (decision of 26/09/2026). */
+    launchFunding?: LaunchFundingService;
   } = {},
 ): { bot: Bot<BotContext>; simRunner: SimRunner } {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
@@ -155,6 +159,17 @@ export function createBot(
   const withdrawals =
     options.withdrawals ??
     createWithdrawalService({ prisma, balances: data, transfer, vault, withdrawFeeBudgetLamports });
+  // Create token (decision of 26/09/2026): the dev buy and the bundle move to a fresh launch
+  // wallet by the road of a withdrawal; test amounts on devnet.
+  const launchDivisor = BigInt(env.LAUNCH_TEST_DIVISOR);
+  const launchFunding =
+    options.launchFunding ??
+    createLaunchFundingService({
+      prisma,
+      vault,
+      generateWallet: generateMnemonicWallet,
+      withdrawals,
+    });
   // Built here, not inside the section: the import input is consumed before the rate limit.
   const walletNav = createWalletNav({ ui, wallets, withdrawals, data });
   const providers = options.aiProviders ?? createAiProviders(env);
@@ -244,7 +259,7 @@ export function createBot(
   );
 
   access.register(router);
-  registerHome(bot, router, access, { ui, env, data });
+  registerHome(bot, router, access, { ui, env, data, launchDivisor });
   registerWallets(router, inputs, walletNav);
   registerSimulation(router, inputs, {
     ui,
@@ -264,6 +279,8 @@ export function createBot(
     tokenStep,
     offers: subscribe,
     successUrl: env.CHANNEL_SUCCESS_URL,
+    launchFunding,
+    launchDivisor,
   });
   registerSupport(router, { ui, data, supportUrl: env.SUPPORT_URL });
   registerAdmin(router, inputs, {

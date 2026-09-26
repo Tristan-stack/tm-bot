@@ -156,7 +156,10 @@ function harness(
     estimateFee: vi.fn(() => Promise.resolve(6_000n)),
     rentMin: vi.fn(() => Promise.resolve(RENT_MIN)),
     prepare: vi.fn((params) =>
-      Promise.resolve(options.prepare ?? quoteOf(params.amount === "max" ? "max" : params.amount)),
+      Promise.resolve(
+        options.prepare ??
+          quoteOf(typeof params.amount === "object" ? params.amount.debit : params.amount),
+      ),
     ),
     send: vi.fn(async (request, signer, { onPrepared, onSubmitted } = {}) => {
       signers.push(signer);

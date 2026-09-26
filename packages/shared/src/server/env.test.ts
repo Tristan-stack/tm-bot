@@ -154,6 +154,23 @@ describe("parseEnv", () => {
     ]);
   });
 
+  it("takes the real amounts of a launch by default, test amounts on devnet only (26/09/2026)", () => {
+    expect(parseEnv(valid).LAUNCH_TEST_DIVISOR).toBe(1);
+    expect(parseEnv({ ...valid, LAUNCH_TEST_DIVISOR: "100" }).LAUNCH_TEST_DIVISOR).toBe(100);
+    for (const bad of ["0", "1001", "2.5", "abc"]) {
+      expect(failure({ ...valid, LAUNCH_TEST_DIVISOR: bad }).issues).toEqual([
+        { variable: "LAUNCH_TEST_DIVISOR", reason: "must be an integer from 1 to 1000" },
+      ]);
+    }
+    expect(
+      parseEnv({ ...valid, SOLANA_CLUSTER: "mainnet-beta", LAUNCH_TEST_DIVISOR: "1" })
+        .LAUNCH_TEST_DIVISOR,
+    ).toBe(1);
+    expect(
+      failure({ ...valid, SOLANA_CLUSTER: "mainnet-beta", LAUNCH_TEST_DIVISOR: "100" }).issues,
+    ).toEqual([{ variable: "LAUNCH_TEST_DIVISOR", reason: "must be 1 outside devnet" }]);
+  });
+
   it("rejects a max priority fee below the min, or equal to zero", () => {
     const below = failure({
       ...valid,

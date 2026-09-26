@@ -171,4 +171,11 @@ export type {
   WithdrawQuote,
   WithdrawRequest,
 } from "./services/withdrawals.js";
+export { createLaunchFundingService } from "./services/launch-funding.js";
+export type {
+  LaunchFundingDeps,
+  LaunchFundingOutcome,
+  LaunchFundingRequest,
+  LaunchFundingService,
+} from "./services/launch-funding.js";
 export * from "./generated/prisma/client.js";

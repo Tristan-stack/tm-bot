@@ -51,7 +51,12 @@ export function computeNextStep(data: Pick<HomeData, "wallets" | "subscription">
 export async function loadHomeData(
   sources: HomeSources,
   user: User,
-  options: { skipBalanceCache: boolean; now?: Date },
+  options: {
+    skipBalanceCache: boolean;
+    now?: Date;
+    /** `LAUNCH_TEST_DIVISOR`: what a launch takes in test amounts, as Launch Coin counts it. */
+    launchDivisor?: bigint;
+  },
 ): Promise<HomeData> {
   const [balances, subscription, botChannelMembers, activeSubscribers, solUsd] = await Promise.all([
     sources.getUserBalances(user.id, { skipCache: options.skipBalanceCache }),
@@ -71,7 +76,8 @@ export async function loadHomeData(
       count: balances.wallets.length,
       totalLamports: balances.totalLamports,
       hasReadyWallet: balances.wallets.some(
-        (wallet) => wallet.lamports !== null && isWalletReady(wallet.lamports),
+        (wallet) =>
+          wallet.lamports !== null && isWalletReady(wallet.lamports, options.launchDivisor),
       ),
     },
     botChannelMembers,

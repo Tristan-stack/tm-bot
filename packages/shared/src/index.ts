@@ -39,7 +39,6 @@ export {
   getWalletLimit,
   getWithdrawFeeBudgetLamports,
   isBalanceWithdrawable,
-  isWalletReady,
   priorityFeeLamports,
   transferFeeLamports,
   transferShortfall,
