@@ -113,7 +113,15 @@ describe("createSimulationService", () => {
     });
     const prepare = (bundleSol: number, draftId = "d1") =>
       service.prepare({ userId: TEST_USER.id, telegramId: 777, draft: { id: draftId }, bundleSol });
-    return { prepare, store, getCurveParams, at: (ms: number) => void (time = T0 + ms) };
+    const prepareLaunch = (bundleSol: number) =>
+      service.prepareLaunch({ userId: TEST_USER.id, draft: { id: "d1" }, bundleSol });
+    return {
+      prepare,
+      prepareLaunch,
+      store,
+      getCurveParams,
+      at: (ms: number) => void (time = T0 + ms),
+    };
   }
 
   it("creates a Simulation with the seed, the curve and the price of the moment", async () => {
@@ -179,6 +187,20 @@ describe("createSimulationService", () => {
     expect(refused.kind).toBe("rate_limited");
     expect(store.rows).toHaveLength(limit);
     expect(await prepare(3)).toMatchObject({ kind: "ok", simId: "s1" });
+  });
+
+  it("gives each launch its own chart, from a fresh seed, outside the limit of creations", async () => {
+    const { prepare, prepareLaunch, store } = harness();
+    const { limit } = RATE_LIMITS.simulation;
+    for (let i = 0; i < limit; i += 1) await prepare(3 + i / 1000);
+
+    const first = await prepareLaunch(3);
+    const second = await prepareLaunch(3);
+
+    expect(first).toMatchObject({ simId: `s${limit + 1}`, config: { devBuySol: 1, bundleSol: 3 } });
+    expect(second.simId).toBe(`s${limit + 2}`);
+    expect(second.config.seed).not.toBe(first.config.seed);
+    expect(store.rows).toHaveLength(limit + 2);
   });
 
   it("stores null as the price when it is unknown", async () => {

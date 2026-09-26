@@ -5,6 +5,7 @@ import type {
   InvoiceView,
   LaunchFundingRequest,
   LaunchFundingService,
+  LaunchSweepService,
   PayChoices,
   PayQuote,
   PrismaClient,
@@ -652,6 +653,18 @@ export function fakeWithdrawals(overrides: Partial<WithdrawalService> = {}): Wit
   };
 }
 
+/** The sweep of a launch wallet once its chart ends: the ids asked, in order, all erased. */
+export function fakeLaunchSweep() {
+  const swept: string[] = [];
+  const service: Pick<LaunchSweepService, "sweepLaunchWallet"> = {
+    sweepLaunchWallet: (walletId) => {
+      swept.push(walletId);
+      return Promise.resolve({ status: "ERASED", transfers: [] });
+    },
+  };
+  return { ...service, swept };
+}
+
 /** The launch wallet the fake funding makes: an example address, no key behind it. */
 export const TEST_LAUNCH_WALLET: WalletSummary = {
   id: "lw1",
@@ -968,6 +981,7 @@ export function botHarness(
     images?: ReturnType<typeof fakeImages>;
     admin?: AdminOverrides;
     launchFunding?: ReturnType<typeof fakeLaunchFunding>;
+    launchSweep?: ReturnType<typeof fakeLaunchSweep>;
   } = {},
 ) {
   const prisma = fakePrisma({ user: options.user });
@@ -983,6 +997,7 @@ export function botHarness(
   const images = options.images ?? fakeImages();
   const admin = fakeAdmin(options.admin);
   const launchFunding = options.launchFunding ?? fakeLaunchFunding();
+  const launchSweep = options.launchSweep ?? fakeLaunchSweep();
   const { bot, simRunner } = createBot({ ...TEST_ENV, ...options.env }, prisma, {
     data,
     wallets,
@@ -997,6 +1012,7 @@ export function botHarness(
     images,
     admin,
     launchFunding,
+    launchSweep,
   });
   return {
     bot,
@@ -1004,6 +1020,7 @@ export function botHarness(
     images,
     admin,
     launchFunding,
+    launchSweep,
     api: interceptApi(bot, options.replies),
     prisma,
     data,

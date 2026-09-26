@@ -53,7 +53,7 @@ function harness(options: Parameters<typeof fakeTelegram>[0] & { maxActive?: num
     maxActive: options.maxActive ?? 20,
   });
   /** Starts and waits for the first picture: the kind of the reservation. */
-  const start = async (simId = "s1", userId = "u1", messageId?: number) => {
+  const start = async (simId = "s1", userId = "u1", messageId?: number, onEnd?: () => void) => {
     const result = runner.start({
       simId,
       userId,
@@ -62,6 +62,7 @@ function harness(options: Parameters<typeof fakeTelegram>[0] & { maxActive?: num
       token: TOKEN,
       logo: () => Promise.resolve(null),
       messageId,
+      onEnd,
     });
     if (result.kind === "ok") await result.ready;
     return result.kind;
@@ -259,6 +260,37 @@ describe("createSimRunner", () => {
 
     expect(h.runner.isRunning("u1")).toBe(false);
     expect(h.pending()).toBe(0);
+  });
+
+  it("calls onEnd once when a run ends, never for a message gone or a stop", async () => {
+    const ended = harness();
+    const onEnd = vi.fn();
+    await ended.start("s1", "u1", undefined, onEnd);
+    ended.runner.setSpeed({ simId: "s1", userId: "u1" }, 5);
+    await ended.advance(180_000 / 5 + 3000);
+    expect(onEnd).toHaveBeenCalledOnce();
+    await ended.advance(SIM_END_HOLD_MS + 1000);
+    await ended.runner.idle();
+    expect(onEnd).toHaveBeenCalledOnce();
+
+    const sold = harness();
+    const onSold = vi.fn();
+    await sold.start("s1", "u1", undefined, onSold);
+    await sold.advance(3000);
+    sold.runner.sell({ simId: "s1", userId: "u1" }, 100);
+    expect(onSold).toHaveBeenCalledOnce();
+
+    // A deleted message, then a stopped bot: neither is an end.
+    const gone = harness({ editOutcome: () => "gone" });
+    const stopped = harness();
+    const never = vi.fn();
+    await gone.start("s1", "u1", undefined, never);
+    await stopped.start("s1", "u1", undefined, never);
+    stopped.runner.stop();
+    await gone.advance(200_000);
+    await stopped.advance(200_000);
+    expect(gone.runner.activeCount() + stopped.runner.activeCount()).toBe(0);
+    expect(never).not.toHaveBeenCalled();
   });
 
   it("reports a failed first upload to the caller and frees the user", async () => {

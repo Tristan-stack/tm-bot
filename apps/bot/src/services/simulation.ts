@@ -67,6 +67,16 @@ export type SimulationService = {
     sim: Pick<Simulation, "userId" | "tokenDraftId" | "params">;
     telegramId: number;
   }) => Promise<PrepareSimulationResult>;
+  /**
+   * The chart of a launch (decision of 26/09/2026): a new row every time, from a fresh seed —
+   * each launch has its own chart — outside the limit of creations: a funded launch is its own
+   * limit.
+   */
+  prepareLaunch: (params: {
+    userId: string;
+    draft: { id: string };
+    bundleSol: number;
+  }) => Promise<{ simId: string; config: SimConfig }>;
 };
 
 export type SimulationServiceDeps = {
@@ -80,43 +90,53 @@ export type SimulationServiceDeps = {
 export function createSimulationService(deps: SimulationServiceDeps): SimulationService {
   const { store, data, now = Date.now, seed = drawSeed } = deps;
 
-  /**
-   * A new row under the limit of creations, or `rate_limited`. Its columns come from the
-   * config, as its seed does: the row and its JSON cannot disagree.
-   */
+  type Owner = { userId: string; tokenDraftId: string };
+
+  /** A new row: its columns come from the config, as its seed does, so they cannot disagree. */
+  async function insert(owner: Owner, params: SimConfig) {
+    const { seed, devBuySol, bundleSol } = params;
+    const row = await store.create({ ...owner, devBuySol, bundleSol, seed, params });
+    return { simId: row.id, config: params };
+  }
+
+  /** A new row under the limit of creations, or `rate_limited`. */
   async function create(
-    owner: { userId: string; tokenDraftId: string },
+    owner: Owner,
     telegramId: number,
     config: () => Promise<SimConfig>,
   ): Promise<PrepareSimulationResult> {
     if (!consumeRateLimit(telegramId, "simulation", now()).ok) return { kind: "rate_limited" };
-    const params = await config();
-    const { seed, devBuySol, bundleSol } = params;
-    const row = await store.create({ ...owner, devBuySol, bundleSol, seed, params });
-    return { kind: "ok", simId: row.id, config: params };
+    return { kind: "ok", ...(await insert(owner, await config())) };
+  }
+
+  /** The dev buy fixed (decision of 25/09/2026), the curve and the price of the moment. */
+  async function freshConfig(bundleSol: number): Promise<SimConfig> {
+    // Neither read blocks: the curve falls back to §7.1, the price to null.
+    const [{ curve }, solUsdPrice] = await Promise.all([
+      data.getCurveParams(),
+      data.getSolUsdPrice(),
+    ]);
+    return buildSimConfig({ seed: seed(), devBuySol: DEV_BUY_SOL, bundleSol, curve, solUsdPrice });
   }
 
   return {
     async prepare({ userId, telegramId, draft, bundleSol }) {
-      // The only place that knows the dev buy is fixed (decision of 25/09/2026).
-      const amounts = { devBuySol: DEV_BUY_SOL, bundleSol };
       const owner = { userId, tokenDraftId: draft.id };
       const since = new Date(now() - SIMULATION_REUSE_MS);
-      const existing = await store.findLatest({ ...owner, ...amounts }, since);
+      const existing = await store.findLatest(
+        { ...owner, devBuySol: DEV_BUY_SOL, bundleSol },
+        since,
+      );
       if (existing !== null) {
         // Stored by this service: the JSON is the config it validated.
         return { kind: "ok", simId: existing.id, config: simConfigSchema.parse(existing.params) };
       }
 
-      return create(owner, telegramId, async () => {
-        // Neither read blocks the recap: the curve falls back to §7.1, the price to null.
-        const [{ curve }, solUsdPrice] = await Promise.all([
-          data.getCurveParams(),
-          data.getSolUsdPrice(),
-        ]);
-        return buildSimConfig({ seed: seed(), ...amounts, curve, solUsdPrice });
-      });
+      return create(owner, telegramId, () => freshConfig(bundleSol));
     },
+
+    prepareLaunch: async ({ userId, draft, bundleSol }) =>
+      insert({ userId, tokenDraftId: draft.id }, await freshConfig(bundleSol)),
 
     restart({ sim, telegramId }) {
       return create({ userId: sim.userId, tokenDraftId: sim.tokenDraftId }, telegramId, () => {

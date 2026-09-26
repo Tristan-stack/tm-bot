@@ -167,17 +167,19 @@ describe.skipIf(!process.env["RUN_DB_TESTS"])("launch wallets sweep (db)", () =>
   const launchSweeps = () =>
     prisma.withdrawal.findMany({ where: { kind: "LAUNCH_SWEEP" }, orderBy: { createdAt: "asc" } });
 
-  it("lists the launch wallets funded a minute ago, and those never funded after an hour", async () => {
+  it("lists the launch wallets the bot left after 15 minutes, and those never funded after an hour", async () => {
     const seeded = await seed();
     const [funded, young, slow, unfunded, abandoned] = LAUNCHES;
-    const due = await launchWallet(seeded.user, funded, 2 * MINUTE_MS);
-    await funding(seeded, funded, 90 * SECOND_MS);
-    await launchWallet(seeded.user, young, 30 * SECOND_MS);
-    await funding(seeded, young, 20 * SECOND_MS);
-    // Created two minutes ago, its funding only went out 30 s ago.
-    await launchWallet(seeded.user, slow, 2 * MINUTE_MS);
-    await funding(seeded, slow, 30 * SECOND_MS);
-    await launchWallet(seeded.user, unfunded, 5 * MINUTE_MS);
+    // Its chart stopped by a restart: the bot never swept it.
+    const due = await launchWallet(seeded.user, funded, 17 * MINUTE_MS);
+    await funding(seeded, funded, 16 * MINUTE_MS);
+    // Its chart may still run.
+    await launchWallet(seeded.user, young, 5 * MINUTE_MS);
+    await funding(seeded, young, 5 * MINUTE_MS - 10 * SECOND_MS);
+    // Created 20 minutes ago, its funding only went out 10 minutes ago.
+    await launchWallet(seeded.user, slow, 20 * MINUTE_MS);
+    await funding(seeded, slow, 10 * MINUTE_MS);
+    await launchWallet(seeded.user, unfunded, 30 * MINUTE_MS);
     const lost = await launchWallet(seeded.user, abandoned, 2 * HOUR_MS);
 
     expect(await serviceOf().service.listDue(START)).toEqual([lost.id, due.id]);

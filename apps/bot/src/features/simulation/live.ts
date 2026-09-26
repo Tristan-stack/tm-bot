@@ -13,7 +13,7 @@ import { createLogger } from "@launchbot/shared/server";
 import type { TokenImageService } from "@launchbot/shared/server";
 import type { SimConfig } from "@launchbot/sim-engine";
 import type { LogoImage } from "@launchbot/sim-render";
-import type { BotContext } from "../../context.js";
+import type { BotContext, TokenFlow } from "../../context.js";
 import { acknowledge, notify } from "../../navigation/notify.js";
 import { blockWithFlag, dropKeyboard } from "../../navigation/show-screen.js";
 import type { Block } from "../../navigation/show-screen.js";
@@ -42,17 +42,72 @@ const isSpeed = (value: number): value is SimSpeed =>
 type ReadySim = SimulationWithDraft & { tokenDraft: { name: string; symbol: string } };
 const isReady = (row: SimulationWithDraft): row is ReadySim => hasNameAndTicker(row.tokenDraft);
 
+/** A Simulation row to run in the chat, and the draft it shows. */
+export type SimStart = {
+  simId: string;
+  config: SimConfig;
+  token: { name: string; symbol: string; imageFileId: string | null };
+  /** Run again (§6.3): the picture replaces this message instead of a new one. */
+  messageId?: number;
+  onEnd?: () => void;
+  flow?: TokenFlow;
+};
+
 /**
- * The buttons of the simulation in the chat (§6.1 to §6.3): Start from the recap, Sell, Pause,
- * Resume, the speeds and Run again. Thin handlers: the runner owns the run, the store the row.
+ * Runs a row in this chat: the runner is reserved at once (a refusal is the caller's to show),
+ * the click is answered, then the first picture is uploaded. Start simulation and Run again
+ * (§6), and the chart of a launch (decision of 26/09/2026).
  */
-export function createLiveHandlers(deps: LiveDeps): Record<string, CallbackHandler> {
-  const { ui, store, simulations, runner, images } = deps;
+export type SimStarter = (ctx: BotContext, run: SimStart) => Promise<Block | null>;
+
+export function createSimStarter(deps: Pick<LiveDeps, "runner" | "images">): SimStarter {
+  const { runner, images } = deps;
   const { live } = en.sim;
   const refusals: Record<"already_running" | "full", Block> = {
     already_running: live.alreadyRunning,
     full: live.busy,
   };
+
+  async function logoOf(fileId: string | null): Promise<LogoImage | null> {
+    if (fileId === null) return null;
+    try {
+      const { bytes, contentType } = await images.get(fileId);
+      // resvg reads PNG and JPEG; a WEBP logo becomes the badge.
+      return contentType === "image/webp" ? null : { bytes, type: contentType };
+    } catch (error) {
+      log.warn({ err: error }, "Token logo unavailable, badge used");
+      return null;
+    }
+  }
+
+  return async (ctx, run) => {
+    const started = runner.start({
+      simId: run.simId,
+      userId: ctx.user.id,
+      chatId: ctx.chatId ?? Number(ctx.user.telegramId),
+      config: run.config,
+      token: { name: run.token.name, ticker: run.token.symbol },
+      logo: () => logoOf(run.token.imageFileId),
+      messageId: run.messageId,
+      onEnd: run.onEnd,
+      flow: run.flow,
+    });
+    if (started.kind !== "ok") return refusals[started.kind];
+    // The first picture takes a moment: the spinner stops before the upload.
+    await acknowledge(ctx);
+    await started.ready;
+    return null;
+  };
+}
+
+/**
+ * The buttons of the simulation in the chat (§6.1 to §6.3): Start from the recap, Sell, Pause,
+ * Resume, the speeds and Run again. Thin handlers: the runner owns the run, the store the row.
+ */
+export function createLiveHandlers(deps: LiveDeps): Record<string, CallbackHandler> {
+  const { ui, store, simulations, runner } = deps;
+  const { live } = en.sim;
+  const startSim = createSimStarter(deps);
 
   /** The row of a button, when it is this user's and still readable; null answers "stale". */
   async function ownedSim(ctx: BotContext, simId: string | undefined): Promise<ReadySim | null> {
@@ -67,42 +122,11 @@ export function createLiveHandlers(deps: LiveDeps): Record<string, CallbackHandl
     simId: sim.id,
   });
 
-  async function logoOf(fileId: string | null): Promise<LogoImage | null> {
-    if (fileId === null) return null;
-    try {
-      const { bytes, contentType } = await images.get(fileId);
-      // resvg reads PNG and JPEG; a WEBP logo becomes the badge.
-      return contentType === "image/webp" ? null : { bytes, type: contentType };
-    } catch (error) {
-      log.warn({ err: error }, "Token logo unavailable, badge used");
-      return null;
-    }
-  }
-
-  /**
-   * Runs a row in this chat: the runner is reserved at once (a refusal is the caller's to
-   * show), the click is answered, then the first picture is uploaded.
-   */
-  async function launch(
+  const launch = (
     ctx: BotContext,
     sim: ReadySim,
     run: { simId: string; config: SimConfig; messageId?: number },
-  ): Promise<Block | null> {
-    const started = runner.start({
-      simId: run.simId,
-      userId: ctx.user.id,
-      chatId: ctx.chatId ?? Number(ctx.user.telegramId),
-      config: run.config,
-      token: { name: sim.tokenDraft.name, ticker: sim.tokenDraft.symbol },
-      logo: () => logoOf(sim.tokenDraft.imageFileId),
-      messageId: run.messageId,
-    });
-    if (started.kind !== "ok") return refusals[started.kind];
-    // The first picture takes a moment: the spinner stops before the upload.
-    await acknowledge(ctx);
-    await started.ready;
-    return null;
-  }
+  ) => startSim(ctx, { ...run, token: sim.tokenDraft });
 
   const owner = (ctx: BotContext, simId: string | undefined): Owner => ({
     simId: simId ?? "",

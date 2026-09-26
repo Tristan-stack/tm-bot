@@ -1062,8 +1062,8 @@ couperait celui du bot (409). Arrêt : la boucle finit son tick, le verrou est r
 - **Comptes inactifs et nettoyage à 90 jours** (V1-45) : `accounts.delete-inactive` et
   `data.expired-cleanup`, décrits dans « Conservation des données ».
 - **Fresh wallets de lancement** (décision du 26/09/2026) : `launch.sweep-wallets` chaque minute
-  les vide vers `TREASURY_WALLET` puis les efface, décrit dans « Create token : fresh wallet de
-  lancement ».
+  vide vers `TREASURY_WALLET`, puis efface, ceux que le bot n'a pas vidés à la fin de leur chart,
+  décrit dans « Create token : fresh wallet de lancement ».
 
 ### Payer depuis un wallet du bot (V1-31)
 
@@ -1259,8 +1259,9 @@ partent du même wallet, et les textes le disent. Le minimum d'un launch est **4
 
 Au clic sur « 🚀 Create token », le dev buy et le bundle quittent le wallet choisi pour un
 **fresh wallet propre au launch**. La création du token, le dev buy et le bundle partiront de ce
-wallet en V2, dès la réception des SOL. Entre 1 et 2 min après son financement, le worker vide le
-fresh wallet vers la trésorerie, puis l'efface avec sa clé.
+wallet en V2, dès la réception des SOL. Pour l'instant, la **chart du coin** tourne sous l'écran
+de succès, comme si le coin était lancé ; à sa fin, le fresh wallet est vidé vers la trésorerie,
+puis effacé avec sa clé.
 
 - **Service** `createLaunchFundingService` ([launch-funding.ts](packages/db/src/services/launch-funding.ts)),
   appelé par le handler `lc:create:<token>` de [launch.ts](apps/bot/src/features/launch/launch.ts),
@@ -1276,10 +1277,24 @@ fresh wallet vers la trésorerie, puis l'efface avec sa clé.
      frais compris (frais pris sur le bundle) ;
   4. un fresh wallet que rien n'a atteint (refus, verrou, wallet disparu, échec certain) est
      effacé ; il reste si l'issue est inconnue (le sweep ci-dessous la règle).
+- **Chart du launch** (`runChart` de [launch.ts](apps/bot/src/features/launch/launch.ts)) : après
+  l'écran de succès, `SimulationService.prepareLaunch` crée une `Simulation` du coin (dev buy de
+  1 SOL et bundle choisi, en montants produit même avec `LAUNCH_TEST_DIVISOR`), **toujours neuve,
+  graine neuve**, hors limite des simulations (un launch financé est sa propre limite). Elle part
+  dans le chat par `createSimStarter` ([live.ts](apps/bot/src/features/simulation/live.ts), le
+  même départ que Start simulation et Run again) : photo protégée, Sell, Pause, vitesses, PNL card.
+  En mode `flow: "LAUNCH"` du runner, les légendes prennent l'en-tête « 🚀 LAUNCH » au lieu de
+  « 📊 SIMULATION » / « SIMULATION ENDED », sans la mention DEMO, et la carte n'a que Menu (pas de
+  Run again : un launch ne se rejoue pas). Simulate a Launch ne change pas.
+  Sa fin (`onEnd` du runner : durée écoulée, Sell 100 %, pause expirée ; jamais un message
+  supprimé, une erreur ou un redémarrage) lance `sweepLaunchWallet` en tâche de fond (log
+  `launch.chart_sweep`). Une chart qui ne peut pas partir (runner plein, simulation déjà en cours,
+  premier envoi raté) vide tout de suite, la raison en flag sur l'écran de succès.
 - **Sweep vers la trésorerie** (`createLaunchSweepService`, [launch-sweep.ts](packages/db/src/services/launch-sweep.ts)),
-  cron `launch.sweep-wallets` du worker, chaque minute ([launch-wallets.ts](apps/worker/src/jobs/launch-wallets.ts)) :
+  appelé par le bot à la fin de la chart, et par le cron `launch.sweep-wallets` du worker, chaque
+  minute ([launch-wallets.ts](apps/worker/src/jobs/launch-wallets.ts)), pour ce que le bot a laissé :
   1. `listDue` : les fresh wallets dont le financement (`LAUNCH_FUNDING`) est parti il y a au moins
-     `LAUNCH_SWEEP_DELAY_MS` (1 min ; avec le cron, 1 à 2 min en tout), et ceux sans financement
+     `LAUNCH_SWEEP_FALLBACK_MS` (15 min, plus qu'une chart avec une pause), et ceux sans financement
      depuis `LAUNCH_WALLET_ABANDONED_MS` (1 h : le bot s'est arrêté entre les deux) ;
   2. `sweepLaunchWallet` passe par le sweeper des comptes (`sweepWallets` de
      [account-sweep.ts](packages/db/src/services/account-sweep.ts), `kind: LAUNCH_SWEEP`) : les
@@ -1316,9 +1331,11 @@ fresh wallet vers la trésorerie, puis l'efface avec sa clé.
 Coin avec un wallet qui a au moins 0.04 SOL, bundle 3 SOL, un token, Create token : l'écran de
 succès donne l'adresse du fresh wallet et le lien de la transaction. Vérifier sur l'explorer que
 le wallet choisi a perdu exactement 0.04 SOL et que le fresh wallet a reçu 0.04 SOL moins les
-frais ; le fresh wallet n'apparaît pas dans Wallets, `/getall` le montre. 1 à 2 min plus tard :
-le fresh wallet est vide sur l'explorer (un transfert vers `TREASURY_WALLET`), log
-`launch.wallet_erased` du worker, et `/getall` ne le montre plus, mais liste le « Launch sweep ».
+frais ; le fresh wallet n'apparaît pas dans Wallets, `/getall` le montre. La chart du coin arrive
+sous l'écran de succès : Sell 100 % ou attendre sa fin (1 min 30 en x2). Juste après, le fresh
+wallet est vide sur l'explorer (un transfert vers `TREASURY_WALLET`), logs `launch.wallet_erased`
+et `launch.chart_sweep` du bot, et `/getall` ne le montre plus, mais liste le « Launch sweep ».
+Le worker ne sert que de filet (15 min après le financement).
 
 ## Support et administration
 

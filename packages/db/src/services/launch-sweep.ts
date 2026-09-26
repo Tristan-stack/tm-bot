@@ -1,14 +1,15 @@
-import { LAUNCH_SWEEP_DELAY_MS, LAUNCH_WALLET_ABANDONED_MS } from "@launchbot/shared";
+import { LAUNCH_SWEEP_FALLBACK_MS, LAUNCH_WALLET_ABANDONED_MS } from "@launchbot/shared";
 import type { SweptTransfer } from "@launchbot/shared";
 import { createLogger } from "@launchbot/shared/server";
 import { createAccountSweeper } from "./account-sweep.js";
 import type { AccountSweeperDeps, KeptSweep } from "./account-sweep.js";
 import { WALLET_SIGNER_SELECT } from "./withdrawals.js";
 
-// The sweep of a launch wallet (decision of 26/09/2026): a minute after its funding, the worker
-// moves what it holds to the treasury (account-sweep.ts, kind LAUNCH_SWEEP, kept with the
-// Telegram id for a refund by hand), then erases it with its key. Nothing is erased while a
-// transfer to it or from it may still land.
+// The sweep of a launch wallet (decision of 26/09/2026): when the chart of the launch ends (the
+// bot), or `LAUNCH_SWEEP_FALLBACK_MS` after its funding (the worker), what it holds goes to the
+// treasury (account-sweep.ts, kind LAUNCH_SWEEP, kept with the Telegram id for a refund by
+// hand), then it is erased with its key. Nothing is erased while a transfer to it or from it
+// may still land.
 
 const log = createLogger("db:launch-sweep");
 
@@ -21,8 +22,8 @@ export type LaunchSweepOutcome =
 
 export type LaunchSweepService = {
   /**
-   * The launch wallets whose funding went out `LAUNCH_SWEEP_DELAY_MS` ago or more, oldest first;
-   * and those no funding was recorded for after `LAUNCH_WALLET_ABANDONED_MS`.
+   * The launch wallets whose funding went out `LAUNCH_SWEEP_FALLBACK_MS` ago or more, oldest
+   * first; and those no funding was recorded for after `LAUNCH_WALLET_ABANDONED_MS`.
    */
   listDue: (at: Date) => Promise<string[]>;
   /** One launch wallet: what it holds to the treasury, then its erasure. */
@@ -35,7 +36,7 @@ export function createLaunchSweepService(deps: AccountSweeperDeps): LaunchSweepS
 
   return {
     async listDue(at) {
-      const due = new Date(at.getTime() - LAUNCH_SWEEP_DELAY_MS);
+      const due = new Date(at.getTime() - LAUNCH_SWEEP_FALLBACK_MS);
       const wallets = await prisma.wallet.findMany({
         where: { kind: "LAUNCH", createdAt: { lte: due } },
         orderBy: { createdAt: "asc" },

@@ -1,5 +1,5 @@
 import type { UserBalances, WalletBalance } from "@launchbot/db";
-import { DAY_MS, LAUNCH_COIN, solToLamports as sol } from "@launchbot/shared";
+import { DAY_MS, en, LAUNCH_COIN, SIM_END_HOLD_MS, solToLamports as sol } from "@launchbot/shared";
 import type { PlanStatus, SubscriptionPeriod } from "@launchbot/shared";
 import { resetRateLimits } from "@launchbot/shared/server";
 import type { Env } from "@launchbot/shared/server";
@@ -9,6 +9,7 @@ import {
   callbackUpdate,
   chatMember,
   fakeLaunchFunding,
+  fakeScheduler,
   feed,
   MAIN_WALLET,
   storedSession,
@@ -25,6 +26,7 @@ import {
 import type { DataServices } from "../../services/data.js";
 import type { ApiReplies } from "../../test-harness.js";
 import { joinedCallback } from "../access/screens.js";
+import { SIM_CB } from "../simulation/screens.js";
 import { TOKEN_CB } from "../token-step/screens.js";
 import { LAUNCH_CB } from "./screens.js";
 
@@ -56,6 +58,8 @@ function harness(
     replies?: ApiReplies;
     env?: Partial<Env>;
     launchFunding?: ReturnType<typeof fakeLaunchFunding>;
+    /** The simulations the runner takes at once: 0 refuses the chart of a launch. */
+    maxActive?: number;
   } = {},
 ) {
   const world = {
@@ -66,15 +70,19 @@ function harness(
   const read = vi.fn<DataServices["getUserBalances"]>(() => Promise.resolve(balances()));
   const plans = vi.fn<DataServices["getPlanStatus"]>(() => Promise.resolve(world.plan));
   const replies: ApiReplies = options.replies ?? {};
+  const clock = fakeScheduler();
   const h = botHarness({
     replies,
     data: { getPlanStatus: plans, getUserBalances: read },
     env: options.env,
     launchFunding: options.launchFunding,
+    // The chart of a launch runs on a virtual clock (V1-26).
+    simRunner: { scheduler: clock.scheduler, maxActive: options.maxActive ?? 20 },
   });
   const click = (data: string) => feed(h.bot, callbackUpdate(data, { messageId: 55 }));
   return {
     ...h,
+    ...clock,
     world,
     replies,
     read,
@@ -447,6 +455,48 @@ describe("steps 3/4 Token and 4/4 Recap (V1-37)", () => {
           url: `https://explorer.solana.com/address/${TEST_LAUNCH_WALLET.publicKey}?cluster=devnet`,
         },
       ]);
+    });
+
+    it("runs the chart of the coin, then sweeps the launch wallet when it ends", async () => {
+      const h = harness();
+
+      await create(h);
+
+      // Under the funded screen, as if the coin were live: its dev buy and its bundle, the
+      // header of the launch, no SIMULATION nor DEMO mention.
+      const [chart] = h.api.of("sendPhoto");
+      const caption = String(chart?.payload["caption"]);
+      expect(caption.startsWith("<b>🚀 LAUNCH</b>")).toBe(true);
+      expect(caption).not.toContain("SIMULATION");
+      expect(caption).not.toContain("DEMO");
+      const [sim] = h.simulations.rows;
+      expect(sim).toMatchObject({ userId: TEST_USER.id, devBuySol: "1", bundleSol: "3" });
+      expect(h.launchSweep.swept).toEqual([]);
+
+      await h.click(SIM_CB.sell(sim?.id ?? "", 100));
+      expect(h.launchSweep.swept).toEqual([TEST_LAUNCH_WALLET.id]);
+      await h.advance(SIM_END_HOLD_MS + 1000);
+      // The card: a launch runs once, Menu alone.
+      const card = h.api.of("editMessageMedia").at(-1)?.payload;
+      const media = card?.["media"] as { type?: string; caption?: string } | undefined;
+      expect(media?.type).toBe("animation");
+      expect(media?.caption).not.toContain("SIMULATION ENDED");
+      expect(media?.caption).not.toContain("DEMO");
+      expect(h.api.keyboard("editMessageMedia", -1)).toEqual([
+        [{ text: "🏠 Menu", callback_data: "nav:home" }],
+      ]);
+      expect(h.launchSweep.swept).toHaveLength(1);
+    });
+
+    it("sweeps at once, and says why, when the chart cannot start", async () => {
+      const h = harness({ maxActive: 0 });
+
+      await create(h);
+
+      expect(h.api.of("sendPhoto")).toHaveLength(0);
+      expect(h.screen()).toContain("✅ Launch wallet funded.");
+      expect(h.screen()).toContain(en.sim.live.busy.flag);
+      expect(h.launchSweep.swept).toEqual([TEST_LAUNCH_WALLET.id]);
     });
 
     it("funds once for a recap: a second click on it is a stale button", async () => {

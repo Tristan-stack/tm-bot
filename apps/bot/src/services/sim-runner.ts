@@ -37,6 +37,7 @@ import {
   buildLiveCaption,
   buildLiveKeyboard,
 } from "../features/simulation/caption.js";
+import type { TokenFlow } from "../context.js";
 import type { LiveView } from "../features/simulation/caption.js";
 import type { SellPct } from "../features/simulation/screens.js";
 
@@ -102,6 +103,13 @@ export type StartInput = {
   logo: () => Promise<LogoImage | null>;
   /** Run again (§6.3): the picture replaces this message instead of a new one. */
   messageId?: number;
+  /**
+   * The end of the run (§6.3): its duration, the curve completed, a Sell 100 % or a pause that
+   * expired. Never for a message deleted, an error or a restart: nothing ends them.
+   */
+  onEnd?: () => void;
+  /** A launch (decision of 26/09/2026): the LAUNCH header, no DEMO mention, no Run again. */
+  flow?: TokenFlow;
 };
 /** `ok` is decided at once, so a second click is refused before any upload; `ready` is the first picture. */
 export type StartResult =
@@ -152,6 +160,8 @@ type Entry = {
   editQueued: boolean;
   /** Every write to the message, in order: the first picture, the edits, the card. */
   chain: Promise<void>;
+  onEnd: (() => void) | undefined;
+  flow: TokenFlow;
 };
 
 const defaultRender: SimRender = {
@@ -227,7 +237,7 @@ export function createSimRunner(deps: SimRunnerDeps): SimRunner {
 
   const livePicture = async (entry: Entry) => ({
     png: await render.chart(frameOf(entry)),
-    caption: buildLiveCaption(ui, liveView(entry)),
+    caption: buildLiveCaption(ui, liveView(entry), entry.flow),
     keyboard: buildLiveKeyboard(entry.simId, { speed: entry.speed, paused: entry.paused }),
   });
 
@@ -275,6 +285,11 @@ export function createSimRunner(deps: SimRunnerDeps): SimRunner {
     if (!alive(entry)) return;
     log.debug({ simId: entry.simId, reason }, "Simulation ended");
     dispose(entry);
+    try {
+      entry.onEnd?.();
+    } catch (error) {
+      log.error({ err: error, simId: entry.simId }, "Simulation end hook failed");
+    }
     enqueue(entry, async () => {
       if ((await editLive(entry)) === "gone") return;
       await sleep(SIM_END_HOLD_MS);
@@ -287,8 +302,8 @@ export function createSimRunner(deps: SimRunnerDeps): SimRunner {
       await telegram.editAnimation(
         target(entry),
         mp4,
-        buildEndedCaption(ui, card),
-        buildEndedKeyboard(entry.simId),
+        buildEndedCaption(ui, card, entry.flow),
+        buildEndedKeyboard(entry.simId, entry.flow),
       );
     });
   };
@@ -355,6 +370,8 @@ export function createSimRunner(deps: SimRunnerDeps): SimRunner {
         pauseTimer: undefined,
         editQueued: false,
         chain: Promise.resolve(),
+        onEnd: input.onEnd,
+        flow: input.flow ?? "SIMULATION",
       };
       ingest(entry, run.openingBuys());
       // Reserved before the first upload: a second click during it is refused.

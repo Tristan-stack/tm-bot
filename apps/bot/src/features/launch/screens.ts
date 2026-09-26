@@ -329,23 +329,27 @@ export const buildLaunchFundingScreen = (
     keyboard: [],
   });
 
+export type LaunchFundedView = {
+  draft: ReadyToken;
+  wallet: WalletSummary;
+  launchWallet: WalletSummary;
+  withdrawal: Withdrawal;
+};
+
 /**
  * The launch wallet funded (decision of 26/09/2026): what moved, from which wallet, to which
  * address, for how much, and the transaction. Explorer opens the launch wallet, which no other
- * screen lists.
+ * screen lists. The chart of the launch follows in its own message.
  */
 export const buildLaunchFundedScreen = (
   ui: Ui,
-  view: {
-    draft: ReadyToken;
-    wallet: WalletSummary;
-    launchWallet: WalletSummary;
-    withdrawal: Withdrawal;
-  },
+  view: LaunchFundedView,
+  options: { flags?: OptionalLine[] } = {},
 ): Screen => {
   const { withdrawal, launchWallet } = view;
   return renderScreen({
     header: ui.screenHeader(funding.title),
+    flags: options.flags,
     description: [funding.funded, funding.held],
     info: [
       tokenLine(view.draft.name, view.draft.symbol),

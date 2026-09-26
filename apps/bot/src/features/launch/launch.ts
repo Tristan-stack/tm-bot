@@ -1,10 +1,16 @@
-import type { LaunchFundingService, UserBalances, WalletBalance } from "@launchbot/db";
+import type {
+  LaunchFundingService,
+  LaunchSweepService,
+  UserBalances,
+  WalletBalance,
+} from "@launchbot/db";
 import {
   BUNDLE_MIN_LAMPORTS,
   bundlePresetLamports,
   customMaxLamports,
   en,
   escapeHtml,
+  lamportsToSol,
   launchShortfallLamports,
   launchSpendLamports,
   parseLaunchBundleInput,
@@ -12,6 +18,7 @@ import {
   warn,
 } from "@launchbot/shared";
 import type { OptionalLine, Ui } from "@launchbot/shared";
+import { createLogger } from "@launchbot/shared/server";
 import type { BotContext, LaunchFlowState } from "../../context.js";
 import { mayReadFreshBalances } from "../../middleware/rate-limit.js";
 import { newConfirmToken } from "../../navigation/confirm-token.js";
@@ -21,7 +28,9 @@ import { notifyIfUnchanged, presentScreen, showScreen } from "../../navigation/s
 import type { PresentOptions, ShowMode, ShowResult } from "../../navigation/show-screen.js";
 import type { CallbackHandler, CallbackRouter } from "../../router/callback-router.js";
 import type { DataServices } from "../../services/data.js";
+import type { SimulationService } from "../../services/simulation.js";
 import type { Access } from "../access/access.js";
+import type { SimStarter } from "../simulation/live.js";
 import type { Subscribe } from "../subscribe/subscribe.js";
 import type { ReadyTokenDraft, TokenStep } from "../token-step/token-step.js";
 import { txFailureText } from "../wallets/withdraw-screens.js";
@@ -37,6 +46,9 @@ import {
   LAUNCH_CB,
   launchSummaryLines,
 } from "./screens.js";
+import type { LaunchFundedView } from "./screens.js";
+
+const log = createLogger("bot:launch");
 
 export type LaunchFlowDeps = {
   ui: Ui;
@@ -53,6 +65,11 @@ export type LaunchFlowDeps = {
   launchFunding: LaunchFundingService;
   /** `LAUNCH_TEST_DIVISOR`: 1, or what the dev buy and the bundle are divided by (devnet). */
   launchDivisor: bigint;
+  /** The chart of the launch: a Simulation of this coin, run in the chat (§6). */
+  simulations: Pick<SimulationService, "prepareLaunch">;
+  startSim: SimStarter;
+  /** Once the chart is over, what the launch wallet holds goes to the treasury. */
+  launchSweep: Pick<LaunchSweepService, "sweepLaunchWallet">;
 };
 
 type Show = Pick<PresentOptions, "mode" | "flags">;
@@ -79,6 +96,7 @@ export function registerLaunch(
   deps: LaunchFlowDeps,
 ): void {
   const { ui, data, access, tokenStep, offers, successUrl, launchFunding } = deps;
+  const { simulations, startSim, launchSweep } = deps;
   const divisor = deps.launchDivisor;
   const stateOf = (ctx: BotContext): LaunchFlowState => (ctx.session.launch ??= {});
   const lamportsOf = (value: string | undefined) =>
@@ -326,6 +344,50 @@ export function registerLaunch(
    * again, and the dev buy and the bundle move to a fresh launch wallet, fees included. The
    * screen says it is sending meanwhile, without a button (§9.5).
    */
+  /** In the background, logged: the chart is over, the launch wallet goes to the treasury. */
+  function sweep(userId: string, walletId: string): void {
+    launchSweep.sweepLaunchWallet(walletId).then(
+      (outcome) => log.info({ userId, walletId, status: outcome.status }, "launch.chart_sweep"),
+      (error: unknown) => log.error({ err: error, userId, walletId }, "launch.chart_sweep_failed"),
+    );
+  }
+
+  /**
+   * The chart of the launch (decision of 26/09/2026): a Simulation of this coin, its dev buy and
+   * its bundle in product amounts, runs under the funded screen, as if the coin were live. Its
+   * end sweeps the launch wallet; a chart that cannot start sweeps it at once, with why on the
+   * funded screen. The worker sweeps whatever a restart left behind.
+   */
+  async function runChart(
+    ctx: BotContext,
+    draft: ReadyTokenDraft,
+    funded: LaunchFundedView,
+    bundleLamports: bigint,
+  ): Promise<unknown> {
+    const userId = ctx.user.id;
+    const walletId = funded.launchWallet.id;
+    try {
+      const { simId, config } = await simulations.prepareLaunch({
+        userId,
+        draft,
+        bundleSol: lamportsToSol(bundleLamports),
+      });
+      const refused = await startSim(ctx, {
+        simId,
+        config,
+        token: draft,
+        flow: "LAUNCH",
+        onEnd: () => sweep(userId, walletId),
+      });
+      if (refused === null) return;
+      sweep(userId, walletId);
+      return showScreen(ctx, buildLaunchFundedScreen(ui, funded, { flags: [refused.flag] }));
+    } catch (error) {
+      log.error({ err: error, userId }, "launch.chart_failed");
+      sweep(userId, walletId);
+    }
+  }
+
   async function create(ctx: BotContext, token: string | undefined): Promise<unknown> {
     const state = stateOf(ctx);
     if (token === undefined || token !== state.createToken) {
@@ -349,16 +411,16 @@ export function registerLaunch(
       symbol: draft.symbol,
     });
     switch (outcome.status) {
-      case "funded":
-        return showScreen(
-          ctx,
-          buildLaunchFundedScreen(ui, {
-            draft,
-            wallet,
-            launchWallet: outcome.launchWallet,
-            withdrawal: outcome.withdrawal,
-          }),
-        );
+      case "funded": {
+        const funded: LaunchFundedView = {
+          draft,
+          wallet,
+          launchWallet: outcome.launchWallet,
+          withdrawal: outcome.withdrawal,
+        };
+        await showScreen(ctx, buildLaunchFundedScreen(ui, funded));
+        return runChart(ctx, draft, funded, chosen.bundleLamports);
+      }
       case "failed":
         return showScreen(ctx, buildLaunchFundingFailedScreen(ui, outcome));
       case "refused":

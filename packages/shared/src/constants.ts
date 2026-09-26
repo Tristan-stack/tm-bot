@@ -153,10 +153,11 @@ export const MAX_OPENING_BUY_SOL = DEV_BUY_SOL + BUNDLE_MAX_SOL;
  */
 export const LAUNCH_TEST_DIVISOR_MAX = 1_000;
 /**
- * The sweep of a launch wallet (decision of 26/09/2026): its SOL goes to the treasury once its
- * funding went out this long ago. The worker looks every minute: 1 to 2 minutes in all.
+ * The sweep of a launch wallet (decision of 26/09/2026): the bot sweeps it when the chart of
+ * the launch ends; the worker, looking every minute, sweeps one whose funding went out this
+ * long ago — a chart a restart stopped, a message deleted. Longer than a chart with a pause.
  */
-export const LAUNCH_SWEEP_DELAY_MS = MINUTE_MS;
+export const LAUNCH_SWEEP_FALLBACK_MS = 15 * MINUTE_MS;
 /**
  * A launch wallet no funding was recorded for after this long: the bot stopped between the two,
  * nothing ever reached it. Swept and erased too.

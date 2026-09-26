@@ -116,3 +116,20 @@ describe("helpers", () => {
     expect(unpriced).not.toContain("$3");
   });
 });
+
+describe("the chart of a launch (decision of 26/09/2026)", () => {
+  it("shows the coin as if it were live: the LAUNCH header, no DEMO mention, no Run again", () => {
+    const live = buildLiveCaption(ui, view(), "LAUNCH");
+    expect(live.split("\n").slice(0, 3)).toEqual(["<b>🚀 LAUNCH</b>", "", "🪙 Moon Otter · $OTTR"]);
+    expect(buildEndedCaption(ui, pnlCard(), "LAUNCH").split("\n").slice(0, 3)).toEqual([
+      "<b>🚀 LAUNCH</b>",
+      "",
+      "🪙 <b>$OTTR</b> | +42.7%",
+    ]);
+    for (const caption of [live, buildEndedCaption(ui, pnlCard(), "LAUNCH")]) {
+      expect(caption).not.toContain("SIMULATION");
+      expect(caption).not.toContain("DEMO");
+    }
+    expect(buttonTexts(buildEndedKeyboard("s1", "LAUNCH"))).toEqual([["🏠 Menu"]]);
+  });
+});

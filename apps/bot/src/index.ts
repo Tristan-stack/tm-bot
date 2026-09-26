@@ -8,6 +8,7 @@ import {
   createAccountSweeper,
   createAiQuotaStore,
   createLaunchFundingService,
+  createLaunchSweepService,
   createPaymentService,
   createSensitiveMessageStore,
   createSimulationStore,
@@ -22,6 +23,7 @@ import {
 import type {
   AiQuotaStore,
   LaunchFundingService,
+  LaunchSweepService,
   PrismaClient,
   SimulationStore,
   TokenDraftService,
@@ -67,6 +69,7 @@ import type { AdminServices } from "./features/admin/admin.js";
 import { createAdminGuard } from "./features/admin/guard.js";
 import { registerHome } from "./features/home/home.js";
 import { registerLaunch } from "./features/launch/launch.js";
+import { createSimStarter } from "./features/simulation/live.js";
 import { registerSimulation } from "./features/simulation/simulation.js";
 import { simTelegram } from "./features/simulation/telegram.js";
 import type { InvoicePayments } from "./features/subscribe/invoice.js";
@@ -129,6 +132,8 @@ export function createBot(
     admin?: AdminServices;
     /** Create token: the funding of a launch wallet (decision of 26/09/2026). */
     launchFunding?: LaunchFundingService;
+    /** The sweep of a launch wallet once its chart is over (decision of 26/09/2026). */
+    launchSweep?: Pick<LaunchSweepService, "sweepLaunchWallet">;
   } = {},
 ): { bot: Bot<BotContext>; simRunner: SimRunner } {
   const bot = new Bot<BotContext>(env.BOT_TOKEN);
@@ -203,6 +208,15 @@ export function createBot(
       generateKeypair,
       vault,
     });
+  // Every transfer of a wallet of the bot to the treasury: a purge, a launch wallet.
+  const sweepDeps = {
+    prisma,
+    transfer,
+    vault,
+    readLamports,
+    treasury: env.TREASURY_WALLET,
+    feeBudgetLamports: withdrawFeeBudgetLamports,
+  };
   const walletPayments =
     options.walletPayments ??
     createWalletPaymentService({ prisma, payments, balances: data, transfer, vault });
@@ -220,14 +234,7 @@ export function createBot(
       feeBudgetLamports: withdrawFeeBudgetLamports,
     }),
     // /purge moves the SOL of the wallets to the treasury before the deletion (25/09/2026).
-    sweeper: createAccountSweeper({
-      prisma,
-      transfer,
-      vault,
-      readLamports,
-      treasury: env.TREASURY_WALLET,
-      feeBudgetLamports: withdrawFeeBudgetLamports,
-    }),
+    sweeper: createAccountSweeper(sweepDeps),
     sensitive: createSensitiveMessageStore({ prisma }),
   };
 
@@ -281,6 +288,9 @@ export function createBot(
     successUrl: env.CHANNEL_SUCCESS_URL,
     launchFunding,
     launchDivisor,
+    simulations,
+    startSim: createSimStarter({ runner: simRunner, images }),
+    launchSweep: options.launchSweep ?? createLaunchSweepService(sweepDeps),
   });
   registerSupport(router, { ui, data, supportUrl: env.SUPPORT_URL });
   registerAdmin(router, inputs, {

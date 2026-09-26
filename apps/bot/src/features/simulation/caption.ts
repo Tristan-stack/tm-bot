@@ -14,6 +14,7 @@ import {
 import type { SimSpeed, Ui } from "@launchbot/shared";
 import type { PnlCardModel, PositionView, SimToken } from "@launchbot/sim-render";
 import type { InlineKeyboardMarkup } from "grammy/types";
+import type { TokenFlow } from "../../context.js";
 import { SELL_PCTS, SIM_CB, tokenLine } from "./screens.js";
 
 const PROGRESS_SEGMENTS = 10;
@@ -41,14 +42,21 @@ export type LiveView = {
   position: PositionView;
 };
 
+/**
+ * The header and the DEMO mention of a simulation (§6.1, §6.3). The chart of a launch shows the
+ * coin as if it were live (decision of 26/09/2026): the header of the launch, no mention.
+ */
+const headerLines = (ui: Ui, title: string, flow: TokenFlow): string[] =>
+  flow === "SIMULATION"
+    ? [ui.screenHeader(title), en.sim.demoBanner, ""]
+    : [ui.screenHeader(en.launch.funding.title), ""];
+
 /** The caption of the running simulation (§6.1): header, mention, token, clock, stats, position. */
-export function buildLiveCaption(ui: Ui, view: LiveView): string {
+export function buildLiveCaption(ui: Ui, view: LiveView, flow: TokenFlow = "SIMULATION"): string {
   const { live } = en.sim;
   const { stats, position } = view;
   return [
-    ui.screenHeader(en.flows.SIMULATION.title),
-    en.sim.demoBanner,
-    "",
+    ...headerLines(ui, en.flows.SIMULATION.title, flow),
     tokenLine(view.token.name, view.token.ticker),
     `${live.clock(formatClock(view.clock.nowSec), formatClock(view.clock.durationSec))} · ${
       view.paused ? live.paused : live.speed(view.speed)
@@ -98,12 +106,14 @@ const solWithUsd = (sol: string, usd: string | undefined): string =>
   usd === undefined ? `${sol} SOL` : `${sol} SOL (${usd})`;
 
 /** The caption of the PNL card (§6.3): ticker and PnL, then Invested / Sell / Profit. */
-export function buildEndedCaption(ui: Ui, card: PnlCardModel): string {
+export function buildEndedCaption(
+  ui: Ui,
+  card: PnlCardModel,
+  flow: TokenFlow = "SIMULATION",
+): string {
   const { card: texts } = en.sim;
   return [
-    ui.screenHeader(texts.title),
-    en.sim.demoBanner,
-    "",
+    ...headerLines(ui, texts.title, flow),
     texts.headline(card.tickerText, card.pnlPctText),
     texts.invested(solWithUsd(card.investedText, card.usd?.invested)),
     texts.sell(solWithUsd(card.positionSolText, card.usd?.position)),
@@ -111,9 +121,15 @@ export function buildEndedCaption(ui: Ui, card: PnlCardModel): string {
   ].join("\n");
 }
 
-/** `[ 🔁 Run again ][ 🏠 Menu ]` */
-export const buildEndedKeyboard = (simId: string): InlineKeyboardMarkup => ({
+/** `[ 🔁 Run again ][ 🏠 Menu ]`; a launch runs once: Menu alone. */
+export const buildEndedKeyboard = (
+  simId: string,
+  flow: TokenFlow = "SIMULATION",
+): InlineKeyboardMarkup => ({
   inline_keyboard: [
-    [cbBtn(en.sim.live.btnRunAgain, SIM_CB.again(simId)), cbBtn(en.btn.menu, NAV_HOME)],
+    [
+      ...(flow === "SIMULATION" ? [cbBtn(en.sim.live.btnRunAgain, SIM_CB.again(simId))] : []),
+      cbBtn(en.btn.menu, NAV_HOME),
+    ],
   ],
 });
