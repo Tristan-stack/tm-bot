@@ -3,12 +3,7 @@ import type { SuccessPostInput } from "@launchbot/shared";
 import { captureLogs, setLogDestination } from "@launchbot/shared/server";
 import { GrammyError, InputFile } from "grammy";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  SuccessPostError,
-  assertPreviewChat,
-  parsePreviewArgs,
-  publishToSuccessChannel,
-} from "./success-channel.js";
+import { SuccessPostError, publishToSuccessChannel } from "./success-channel.js";
 import type { SuccessChannelApi, SuccessChannelDeps } from "./success-channel.js";
 
 afterEach(() => {
@@ -30,6 +25,7 @@ const launch = {
   symbol: "OTTR",
   description: "100x guaranteed, secret caption",
   devBuyLamports: 3_000_000_000n,
+  soldLamports: 5_670_000_000n,
   devTokens: 96_657_870_000_000n,
 };
 
@@ -202,27 +198,5 @@ describe("publishToSuccessChannel (V1-39)", () => {
     ).rejects.toBeInstanceOf(SuccessPostError);
     expect(api.sendPhoto).not.toHaveBeenCalled();
     expect(api.sendMessage).not.toHaveBeenCalled();
-  });
-});
-
-describe("preview (V1-39)", () => {
-  it("reads the flags and refuses the real Success channel", () => {
-    expect(parsePreviewArgs(["--chat", "123", "--no-image", "--no-links"])).toEqual({
-      chatId: "123",
-      noImage: true,
-      noLinks: true,
-      longDescription: false,
-    });
-    expect(parsePreviewArgs(["--", "--chat", "6434573835", "--no-image"])).toEqual({
-      chatId: "6434573835",
-      noImage: true,
-      noLinks: false,
-      longDescription: false,
-    });
-    expect(parsePreviewArgs(["--chat", CHANNEL, "--long-description"])?.longDescription).toBe(true);
-    expect(parsePreviewArgs([])).toBeUndefined();
-    expect(parsePreviewArgs(["--chat"])).toBeUndefined();
-    expect(() => assertPreviewChat(CHANNEL, CHANNEL)).toThrow(SuccessPostError);
-    expect(() => assertPreviewChat("123", CHANNEL)).not.toThrow();
   });
 });

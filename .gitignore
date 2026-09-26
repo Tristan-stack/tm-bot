@@ -15,6 +15,9 @@ packages/sim-render/out/
 # Prisma generated client (V1-02)
 packages/db/src/generated/
 
+# Ids already posted from @rugpilotprofits (success-source)
+apps/worker/.success-source-state.json
+
 # Logs and OS / editor files
 *.log
 .DS_Store

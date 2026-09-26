@@ -8,6 +8,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "job": "tsx src/run-job.ts",
+    "success-source": "tsx src/read-success-source.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "lint": "eslint .",
@@ -20,7 +21,8 @@
     "@launchbot/solana": "workspace:*",
     "grammy": "1.46.0",
     "pg": "8.23.0",
-    "pg-boss": "12.34.0"
+    "pg-boss": "12.34.0",
+    "telegram": "2.26.22"
   },
   "devDependencies": {
     "@types/pg": "8.23.1"

@@ -1222,21 +1222,27 @@ export const en = {
     },
   },
 
-  // Success channel post (§10.4, V1-39). The header names no network (D24, 25/09/2026).
+  // Success channel card (§10.4). A result, not a launch announcement. No network name (D24).
   successPost: {
-    title: "NEW LAUNCH",
-    /** `address` is already shortened: `7xKXtg…gAsU`. */
-    mint: (address: string) => `${E.token} Mint: ${address}`,
-    /** `amount` is `3.00 SOL`; `share` is `9.67%`. */
-    devBuy: (amount: string, share: string) =>
-      `${E.devBuy} Dev buy: ${amount} (${share} of supply)`,
+    /** `ticker` is `<b>$OTTR</b>`, `pct` is `<b>+89%</b>`. */
+    headline: (ticker: string, pct: string) => `${E.success} ${ticker} | ${pct}`,
+    /** The ticker alone, when nothing was invested and a percent would be meaningless. */
+    tickerOnly: (ticker: string) => `${E.success} ${ticker}`,
+    mint: `${E.mint} Mint`,
+    /** `amount` is `8.399 SOL` or `8.399 SOL ($1.02K)`. */
+    invested: (amount: string) => `${E.spent} Invested: ${amount}`,
+    sell: (amount: string) => `${E.sold} Sell: ${amount}`,
+    /** `amount` is already `<b>+7.475 SOL ($910)</b>`. */
+    profit: (amount: string) => `${E.gain} Profit: ${amount}`,
+    /** `link` is already an `<a>`. */
+    join: (link: string) => `${E.wave} ${link}`,
+    joinLabel: "Join the bot",
     links: {
-      explorer: "Explorer",
-      website: "Website",
-      x: "X",
-      telegram: "Telegram",
+      dexscreener: "DexScreener",
+      gmgn: "GMGN",
+      solscan: "Solscan",
     },
-    /** The Moon Otter example of §10.4, for the preview script. */
+    /** The preview script. The caption shows the ticker, not the name or the description. */
     example: {
       name: "Moon Otter",
       symbol: "OTTR",

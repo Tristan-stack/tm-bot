@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getClusterConfig } from "../cluster.js";
 import { TG } from "../constants.js";
 import { en } from "../i18n/en.js";
 import { formatSuccessPost, successCaptionLength, successPostInputSchema } from "./success-post.js";
 import type { SuccessPostInput } from "./success-post.js";
 
 const MINT = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+const BOT = "https://t.me/launchbot";
 
 const moon = {
   launchStatus: "CONFIRMED",
@@ -15,8 +15,10 @@ const moon = {
   name: en.successPost.example.name,
   symbol: en.successPost.example.symbol,
   description: en.successPost.example.description,
-  devBuyLamports: 3_000_000_000n,
+  devBuyLamports: 8_399_000_000n,
+  soldLamports: 15_874_000_000n,
   devTokens: 96_657_870_000_000n,
+  solUsd: 121.74,
   website: "https://moonotter.example",
   twitter: "https://x.com/moonotter",
   telegram: "https://t.me/moonotter",
@@ -30,148 +32,125 @@ const visible = (html: string): string =>
     .replaceAll("&lt;", "<")
     .replaceAll("&amp;", "&");
 
-const post = (overrides: Partial<SuccessPostInput> = {}) =>
-  formatSuccessPost({ ...moon, ...overrides }, "devnet");
+const card = [
+  "🏆 $OTTR | +89%",
+  "",
+  "🏷 Mint",
+  MINT,
+  "",
+  "💸 Invested: 8.399 SOL ($1.02K)",
+  "💱 Sell: 15.874 SOL ($1.93K)",
+  "🌟 Profit: +7.475 SOL ($910)",
+  "",
+  "👋 Join the bot",
+  "🔗 DexScreener · GMGN · Solscan",
+].join("\n");
+
+const post = (
+  overrides: Partial<SuccessPostInput> = {},
+  options: { botUrl?: string } = { botUrl: BOT },
+) => formatSuccessPost({ ...moon, ...overrides }, "devnet", options);
 
 describe("formatSuccessPost (V1-39)", () => {
-  it("writes the Moon Otter post of §10.4, with the title and the name in bold", () => {
+  it("writes the result card: ticker, full mint, invested, sell, profit, links", () => {
     const { caption } = post();
 
-    expect(visible(caption)).toBe(
-      [
-        "🚀 NEW LAUNCH",
-        "",
-        "MOON OTTER · $OTTR",
-        "",
-        "An otter who loves the stars.",
-        "",
-        "🪙 Mint: 7xKXtg…gAsU",
-        "💰 Dev buy: 3.00 SOL (9.67% of supply)",
-        "",
-        "🔗 Explorer · Website · X · Telegram",
-      ].join("\n"),
-    );
-    expect(caption).toContain("<b>NEW LAUNCH</b>");
-    expect(caption).toContain("<b>MOON OTTER · $OTTR</b>");
-    expect(caption).toContain(
-      `https://explorer.solana.com/address/${MINT}?cluster=${getClusterConfig("devnet").explorerCluster}`,
-    );
-    expect(caption).toContain('href="https://moonotter.example"');
-    expect(caption).toContain('href="https://x.com/moonotter"');
-    expect(caption).toContain('href="https://t.me/moonotter"');
+    expect(visible(caption)).toBe(card);
+    expect(caption).toContain("<b>$OTTR</b>");
+    expect(caption).toContain("<b>+89%</b>");
+    expect(caption).toContain(`<pre>${MINT}</pre>`);
+    expect(caption).toContain("<blockquote>");
+    expect(caption).toContain("<b>+7.475 SOL ($910)</b>");
+    expect(caption).toContain(`https://dexscreener.com/solana/${MINT}`);
+    expect(caption).toContain(`https://gmgn.ai/sol/token/${MINT}`);
+    expect(caption).toContain(`https://solscan.io/token/${MINT}?cluster=devnet`);
+    expect(caption).toContain(`href="${BOT}"`);
+    expect(successCaptionLength(caption)).toBeLessThanOrEqual(TG.CAPTION_MAX_CHARS);
   });
 
-  it("names no network in the text (D24): the cluster only chooses the explorer link", () => {
+  it("names no network, no creator, and no launch announcement", () => {
     const { caption } = post();
-
-    expect(visible(caption)).not.toMatch(/Devnet|Mainnet|🧪/);
-    expect(caption).toContain("cluster=devnet");
-  });
-
-  it("drops an empty description and the blank line that went with it", () => {
-    expect(visible(post({ description: null }).caption)).toBe(
-      [
-        "🚀 NEW LAUNCH",
-        "",
-        "MOON OTTER · $OTTR",
-        "",
-        "🪙 Mint: 7xKXtg…gAsU",
-        "💰 Dev buy: 3.00 SOL (9.67% of supply)",
-        "",
-        "🔗 Explorer · Website · X · Telegram",
-      ].join("\n"),
-    );
-    expect(visible(post({ description: "   " }).caption)).not.toContain("otter");
-  });
-
-  it.each([
-    [{}, "🔗 Explorer"],
-    [{ website: moon.website }, "🔗 Explorer · Website"],
-    [{ twitter: moon.twitter }, "🔗 Explorer · X"],
-    [{ telegram: moon.telegram }, "🔗 Explorer · Telegram"],
-    [{ website: moon.website, twitter: moon.twitter }, "🔗 Explorer · Website · X"],
-    [{ website: moon.website, telegram: moon.telegram }, "🔗 Explorer · Website · Telegram"],
-    [{ twitter: moon.twitter, telegram: moon.telegram }, "🔗 Explorer · X · Telegram"],
-    [
-      { website: moon.website, twitter: moon.twitter, telegram: moon.telegram },
-      "🔗 Explorer · Website · X · Telegram",
-    ],
-  ] as const)("joins only the links that exist (%j)", (links, line) => {
-    const caption = visible(
-      post({ website: null, twitter: null, telegram: null, ...links }).caption,
-    );
-    expect(caption.endsWith(line)).toBe(true);
-  });
-
-  it("escapes a name with emoji and HTML, and drops a link that is not https", () => {
-    const { caption } = post({
-      name: "Moon <&> 🚀",
-      website: "http://moonotter.example",
-      twitter: 'https://moonotter.example/?a=1&b="x"',
-      telegram: null,
-    });
-
-    expect(visible(caption)).toContain("MOON <&> 🚀 · $OTTR");
-    expect(caption).toContain("MOON &lt;&amp;&gt; 🚀");
-    expect(caption).not.toContain("http://moonotter.example");
-    expect(caption).toContain("a=1&amp;b=&quot;x&quot;");
-    expect(visible(caption)).toContain("🔗 Explorer · X");
-    expect(visible(caption)).not.toContain("Website");
-    expect(visible(caption)).not.toContain("Telegram");
-  });
-
-  it("keeps a very long description inside 1024 visible characters, and leaves the rest whole", () => {
-    const { caption } = post({ description: `${"moon ".repeat(599)}ENDMARKER` });
     const text = visible(caption);
 
-    expect(text.length).toBeLessThanOrEqual(TG.CAPTION_MAX_CHARS);
-    expect(successCaptionLength(caption)).toBe(text.length);
-    expect(text).not.toContain("ENDMARKER");
-    expect(text.startsWith("🚀 NEW LAUNCH")).toBe(true);
-    expect(text).toContain("MOON OTTER · $OTTR");
-    expect(text).toContain("🪙 Mint: 7xKXtg…gAsU");
-    expect(text).toContain("💰 Dev buy: 3.00 SOL (9.67% of supply)");
-    expect(text.endsWith("🔗 Explorer · Website · X · Telegram")).toBe(true);
-    expect(text).toContain("…");
+    expect(text).not.toMatch(/Devnet|Mainnet|🧪|NEW LAUNCH|Moon Otter|otter who loves/);
+    expect(caption).toContain("cluster=devnet");
+    expect(caption).not.toContain("moonotter.example");
+    expect(caption).not.toContain("x.com/moonotter");
+  });
+
+  it("hides the dollars when no SOL price is passed, and the Join line without a bot url", () => {
+    const text = visible(post({ solUsd: null }, {}).caption);
+
+    expect(text).toContain("💸 Invested: 8.399 SOL\n💱 Sell: 15.874 SOL\n🌟 Profit: +7.475 SOL");
+    expect(text).not.toContain("($");
+    expect(text).not.toContain("Join the bot");
+    expect(text).toContain("🔗 DexScreener · GMGN · Solscan");
+  });
+
+  it("drops the market links when asked, and a bot url that is not https", () => {
+    const caption = formatSuccessPost(moon, "devnet", {
+      botUrl: "http://t.me/launchbot",
+      showLinks: false,
+    }).caption;
+
+    expect(visible(caption)).not.toContain("DexScreener");
+    expect(visible(caption)).not.toContain("Join the bot");
+    expect(caption).not.toContain("http://t.me/launchbot");
+  });
+
+  it("escapes a ticker with HTML", () => {
+    const { caption } = post({ symbol: "OT<T>" });
+
+    expect(visible(caption)).toContain("🏆 $OT<T> | +89%");
+    expect(caption).toContain("$OT&lt;T&gt;");
   });
 
   it.each([
-    [1_000_000_000n, 34_280_000_000_000n, "1.00 SOL", "3.43%"],
-    [3_000_000_000n, 96_657_870_000_000n, "3.00 SOL", "9.67%"],
-    [20_000_000_000n, 426_610_000_000_000n, "20.00 SOL", "42.66%"],
-  ] as const)("shows %s lamports as %s (%s of supply)", (lamports, tokens, sol, share) => {
-    expect(visible(post({ devBuyLamports: lamports, devTokens: tokens }).caption)).toContain(
-      `💰 Dev buy: ${sol} (${share} of supply)`,
+    [3_000_000_000n, 5_670_000_000n, "+89%", "+2.670 SOL"],
+    [3_000_000_000n, 1_000_000_000n, "-67%", "-2.000 SOL"],
+    [3_000_000_000n, 3_000_000_000n, "0%", "0.000 SOL"],
+  ] as const)("shows %s invested and %s sold as %s (%s)", (invested, sold, pct, profit) => {
+    expect(
+      visible(post({ devBuyLamports: invested, soldLamports: sold, solUsd: null }).caption),
+    ).toContain(`🏆 $OTTR | ${pct}`);
+    expect(
+      visible(post({ devBuyLamports: invested, soldLamports: sold, solUsd: null }).caption),
+    ).toContain(`Profit: ${profit}`);
+  });
+
+  it("omits the percent when nothing was invested", () => {
+    const text = visible(
+      post({ devBuyLamports: 0n, soldLamports: 1_000_000_000n, solUsd: null }).caption,
     );
+
+    expect(text.startsWith("🏆 $OTTR\n")).toBe(true);
+    expect(text).not.toContain("|");
+    expect(text).toContain("🌟 Profit: +1.000 SOL");
   });
 
-  it("rounds a dev buy past 2 decimals half up", () => {
-    expect(visible(post({ devBuyLamports: 1_005_000_000n }).caption)).toContain("1.01 SOL");
-    expect(visible(post({ devBuyLamports: 1_004_000_000n }).caption)).toContain("1.00 SOL");
-  });
-
-  it("rejects a launch that is not confirmed, or that has no dev tokens", () => {
-    const { devTokens: _devTokens, ...withoutTokens } = moon;
-    void _devTokens;
+  it("rejects a launch that is not confirmed, or that has no sell", () => {
+    const { soldLamports: _sold, ...withoutSell } = moon;
+    void _sold;
 
     expect(successPostInputSchema.safeParse({ ...moon, launchStatus: "SIMULATED" }).success).toBe(
       false,
     );
-    expect(successPostInputSchema.safeParse(withoutTokens).success).toBe(false);
+    expect(successPostInputSchema.safeParse(withoutSell).success).toBe(false);
     expect(successPostInputSchema.safeParse({ ...moon, mint: "not-an-address" }).success).toBe(
       false,
     );
     expect(successPostInputSchema.safeParse({ ...moon, txSignature: "" }).success).toBe(false);
+    expect(successPostInputSchema.safeParse({ ...moon, solUsd: 0 }).success).toBe(false);
     expect(() =>
       formatSuccessPost(
         { ...moon, launchStatus: "SIMULATED" } as unknown as SuccessPostInput,
         "devnet",
       ),
     ).toThrow();
-    expect(() => formatSuccessPost(withoutTokens as SuccessPostInput, "devnet")).toThrow();
+    expect(() => formatSuccessPost(withoutSell as SuccessPostInput, "devnet")).toThrow();
   });
 
-  it("has no field a creator's name or a performance figure could arrive in", () => {
+  it("has no field a creator's name could arrive in", () => {
     expect(Object.keys(successPostInputSchema.shape)).toEqual([
       "launchStatus",
       "txSignature",
@@ -184,10 +163,12 @@ describe("formatSuccessPost (V1-39)", () => {
       "twitter",
       "telegram",
       "devBuyLamports",
+      "soldLamports",
       "devTokens",
       "totalSupplyBaseUnits",
+      "solUsd",
     ]);
-    expect(post().caption).not.toMatch(/market cap|holders|PnL|100x/i);
+    expect(post().caption).not.toMatch(/Moon Otter|@/);
   });
 
   it("returns the draft file id and nothing when the draft has no image", () => {

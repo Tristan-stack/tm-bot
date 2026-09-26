@@ -5,7 +5,7 @@ import type { FlowName } from "./header.js";
 
 export { FLOWS, progressBar } from "./header.js";
 export type { FlowName } from "./header.js";
-export { a, b, code, escapeHtml } from "./html.js";
+export { a, b, code, escapeHtml, pre } from "./html.js";
 export {
   cancelBtn,
   cbBtn,

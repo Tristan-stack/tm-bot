@@ -36,6 +36,12 @@ export const E = {
 
   // Token generator
   token: "🪙",
+  // Success card (§10.4). Glyphs the rest of the bot does not already use.
+  mint: "🏷",
+  spent: "💸",
+  sold: "💱",
+  gain: "🌟",
+  wave: "👋",
   generate: "🎲",
   ai: "🤖",
   locked: "🔒",

@@ -43,6 +43,10 @@ export type SuccessChannelDeps = {
   onMissingImage?: "error" | "text";
   /** The bytes of a Telegram file. The file URL holds BOT_TOKEN and never leaves the client. */
   downloadFile: (fileId: string) => Promise<Uint8Array>;
+  /** `https://t.me/<bot>`. Absent: the card has no Join line. */
+  botUrl?: string;
+  /** DexScreener, GMGN and Solscan. Default true. */
+  showLinks?: boolean;
   sleep?: (ms: number) => Promise<unknown>;
 };
 
@@ -50,7 +54,6 @@ export type PreviewArgs = {
   chatId: string;
   noImage: boolean;
   noLinks: boolean;
-  longDescription: boolean;
 };
 
 /** `undefined` when the command line is not the preview usage. */
@@ -58,14 +61,12 @@ export function parsePreviewArgs(argv: readonly string[]): PreviewArgs | undefin
   let chatId: string | undefined;
   let noImage = false;
   let noLinks = false;
-  let longDescription = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     // pnpm forwards the `--` that separates its own options from the script's.
     if (arg === "--") continue;
     if (arg === "--no-image") noImage = true;
     else if (arg === "--no-links") noLinks = true;
-    else if (arg === "--long-description") longDescription = true;
     else if (arg === "--chat") {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) return undefined;
@@ -74,7 +75,7 @@ export function parsePreviewArgs(argv: readonly string[]): PreviewArgs | undefin
     } else return undefined;
   }
   if (chatId === undefined || chatId === "") return undefined;
-  return { chatId, noImage, noLinks, longDescription };
+  return { chatId, noImage, noLinks };
 }
 
 export function successChannelDeps(
@@ -99,6 +100,7 @@ function validationError(path: PropertyKey | undefined): SuccessPostError {
     return new SuccessPostError("Only a confirmed launch can be posted");
   }
   if (path === "devTokens") return new SuccessPostError("The dev token amount is required");
+  if (path === "soldLamports") return new SuccessPostError("The sell amount is required");
   if (path === "mint") return new SuccessPostError("The mint address is invalid");
   if (path === "txSignature") {
     return new SuccessPostError("The transaction signature is required");
@@ -135,7 +137,10 @@ export async function publishToSuccessChannel(
   const parsed = successPostInputSchema.safeParse(input);
   if (!parsed.success) throw validationError(parsed.error.issues[0]?.path[0]);
 
-  const post = formatSuccessPost(parsed.data, deps.cluster);
+  const post = formatSuccessPost(parsed.data, deps.cluster, {
+    botUrl: deps.botUrl,
+    showLinks: deps.showLinks,
+  });
   const sleep = deps.sleep ?? delay;
   const onMissingImage = deps.onMissingImage ?? "error";
   let imageError: unknown;

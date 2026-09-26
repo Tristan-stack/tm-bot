@@ -1,29 +1,27 @@
 import { z } from "zod";
 import type { SolanaCluster } from "../cluster.js";
-import { explorerAddressUrl } from "../cluster.js";
 import {
-  TG,
   TOKEN_NAME_MAX_BYTES,
   TOKEN_SUPPLY_BASE_UNITS,
   TOKEN_TICKER_MAX_BYTES,
 } from "../constants.js";
-import { formatSol } from "../format/sol.js";
-import { shortAddress, utf8ByteLength } from "../format/text.js";
+import { formatTokenAmount } from "../format/number.js";
+import { formatSol, lamportsToSol } from "../format/sol.js";
+import { utf8ByteLength } from "../format/text.js";
 import { E } from "../i18n/emoji.js";
 import { en } from "../i18n/en.js";
 import { isValidSolanaAddress } from "../solana-address.js";
 import { formatTicker } from "../token/display.js";
-import { a, b, escapeHtml } from "../ui/html.js";
+import { a, b, pre } from "../ui/html.js";
 
 /**
- * The Success channel post (§10.4, V1-39). Pure: no Telegram call, no environment.
- * D24 (25/09/2026) removed the network from the header; the explorer link still carries
- * `?cluster=` from the cluster config. The post shows the dev buy only (the ticket's format).
- * Nothing here can name the creator: the input has no user and no wallet.
+ * The Success channel card (§10.4). Pure: no Telegram call, no environment.
+ * A result, not a launch announcement: ticker and PnL, the full mint, invested / sell / profit.
+ * Dollars only when a SOL price is passed. Nothing here can name the creator.
+ * D24: the text names no network. The Solscan link still carries `?cluster=`.
  */
 
 const HTTPS = /^https:\/\//;
-const ELLIPSIS = "…";
 
 const withinBytes = (max: number) => (value: string) =>
   value !== "" && utf8ByteLength(value) <= max;
@@ -52,13 +50,40 @@ export const successPostInputSchema = z.object({
   website: optionalText,
   twitter: optionalText,
   telegram: optionalText,
+  /** Shown as Invested. */
   devBuyLamports: z.bigint().min(0n),
+  /** Shown as Sell. Profit and the percent are sell minus invested. */
+  soldLamports: z.bigint().min(0n),
   devTokens: z.bigint().min(0n),
   totalSupplyBaseUnits: z.bigint().positive().default(TOKEN_SUPPLY_BASE_UNITS),
+  /** SOL price in USD. Absent: the card shows SOL only. */
+  solUsd: z
+    .number()
+    .finite()
+    .positive()
+    .nullable()
+    .optional()
+    .transform((value) => value ?? null),
 });
 
 /** What a caller passes. `totalSupplyBaseUnits` defaults to the pump.fun supply. */
 export type SuccessPostInput = z.input<typeof successPostInputSchema>;
+
+export type SuccessPostOptions = {
+  /** `https://t.me/<bot>`. Absent: the card has no Join line. */
+  botUrl?: string;
+  /** DexScreener, GMGN and Solscan. Default true. */
+  showLinks?: boolean;
+};
+
+/** A card copied from another channel: ticker, mint, invested and sell. No creator, no wallet. */
+export type ImportedSuccessCard = {
+  symbol: string;
+  mint: string;
+  investedLamports: bigint;
+  soldLamports: bigint;
+  solUsd: number | null;
+};
 
 export type SuccessPost = {
   caption: string;
@@ -76,79 +101,117 @@ export function successCaptionLength(html: string): number {
     .replaceAll("&amp;", "&").length;
 }
 
-/** Hundredths of a percent, half up, on integers only: `9.67%`. */
-function formatSupplyShare(devTokens: bigint, totalSupply: bigint): string {
-  const hundredths = (devTokens * 10_000n + totalSupply / 2n) / totalSupply;
-  const whole = hundredths / 100n;
-  const fraction = (hundredths % 100n).toString().padStart(2, "0");
-  return `${whole}.${fraction}%`;
+/** `+89%`, `-12%`, `0%`. Half up, on lamports. `invested` is greater than zero. */
+function formatPnlPct(profit: bigint, invested: bigint): string {
+  const negative = profit < 0n;
+  const magnitude = negative ? -profit : profit;
+  const pct = (magnitude * 100n + invested / 2n) / invested;
+  if (pct === 0n) return "0%";
+  return `${negative ? "-" : "+"}${pct}%`;
 }
 
-/** End of a word, then `…`, inside `max` UTF-16 units. */
-function truncateWords(text: string, max: number): string {
-  const room = max - ELLIPSIS.length;
-  if (room <= 0) return ELLIPSIS.slice(0, max);
-  let slice = text.slice(0, room);
-  // `string.length` counts UTF-16 units: don't leave the first half of an emoji.
-  const tail = slice.charCodeAt(slice.length - 1);
-  if (tail >= 0xd800 && tail <= 0xdbff) slice = slice.slice(0, -1);
-  const space = slice.lastIndexOf(" ");
-  const kept = (space > 0 ? slice.slice(0, space) : slice).trimEnd();
-  return `${kept}${ELLIPSIS}`;
+/** `($1.02K)` from 1,000, `($910)` below, `(-$56)` for a loss. */
+function usdParen(usd: number): string {
+  const negative = usd < 0;
+  const abs = Math.abs(usd);
+  const text = abs >= 1000 ? formatTokenAmount(abs) : String(Math.round(abs));
+  return negative ? `(-$${text})` : `($${text})`;
 }
 
-type Link = { label: string; href: string | null };
-
-function linkLine(links: Link[]): string {
-  const shown = links.filter(
-    (link): link is { label: string; href: string } => link.href !== null && HTTPS.test(link.href),
-  );
-  return `${E.links} ${shown.map((link) => a(link.label, link.href)).join(" · ")}`;
+function money(lamports: bigint, solUsd: number | null, signed: boolean): string {
+  const sol = formatSol(lamports, { decimals: 3, rounding: "halfUp", signed });
+  if (solUsd === null) return sol;
+  return `${sol} ${usdParen(lamportsToSol(lamports) * solUsd)}`;
 }
 
-type PostData = z.output<typeof successPostInputSchema>;
+function solscanTokenUrl(mint: string, cluster: SolanaCluster): string {
+  const base = `https://solscan.io/token/${encodeURIComponent(mint)}`;
+  return cluster === "mainnet-beta" ? base : `${base}?cluster=${encodeURIComponent(cluster)}`;
+}
 
-function captionOf(data: PostData, cluster: SolanaCluster, description: string | null): string {
+function captionOf(
+  data: ImportedSuccessCard,
+  cluster: SolanaCluster,
+  options: SuccessPostOptions,
+): string {
   const texts = en.successPost;
-  const head = [
-    `${E.launchCoin} ${b(texts.title)}`,
-    b(`${data.name.toUpperCase()} · ${formatTicker(data.symbol)}`),
-  ].join("\n\n");
-  const body = [
-    texts.mint(shortAddress(data.mint, 6, 4)),
-    texts.devBuy(
-      formatSol(data.devBuyLamports, { decimals: 2, rounding: "halfUp" }),
-      formatSupplyShare(data.devTokens, data.totalSupplyBaseUnits),
-    ),
+  const invested = data.investedLamports;
+  const profit = data.soldLamports - invested;
+  const ticker = b(formatTicker(data.symbol));
+  const headline =
+    invested > 0n
+      ? texts.headline(ticker, b(formatPnlPct(profit, invested)))
+      : texts.tickerOnly(ticker);
+  const figures = [
+    texts.invested(money(invested, data.solUsd, false)),
+    texts.sell(money(data.soldLamports, data.solUsd, false)),
+    texts.profit(b(money(profit, data.solUsd, true))),
   ].join("\n");
-  const links = linkLine([
-    { label: texts.links.explorer, href: explorerAddressUrl(data.mint, cluster) },
-    { label: texts.links.website, href: data.website },
-    { label: texts.links.x, href: data.twitter },
-    { label: texts.links.telegram, href: data.telegram },
-  ]);
-  const blocks =
-    description === null ? [head, body, links] : [head, escapeHtml(description), body, links];
-  return blocks.join("\n\n");
+  const lines = [
+    headline,
+    "",
+    texts.mint,
+    pre(data.mint),
+    "",
+    `<blockquote>${figures}</blockquote>`,
+  ];
+  const footer = [
+    ...(options.botUrl !== undefined && HTTPS.test(options.botUrl)
+      ? [texts.join(a(texts.joinLabel, options.botUrl))]
+      : []),
+    ...(options.showLinks === false ? [] : [linkRow(data.mint, cluster)]),
+  ];
+  if (footer.length > 0) lines.push("", ...footer);
+  return lines.join("\n");
+}
+
+function linkRow(mint: string, cluster: SolanaCluster): string {
+  const { links } = en.successPost;
+  const row = [
+    a(links.dexscreener, `https://dexscreener.com/solana/${encodeURIComponent(mint)}`),
+    a(links.gmgn, `https://gmgn.ai/sol/token/${encodeURIComponent(mint)}`),
+    a(links.solscan, solscanTokenUrl(mint, cluster)),
+  ].join(" · ");
+  return `${E.links} ${row}`;
 }
 
 /**
  * The HTML caption and the draft's `file_id`, if it has one.
- * A description that would push the visible caption past 1024 characters is cut at a word;
- * the header, the name, the mint, the dev buy and the links are left whole.
+ * Invested is the dev buy. Profit and the percent are sell minus invested.
  */
-export function formatSuccessPost(input: SuccessPostInput, cluster: SolanaCluster): SuccessPost {
+export function formatSuccessPost(
+  input: SuccessPostInput,
+  cluster: SolanaCluster,
+  options: SuccessPostOptions = {},
+): SuccessPost {
   const data = successPostInputSchema.parse(input);
-  const fixed = successCaptionLength(captionOf(data, cluster, null));
-  // One extra blank line separates the description from the name and from the mint.
-  const budget = TG.CAPTION_MAX_CHARS - fixed - 2;
-  let description = data.description;
-  if (description !== null && description.length > budget) {
-    description = budget < 1 ? null : truncateWords(description, budget);
-  }
   const fileId = data.imageFileId ?? undefined;
   return {
-    caption: captionOf(data, cluster, description),
+    caption: captionOf(
+      {
+        symbol: data.symbol,
+        mint: data.mint,
+        investedLamports: data.devBuyLamports,
+        soldLamports: data.soldLamports,
+        solUsd: data.solUsd,
+      },
+      cluster,
+      options,
+    ),
     photo: fileId === undefined ? {} : { fileId },
   };
+}
+
+/** The same card as a confirmed launch, for a result that is not one of ours. */
+export function formatImportedSuccessPost(
+  card: ImportedSuccessCard,
+  cluster: SolanaCluster,
+  options: SuccessPostOptions = {},
+): string {
+  if (!isValidSolanaAddress(card.mint)) throw new Error("The mint address is invalid");
+  if (card.symbol === "" || card.symbol.includes("$")) throw new Error("The ticker is invalid");
+  if (card.investedLamports < 0n || card.soldLamports < 0n) {
+    throw new Error("The amounts are invalid");
+  }
+  return captionOf(card, cluster, options);
 }

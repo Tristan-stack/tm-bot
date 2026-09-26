@@ -8,6 +8,7 @@ import {
   b,
   cbBtn,
   code,
+  pre,
   cancelBtn,
   createUi,
   escapeHtml,
@@ -48,6 +49,7 @@ describe("html", () => {
   it("escapes the arguments of every helper", () => {
     expect(b("<b>Moon</b>")).toBe("<b>&lt;b&gt;Moon&lt;/b&gt;</b>");
     expect(code("1 < 2")).toBe("<code>1 &lt; 2</code>");
+    expect(pre("1 < 2")).toBe("<pre>1 &lt; 2</pre>");
     expect(a("R&D", 'https://example.com/?a=1&b="2"')).toBe(
       '<a href="https://example.com/?a=1&amp;b=&quot;2&quot;">R&amp;D</a>',
     );

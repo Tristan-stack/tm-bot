@@ -935,24 +935,23 @@ Value if sold now: ≈ 3.95 SOL ($408.27)
 
 ### 10.4 V2 : post dans le canal Succès
 
-Chaque launch confirmé est publié automatiquement dans le canal Succès, avec le logo en image (ou l'image par défaut du bot) :
+Chaque launch confirmé est publié automatiquement dans le canal Succès, avec le logo en image (ou l'image par défaut du bot). Le post est une carte de résultat, pas une annonce de launch :
 
 ```
-🚀 NEW LAUNCH
+🏆 $OTTR | +89%
 
-MOON OTTER · $OTTR
+🏷 Mint
+7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
 
-An otter who loves the stars.
+💸 Invested: 8.399 SOL ($1.02K)
+💱 Sell: 15.874 SOL ($1.93K)
+🌟 Profit: +7.475 SOL ($910)
 
-🪙 Mint: OTTRk3…9fQ2
-💰 Dev buy: 3.00 SOL (9.67% of supply)
-
-🔗 Explorer · Website · X · Telegram
+👋 Join the bot
+🔗 DexScreener · GMGN · Solscan
 ```
 
-Le post n'affiche pas le nom Telegram du créateur. Il ne contient ni chiffres de performance ni promesse de gain. La part du dev dans la supply est toujours affichée. Le récap du launch prévient l'utilisateur que son token sera publié.
-
-À trancher (25/09/2026) : depuis le bundle (10.1), le dev détient les tokens du dev buy **et** du bundle. Le post ci-dessus montre encore un dev buy seul ; son format (dev buy et bundle séparés, ou total avec la part cumulée) se décide avec le ticket du post Succès (V1-39).
+L'adresse complète du mint est dans un bloc `<pre>` : elle ne se coupe pas au milieu et se copie d'un tap. Les trois montants sont dans une citation, pour se lire comme un seul bloc. « Join the bot » et les liens se suivent. Invested est le dev buy, Sell le montant vendu ; le pourcentage et le profit s'en déduisent. Les dollars n'apparaissent que lorsqu'un prix du SOL est connu (`$1.02K` à partir de 1 000, dollars entiers en dessous). Le post ne nomme pas le créateur, ni le réseau : le lien Solscan porte `?cluster=` selon la config. « Join the bot » pointe vers le bot. DexScreener, GMGN et Solscan pointent vers le mint.
 
 ## 11. Support, données et commandes admin
 
