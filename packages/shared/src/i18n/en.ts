@@ -1222,6 +1222,28 @@ export const en = {
     },
   },
 
+  // Success channel post (§10.4, V1-39). The header names no network (D24, 25/09/2026).
+  successPost: {
+    title: "NEW LAUNCH",
+    /** `address` is already shortened: `7xKXtg…gAsU`. */
+    mint: (address: string) => `${E.token} Mint: ${address}`,
+    /** `amount` is `3.00 SOL`; `share` is `9.67%`. */
+    devBuy: (amount: string, share: string) =>
+      `${E.devBuy} Dev buy: ${amount} (${share} of supply)`,
+    links: {
+      explorer: "Explorer",
+      website: "Website",
+      x: "X",
+      telegram: "Telegram",
+    },
+    /** The Moon Otter example of §10.4, for the preview script. */
+    example: {
+      name: "Moon Otter",
+      symbol: "OTTR",
+      description: "An otter who loves the stars.",
+    },
+  },
+
   // The texts of the Mini App live in their own module: see en-webapp.ts.
   webapp: enWebapp,
 } as const;

@@ -155,6 +155,8 @@ export const TOKEN_CREATION_ENABLED = false;
 // against `create_v2` in V2-01. The zod schemas of `token/fields.ts` read them here, nowhere else.
 export const TOKEN_NAME_MAX_BYTES = 32;
 export const TOKEN_TICKER_MAX_BYTES = 10;
+/** pump.fun: 1 billion tokens of 6 decimals, in base units (the Success post share, V1-39). */
+export const TOKEN_SUPPLY_BASE_UNITS = 1_000_000_000n * 10n ** 6n;
 /** 1 to 3 short sentences (§5). */
 export const TOKEN_DESCRIPTION_MAX_SENTENCES = 3;
 /** Code points, not bytes (proposal, V1-15). */
