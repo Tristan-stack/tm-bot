@@ -169,7 +169,7 @@ Une alerte Telegram (notification au clic) ne remplace jamais une info à l'écr
 | Paiement pas encore détecté (8.3) | `⏳ Waiting for payment · last check 14:32 UTC` |
 | Offre Classic pendant un Premium actif (8.4) | `Classic: available when your Premium ends` |
 | Limite de wallets atteinte (9.3) | Compteur `2/5` dans l'en-tête de la liste, avec `limit reached` à la limite |
-| Create token en V1 (10.1) | `🚧 Token creation arrives in V2.` sur le récap |
+| Create token en V1 (10.1) | `🚧 Create token moves the dev buy and the bundle to a fresh launch wallet. The token itself arrives in V2.` sur le récap |
 | Frais de vente insuffisants (10.3) | Note avec le nom du wallet, `⚠️ Insufficient funds` et le montant manquant |
 
 ## 5. Générateur de token
@@ -788,7 +788,7 @@ Garder les clés privées et les seed phrases d'autres personnes est un sujet se
 
 Avant tout, le bot vérifie l'adhésion au canal, sans cache (voir 4.2). Sans abonnement actif, « Launch Coin » ouvre l'écran des offres avec la note « ⭐ Launch Coin needs an active subscription. ». Avec un abonnement, le parcours compte 4 étapes.
 
-**Décision du 25/09/2026 : dev buy fixe, puis bundle.** Le dev achète toujours **1 SOL** à la création du token (dev buy fixe). Le **bundle** achète ensuite **au bloc suivant**, depuis **le même wallet** : pas de wallets de bundle séparés, et les écrans le disent. L'utilisateur choisit seulement le bundle : 3, 5 ou 10 SOL, ou Custom de 3 à 20 SOL (3 décimales au plus, et au plus le solde − 1 SOL). Le minimum pour lancer est de **4 SOL tout rond** (1 + 3), sans marge de frais : c'est aussi le seuil de la ligne « Fund a wallet to launch a coin. » de l'accueil (4.3). Le récap montre le dev buy, le bundle et le total avec leur part de la supply (formule d'achat 7.1 ; la part du bundle est celle du total moins celle du dev buy). La simulation suit le même modèle (6).
+**Décision du 25/09/2026 : dev buy fixe, puis bundle.** Le dev achète toujours **1 SOL** à la création du token (dev buy fixe). Le **bundle** achète ensuite **au bloc suivant**, depuis **le même wallet** : pas de wallets de bundle séparés, et les écrans le disent. **Décision du 26/09/2026 : fresh wallet de lancement.** Ce wallet est un wallet neuf, propre au launch : au clic sur « Create token », le dev buy et le bundle quittent le wallet choisi à l'étape 1 pour ce fresh wallet, frais compris (les frais sont pris sur le bundle), et la création, le dev buy et le bundle en partiront (10.2). Le fresh wallet n'apparaît sur aucun écran de l'utilisateur et ne compte pas dans la limite du plan ; les commandes admin, les comptes inactifs et `/purge` le voient comme les autres (11.3, 11.4). L'utilisateur choisit seulement le bundle : 3, 5 ou 10 SOL, ou Custom de 3 à 20 SOL (3 décimales au plus, et au plus le solde − 1 SOL). Le minimum pour lancer est de **4 SOL tout rond** (1 + 3), sans marge de frais : c'est aussi le seuil de la ligne « Fund a wallet to launch a coin. » de l'accueil (4.3). Le récap montre le dev buy, le bundle et le total avec leur part de la supply (formule d'achat 7.1 ; la part du bundle est celle du total moins celle du dev buy). La simulation suit le même modèle (6).
 
 | Étape | Écran | Clavier |
 |---|---|---|
@@ -804,7 +804,7 @@ Avant tout, le bot vérifie l'adhésion au canal, sans cache (voir 4.2). Sans ab
 ▰▱▱▱
 Wallet › Bundle › Token › Recap
 
-Choose the wallet that creates the token and pays the dev buy and the bundle.
+Choose the wallet that pays the dev buy and the bundle.
 The smallest launch needs 4 SOL (1 SOL dev buy + 3 SOL bundle).
 
 ┌ Main · 4.200 SOL ✅
@@ -875,15 +875,15 @@ Check everything before creating the token.
 [ ⬅️ Back             ][ 🏠 Menu            ]
 ```
 
-En V1, « Create token » ne crée rien : l'écran indique déjà « 🚧 Token creation arrives in V2. », et le clic ouvre une alerte qui le répète. La ligne « ⛽ Fees » est une estimation affichée pour information (création, rent et priority fees) : elle n'entre pas dans le minimum de 4 SOL (décision du 25/09/2026). Valeur provisoire : 0,05 SOL, à mesurer en V2, où le minimum sera revu avec les frais réels.
+En V1, « Create token » ne crée pas de token : il envoie le dev buy et le bundle vers le fresh wallet (décision du 26/09/2026), et le récap l'indique (« 🚧 Create token moves the dev buy and the bundle to a fresh launch wallet. The token itself arrives in V2. »). Un écran d'envoi, sans bouton, puis un écran de résultat : succès (wallet d'origine, adresse du fresh wallet, montant, frais, transaction) ou échec (raison, Try again qui ramène au récap). Sur devnet, `LAUNCH_TEST_DIVISOR` (hors 12, 1 par défaut) divise ce qui part du wallet, pour tester avec peu de SOL ; les écrans le signalent. La ligne « ⛽ Fees » est une estimation affichée pour information (création, rent et priority fees) : elle n'entre pas dans le minimum de 4 SOL (décision du 25/09/2026). Valeur provisoire : 0,05 SOL, à mesurer en V2, où le minimum sera revu avec les frais réels.
 
 ### 10.2 V2 : création réelle
 
 | Étape | Action |
 |---|---|
 | 1 | Upload de l'image (ou de l'image par défaut du bot si l'utilisateur n'en a pas mis) et des métadonnées JSON (nom, ticker, description, liens) sur IPFS |
-| 2 | Transaction pump.fun : `create_v2` (Token-2022, `is_mayhem_mode = false`), puis achat du dev buy (1 SOL) avec `buy_v2`. Le tout dans une seule transaction v0 avec une Address Lookup Table, signée par le wallet créateur. |
-| 3 | Au bloc suivant, achat du bundle avec `buy_v2`, signé par le même wallet (décision du 25/09/2026, 10.1). Mécanisme d'envoi et cas d'échec du bundle après une création réussie : à fixer en V2 (voir 17). |
+| 2 | Transaction pump.fun : `create_v2` (Token-2022, `is_mayhem_mode = false`), puis achat du dev buy (1 SOL) avec `buy_v2`. Le tout dans une seule transaction v0 avec une Address Lookup Table, signée par le fresh wallet du launch, financé au clic sur « Create token » (décision du 26/09/2026, 10.1). |
+| 3 | Au bloc suivant, achat du bundle avec `buy_v2`, signé par le même fresh wallet (décisions du 25 et du 26/09/2026, 10.1). Mécanisme d'envoi et cas d'échec du bundle après une création réussie : à fixer en V2 (voir 17). |
 | 4 | Priority fee estimée automatiquement (voir 12), envoi et confirmation. Gestion des erreurs : solde, blockhash expiré, slippage. |
 | 5 | Écran de résultat (ci-dessous) |
 | 6 | Post automatique dans le canal Succès (section 10.4) |
@@ -1102,8 +1102,8 @@ IMAGE_API_KEY=
 | Subscription | id, userId, plan (CLASSIC, PREMIUM), duration (TWO_DAYS, ONE_MONTH), status (ACTIVE, EXPIRED), startsAt, expiresAt, paymentId |
 | Payment | id, userId, plan, duration, priceUsd, solUsdRate, expectedLamports, receivedLamports, depositAddress, encSecretKey, iv, authTag, status (PENDING, PAID, EXPIRED, CANCELED, SWEPT), expiresAt, paidAt, sweepSignature, createdAt |
 | AiGeneration | id, userId, kind (TEXT, LOGO), createdAt |
-| Wallet | id, userId, name (unique par utilisateur), publicKey (unique par utilisateur), source (CREATED, IMPORTED_KEY, IMPORTED_SEED), derivationPath, encSecretKey, iv, authTag, encMnemonic, mnemonicIv, mnemonicAuthTag (seed phrase chiffrée, vide pour un import par clé privée), createdAt |
-| Withdrawal | id, userId, walletId (nullable), fromAddress, toAddress, lamports, feeLamports, signature, status (PENDING, CONFIRMED, FAILED), error, kind (USER, INACTIVITY_SWEEP, PURGE_SWEEP), userTelegramId (transferts des comptes inactifs et des purges, gardé après la suppression), createdAt |
+| Wallet | id, userId, name (unique par utilisateur), publicKey (unique par utilisateur), source (CREATED, IMPORTED_KEY, IMPORTED_SEED), kind (USER, LAUNCH : fresh wallet d'un launch, caché à l'utilisateur, décision du 26/09/2026), derivationPath, encSecretKey, iv, authTag, encMnemonic, mnemonicIv, mnemonicAuthTag (seed phrase chiffrée, vide pour un import par clé privée), createdAt |
+| Withdrawal | id, userId, walletId (nullable), fromAddress, toAddress, lamports, feeLamports, signature, status (PENDING, CONFIRMED, FAILED), error, kind (USER, INACTIVITY_SWEEP, PURGE_SWEEP, LAUNCH_FUNDING), userTelegramId (transferts des comptes inactifs et des purges, gardé après la suppression), createdAt |
 | TokenDraft | id, userId, name, symbol, description, imageFileId, website, twitter, telegram, createdAt |
 | Simulation | id, userId, tokenDraftId, devBuySol, bundleSol (0 avant le 25/09/2026), seed, params (JSON), createdAt |
 | Launch (V2) | id, userId, walletId, tokenDraftId, devBuySol, bundleSol (transaction du bundle à modéliser en V2), devTokens, mint, txSignature, status (PENDING, CONFIRMED, FAILED), error, channelMessageId, createdAt |
