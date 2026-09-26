@@ -70,6 +70,8 @@ enum WithdrawalKind {
   PURGE_SWEEP
   // The dev buy and the bundle of a launch moved to its fresh wallet (decision of 26/09/2026).
   LAUNCH_FUNDING
+  // What the fresh wallet of a launch holds, moved to the treasury before it is erased.
+  LAUNCH_SWEEP
 }
 
 enum AiGenerationKind {
@@ -230,6 +232,8 @@ model Wallet {
   @@unique([userId, publicKey])
   // Order of the wallet list (§9.1)
   @@index([userId, createdAt])
+  // The launch wallets due for their sweep, read every minute (decision of 26/09/2026)
+  @@index([kind, createdAt])
 }
 
 // Accounting record: survives the deletion of its user and of its wallet.
@@ -247,7 +251,8 @@ model Withdrawal {
   status         WithdrawalStatus @default(PENDING)
   error          String?
   kind           WithdrawalKind   @default(USER)
-  // INACTIVITY_SWEEP and PURGE_SWEEP: kept after the account is deleted, for a manual refund.
+  // INACTIVITY_SWEEP, PURGE_SWEEP and LAUNCH_SWEEP: kept after the account is deleted, for a
+  // manual refund.
   userTelegramId BigInt?
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
 
@@ -256,6 +261,8 @@ model Withdrawal {
   @@index([kind, userTelegramId])
   // The transfer of a deposit still in flight, looked up before another one (V1-33)
   @@index([fromAddress, status])
+  // A transfer still in flight to a wallet before its sweep (decision of 26/09/2026)
+  @@index([toAddress, status])
 }
 
 model TokenDraft {

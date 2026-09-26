@@ -3,6 +3,7 @@ import {
   createAccountDeletionService,
   createDataCleanupService,
   createInactiveAccountsService,
+  createLaunchSweepService,
   createPaymentService,
   createReminderService,
   createSubscriptionService,
@@ -38,6 +39,7 @@ import {
 import type { PgBoss } from "pg-boss";
 import { createBoss, cronEvery, QUEUES, scheduleCron, workQueue } from "./boss.js";
 import { createDepositJobs } from "./jobs/deposits.js";
+import { runLaunchWalletsJob } from "./jobs/launch-wallets.js";
 import { detectPayments, notifyPaid } from "./jobs/payments.js";
 import { createRetentionJobs } from "./jobs/retention.js";
 import { createSubscriptionJobs } from "./jobs/subscriptions.js";
@@ -52,8 +54,9 @@ type PaymentJob = { paymentId: string };
 /**
  * The worker (§12): the payment loop every 15 s (V1-32), the transfers of the deposits to the
  * treasury (V1-33), the plans' reminders and expiry (V1-34), the inactive accounts and the 90
- * days of the data (V1-45), on pg-boss. The whole startup runs inside `start()`: configuration,
- * devnet guard, database, Telegram, jobs, then the loop.
+ * days of the data (V1-45), the sweep of the launch wallets (decision of 26/09/2026), on
+ * pg-boss. The whole startup runs inside `start()`: configuration, devnet guard, database,
+ * Telegram, jobs, then the loop.
  */
 export function createWorkerService(): Service {
   let boss: PgBoss | undefined;
@@ -94,13 +97,17 @@ export function createWorkerService(): Service {
       });
       const transfer = createTransferApi(env);
       const feeBudgetLamports = getWithdrawFeeBudgetLamports(env.PRIORITY_FEE_MAX_MICROLAMPORTS);
-      const treasury = createTreasuryService({
+      // Every transfer to the treasury: the deposits, the accounts, the launch wallets.
+      const sweepDeps = {
         prisma,
         transfer,
         vault,
         readLamports,
         treasury: env.TREASURY_WALLET,
         feeBudgetLamports,
+      };
+      const treasury = createTreasuryService({
+        ...sweepDeps,
         findSender: (address) => findLastSender(rpc, address),
       });
       const telegram = createTelegramSender({ api, adminIds: env.ADMIN_TELEGRAM_IDS });
@@ -108,12 +115,7 @@ export function createWorkerService(): Service {
       // V1-45: the SOL of an inactive account goes to the treasury before the account goes.
       const retention = createRetentionJobs({
         accounts: createInactiveAccountsService({
-          prisma,
-          transfer,
-          vault,
-          readLamports,
-          treasury: env.TREASURY_WALLET,
-          feeBudgetLamports,
+          ...sweepDeps,
           deletion: createAccountDeletionService({ prisma, readLamports, feeBudgetLamports }),
         }),
         cleanup: createDataCleanupService({ prisma }),
@@ -123,6 +125,7 @@ export function createWorkerService(): Service {
         now,
       });
       const inactiveCron = cronEvery(INACTIVITY_CHECK_INTERVAL_MS);
+      const launchWallets = createLaunchSweepService(sweepDeps);
 
       const started = await createBoss(env.DATABASE_URL);
       boss = started;
@@ -163,6 +166,9 @@ export function createWorkerService(): Service {
         retention.inactiveAccounts,
       );
       await scheduleCron(started, QUEUES.cleanup, DATA_CLEANUP_CRON, retention.cleanup);
+      await scheduleCron(started, QUEUES.launchWallets, EVERY_MINUTE_CRON, () =>
+        runLaunchWalletsJob(launchWallets, now()),
+      );
 
       // One worker runs the loop; another one waits for the lock, its jobs still work.
       const leader = createLeaderLock({

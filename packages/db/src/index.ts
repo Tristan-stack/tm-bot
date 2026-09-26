@@ -178,4 +178,6 @@ export type {
   LaunchFundingRequest,
   LaunchFundingService,
 } from "./services/launch-funding.js";
+export { createLaunchSweepService } from "./services/launch-sweep.js";
+export type { LaunchSweepOutcome, LaunchSweepService } from "./services/launch-sweep.js";
 export * from "./generated/prisma/client.js";

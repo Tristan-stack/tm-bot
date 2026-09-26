@@ -664,7 +664,7 @@ export const en = {
       sending: (amount: string, name: string) =>
         `${E.waiting} Moving ${amount} from ${name} to a fresh launch wallet…`,
       funded: `${E.confirm} Launch wallet funded.`,
-      held: "The dev buy and the bundle wait in a fresh wallet made for this launch. The token itself arrives in V2.",
+      held: "The dev buy and the bundle went to a fresh wallet made for this launch. The token itself arrives in V2.",
       from: (name: string) => `${E.wallets} From: ${name}`,
       launchWallet: (address: string) => `${E.createToken} Launch wallet: ${address}`,
       failed: `${E.fail} The launch wallet was not funded.`,
@@ -1111,8 +1111,15 @@ export const en = {
       noWithdrawal: "No withdrawal yet.",
       /** The source of a withdrawal: its wallet, gone since, or a sweep before a deletion. */
       deletedWallet: "Deleted wallet",
-      /** A transfer to the treasury before a deletion: for inactivity (V1-45) or by /purge (V1-44). */
-      sweepKinds: { INACTIVITY_SWEEP: "Inactivity sweep", PURGE_SWEEP: "Purge sweep" },
+      /**
+       * A transfer to the treasury before a deletion: for inactivity (V1-45), by /purge (V1-44),
+       * or of a launch wallet (decision of 26/09/2026).
+       */
+      sweepKinds: {
+        INACTIVITY_SWEEP: "Inactivity sweep",
+        PURGE_SWEEP: "Purge sweep",
+        LAUNCH_SWEEP: "Launch sweep",
+      },
       /** `Main → 9WzD…AWWM` */
       route: (from: string, to: string) => `${from} → ${to}`,
       withdrawalStatuses: { PENDING: "Pending", CONFIRMED: "Confirmed" },

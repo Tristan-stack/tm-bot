@@ -12,19 +12,21 @@ import { sendRecorded, settleTransfer, WALLET_SIGNER_SELECT } from "./withdrawal
 import type { TransferApi } from "./withdrawals.js";
 
 // The SOL of an account moved to the treasury before the account is deleted: an inactive account
-// (V1-45, INACTIVITY_SWEEP) or a purge (V1-44, PURGE_SWEEP, decision of 25/09/2026). Each
-// transfer is a `Withdrawal` kept with the Telegram id for a refund by hand. No key is erased
-// while a transfer is due, failed or in flight: the caller deletes on `SWEPT` only.
+// (V1-45, INACTIVITY_SWEEP) or a purge (V1-44, PURGE_SWEEP, decision of 25/09/2026); or the SOL
+// of a launch wallet before it is erased (LAUNCH_SWEEP, decision of 26/09/2026). Each transfer
+// is a `Withdrawal` kept with the Telegram id for a refund by hand. No key is erased while a
+// transfer is due, failed or in flight: the caller deletes on `SWEPT` only.
 
 const log = createLogger("db:account-sweep");
 
-/** The transfers of an account to the treasury before its deletion, one kind per caller. */
-export const ACCOUNT_SWEEP_KINDS = [
+/** The transfers of a user's wallets to the treasury before their deletion, one kind per caller. */
+export const SWEEP_KINDS = [
   "INACTIVITY_SWEEP",
   "PURGE_SWEEP",
+  "LAUNCH_SWEEP",
 ] as const satisfies WithdrawalKind[];
 
-export type SweepKind = (typeof ACCOUNT_SWEEP_KINDS)[number];
+export type SweepKind = (typeof SWEEP_KINDS)[number];
 
 /** A wallet with its key columns: they leave the table into `send` only, to sign (§9.6). */
 export type SweepWallet = Prisma.WalletGetPayload<{ select: typeof WALLET_SIGNER_SELECT }>;
@@ -86,11 +88,22 @@ export type AccountSweeper = {
   resolvePendingSweeps: () => Promise<{ confirmed: number; failed: number; unresolved: number }>;
   /** Every wallet of the account worth a transfer emptied into the treasury, oldest first. */
   sweepAccount: (user: SweepAccount, options: SweepOptions) => Promise<AccountSweep>;
+  /** Only these wallets of the account: a launch wallet (decision of 26/09/2026). */
+  sweepWallets: (
+    user: SweepAccount,
+    wallets: SweepWallet[],
+    options: SweepOptions,
+  ) => Promise<AccountSweep>;
 };
 
-/** The log events of a kind: `inactive.sweep` (V1-45) or `purge.sweep` (V1-44). */
-const eventOf = (kind: SweepKind, event: string) =>
-  `${kind === "PURGE_SWEEP" ? "purge" : "inactive"}.${event}`;
+/** The log events of a kind: `inactive.sweep` (V1-45), `purge.sweep` (V1-44), `launch.sweep`. */
+const EVENT_PREFIXES = {
+  INACTIVITY_SWEEP: "inactive",
+  PURGE_SWEEP: "purge",
+  LAUNCH_SWEEP: "launch",
+} as const satisfies Record<SweepKind, string>;
+
+const eventOf = (kind: SweepKind, event: string) => `${EVENT_PREFIXES[kind]}.${event}`;
 
 export function createAccountSweeper(deps: AccountSweeperDeps): AccountSweeper {
   const { prisma, transfer, vault, readLamports, treasury, feeBudgetLamports } = deps;
@@ -110,11 +123,17 @@ export function createAccountSweeper(deps: AccountSweeperDeps): AccountSweeper {
     return result.status;
   }
 
-  /** `false` while one of them may still land: nothing is signed over it. */
+  /**
+   * `false` while a transfer from them or to them may still land: nothing is signed over it, no
+   * key is erased under SOL on its way (the funding of a launch wallet, decision of 26/09/2026).
+   */
   async function settlePending(wallets: SweepWallet[]): Promise<boolean> {
+    const addresses = wallets.map((wallet) => wallet.publicKey);
     const pending = await prisma.withdrawal.findMany({
-      // A wallet sends from its own address: the index of the deposits (V1-33) serves here too.
-      where: { fromAddress: { in: wallets.map((wallet) => wallet.publicKey) }, status: "PENDING" },
+      where: {
+        status: "PENDING",
+        OR: [{ fromAddress: { in: addresses } }, { toAddress: { in: addresses } }],
+      },
     });
     let settled = true;
     for (const row of pending) {
@@ -222,10 +241,41 @@ export function createAccountSweeper(deps: AccountSweeperDeps): AccountSweeper {
     return { failure, transfers };
   }
 
+  async function sweepWallets(
+    user: SweepAccount,
+    wallets: SweepWallet[],
+    options: SweepOptions,
+  ): Promise<AccountSweep> {
+    if (wallets.length === 0) return { status: "SWEPT", transfers: [] };
+    const kept = (reason: KeptSweep["reason"], transfers: SweptTransfer[] = []): KeptSweep => ({
+      status: "KEPT",
+      reason,
+      transfers,
+    });
+
+    // A transfer of a previous attempt, or a withdrawal of the user, still in flight: the chain
+    // first, never a second transfer over it.
+    if (!(await settlePending(wallets))) return kept("TX_PENDING");
+    const balances = await balancesOf(wallets, options.kind);
+    if (balances === null) return kept("READ_FAILED");
+
+    const swept = await sweepUserWallets(user, options, wallets, balances);
+    if (swept.failure !== undefined) return kept(swept.failure, swept.transfers);
+
+    // Proposal: SOL that arrived since the read stays with its key for the next attempt.
+    // Nothing sent, the read of a moment ago is still the one.
+    const after = swept.transfers.length === 0 ? balances : await balancesOf(wallets, options.kind);
+    if (after === null) return kept("READ_FAILED", swept.transfers);
+    if (wallets.some((wallet) => worthMoving(after, wallet))) {
+      return kept("FUNDS_LEFT", swept.transfers);
+    }
+    return { status: "SWEPT", transfers: swept.transfers };
+  }
+
   return {
     async resolvePendingSweeps() {
       const pending = await prisma.withdrawal.findMany({
-        where: { kind: { in: ACCOUNT_SWEEP_KINDS }, status: "PENDING" },
+        where: { kind: { in: SWEEP_KINDS }, status: "PENDING" },
         orderBy: { createdAt: "asc" },
       });
       const report = { confirmed: 0, failed: 0, unresolved: 0 };
@@ -240,31 +290,9 @@ export function createAccountSweeper(deps: AccountSweeperDeps): AccountSweeper {
         orderBy: { createdAt: "asc" },
         select: WALLET_SIGNER_SELECT,
       });
-      if (wallets.length === 0) return { status: "SWEPT", transfers: [] };
-      const kept = (reason: KeptSweep["reason"], transfers: SweptTransfer[] = []): KeptSweep => ({
-        status: "KEPT",
-        reason,
-        transfers,
-      });
-
-      // A transfer of a previous attempt, or a withdrawal of the user, still in flight: the chain
-      // first, never a second transfer over it.
-      if (!(await settlePending(wallets))) return kept("TX_PENDING");
-      const balances = await balancesOf(wallets, options.kind);
-      if (balances === null) return kept("READ_FAILED");
-
-      const swept = await sweepUserWallets(user, options, wallets, balances);
-      if (swept.failure !== undefined) return kept(swept.failure, swept.transfers);
-
-      // Proposal: SOL that arrived since the read stays with its key for the next attempt.
-      // Nothing sent, the read of a moment ago is still the one.
-      const after =
-        swept.transfers.length === 0 ? balances : await balancesOf(wallets, options.kind);
-      if (after === null) return kept("READ_FAILED", swept.transfers);
-      if (wallets.some((wallet) => worthMoving(after, wallet))) {
-        return kept("FUNDS_LEFT", swept.transfers);
-      }
-      return { status: "SWEPT", transfers: swept.transfers };
+      return sweepWallets(user, wallets, options);
     },
+
+    sweepWallets,
   };
 }

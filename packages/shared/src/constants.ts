@@ -153,6 +153,16 @@ export const MAX_OPENING_BUY_SOL = DEV_BUY_SOL + BUNDLE_MAX_SOL;
  */
 export const LAUNCH_TEST_DIVISOR_MAX = 1_000;
 /**
+ * The sweep of a launch wallet (decision of 26/09/2026): its SOL goes to the treasury once its
+ * funding went out this long ago. The worker looks every minute: 1 to 2 minutes in all.
+ */
+export const LAUNCH_SWEEP_DELAY_MS = MINUTE_MS;
+/**
+ * A launch wallet no funding was recorded for after this long: the bot stopped between the two,
+ * nothing ever reached it. Swept and erased too.
+ */
+export const LAUNCH_WALLET_ABANDONED_MS = HOUR_MS;
+/**
  * Launch Coin creates no token yet (§10.1, D6): Create token moves the dev buy and the bundle
  * to a fresh launch wallet (decision of 26/09/2026), and the recap says the token comes in V2.
  * V2-04 turns it on, which also drops the notice of the recap.

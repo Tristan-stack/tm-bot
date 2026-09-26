@@ -17,7 +17,7 @@ import type {
   WithdrawalKind,
   WithdrawalStatus,
 } from "../generated/prisma/client.js";
-import { ACCOUNT_SWEEP_KINDS } from "./account-sweep.js";
+import { SWEEP_KINDS } from "./account-sweep.js";
 import { createAiQuotaStore } from "./ai-generations.js";
 import { WALLET_SUMMARY_SELECT } from "./balances.js";
 import { getPlanStatus } from "./subscriptions.js";
@@ -178,7 +178,7 @@ export function createSupportDataService(deps: { prisma: PrismaClient }): Suppor
           }),
           // Not the transfers of the deposit addresses (V1-33): they are not the user's.
           prisma.withdrawal.findMany({
-            where: { userId, kind: { in: ["USER", ...ACCOUNT_SWEEP_KINDS] } },
+            where: { userId, kind: { in: ["USER", ...SWEEP_KINDS] } },
             orderBy: { createdAt: "desc" },
             take: GETALL_WITHDRAWALS,
             select: WITHDRAWAL_SELECT,
@@ -219,7 +219,7 @@ export function createSupportDataService(deps: { prisma: PrismaClient }): Suppor
     treasurySweeps: async (telegramId) =>
       (
         await prisma.withdrawal.findMany({
-          where: { kind: { in: ACCOUNT_SWEEP_KINDS }, userTelegramId: telegramId },
+          where: { kind: { in: SWEEP_KINDS }, userTelegramId: telegramId },
           orderBy: { createdAt: "desc" },
           take: GETALL_WITHDRAWALS,
           select: WITHDRAWAL_SELECT,

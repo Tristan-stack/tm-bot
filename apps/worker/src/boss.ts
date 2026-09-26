@@ -20,6 +20,8 @@ export const QUEUES = {
   /** The inactive accounts and the 90 days of the data (V1-45): also launched by hand. */
   inactiveAccounts: "accounts.delete-inactive",
   cleanup: "data.expired-cleanup",
+  /** The launch wallets emptied into the treasury, then erased (decision of 26/09/2026). */
+  launchWallets: "launch.sweep-wallets",
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

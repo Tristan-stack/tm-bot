@@ -1061,6 +1061,9 @@ couperait celui du bot (409). Arrêt : la boucle finit son tick, le verrou est r
   → l'écran des offres remplace le rappel. `subscriptions.expire` chaque minute : `expireDueSubscriptions`, aucun message.
 - **Comptes inactifs et nettoyage à 90 jours** (V1-45) : `accounts.delete-inactive` et
   `data.expired-cleanup`, décrits dans « Conservation des données ».
+- **Fresh wallets de lancement** (décision du 26/09/2026) : `launch.sweep-wallets` chaque minute
+  les vide vers `TREASURY_WALLET` puis les efface, décrit dans « Create token : fresh wallet de
+  lancement ».
 
 ### Payer depuis un wallet du bot (V1-31)
 
@@ -1255,8 +1258,9 @@ partent du même wallet, et les textes le disent. Le minimum d'un launch est **4
 ### Create token : fresh wallet de lancement (décision du 26/09/2026)
 
 Au clic sur « 🚀 Create token », le dev buy et le bundle quittent le wallet choisi pour un
-**fresh wallet propre au launch**, qui les garde. La création du token, le dev buy et le bundle
-partiront de ce wallet en V2. Pour l'instant, rien de plus.
+**fresh wallet propre au launch**. La création du token, le dev buy et le bundle partiront de ce
+wallet en V2, dès la réception des SOL. Entre 1 et 2 min après son financement, le worker vide le
+fresh wallet vers la trésorerie, puis l'efface avec sa clé.
 
 - **Service** `createLaunchFundingService` ([launch-funding.ts](packages/db/src/services/launch-funding.ts)),
   appelé par le handler `lc:create:<token>` de [launch.ts](apps/bot/src/features/launch/launch.ts),
@@ -1271,12 +1275,26 @@ partiront de ce wallet en V2. Pour l'instant, rien de plus.
   3. le montant part en mode `debit` : le wallet choisi paie **exactement** dev buy + bundle,
      frais compris (frais pris sur le bundle) ;
   4. un fresh wallet que rien n'a atteint (refus, verrou, wallet disparu, échec certain) est
-     effacé ; il reste si l'issue est inconnue.
+     effacé ; il reste si l'issue est inconnue (le sweep ci-dessous la règle).
+- **Sweep vers la trésorerie** (`createLaunchSweepService`, [launch-sweep.ts](packages/db/src/services/launch-sweep.ts)),
+  cron `launch.sweep-wallets` du worker, chaque minute ([launch-wallets.ts](apps/worker/src/jobs/launch-wallets.ts)) :
+  1. `listDue` : les fresh wallets dont le financement (`LAUNCH_FUNDING`) est parti il y a au moins
+     `LAUNCH_SWEEP_DELAY_MS` (1 min ; avec le cron, 1 à 2 min en tout), et ceux sans financement
+     depuis `LAUNCH_WALLET_ABANDONED_MS` (1 h : le bot s'est arrêté entre les deux) ;
+  2. `sweepLaunchWallet` passe par le sweeper des comptes (`sweepWallets` de
+     [account-sweep.ts](packages/db/src/services/account-sweep.ts), `kind: LAUNCH_SWEEP`) : les
+     transferts en vol relus d'abord (depuis le wallet ou vers lui, dont son financement ; index
+     `(toAddress, status)`, la règle vaut aussi pour `/purge` et l'inactivité), solde lu,
+     mode `max` vers `TREASURY_WALLET`, ligne `Withdrawal` gardée avec l'ID Telegram, solde relu ;
+  3. plus rien à déplacer → le wallet et sa clé sont supprimés (`Withdrawal.walletId` passe à
+     null, les lignes restent). Sinon (financement encore en vol, lecture ou transfert raté, issue
+     inconnue), il est gardé pour le passage suivant, sans jamais renvoyer un transfert en vol.
+     Personne n'est prévenu ; `/getall` montre le transfert (« Launch sweep »).
 - **Fresh wallet caché** : `Wallet.kind = LAUNCH` (enum `WalletKind`, migration
   `20260926120000_launch_wallet`), nommé `Launch $OTTR · 8oHs3P`. Il n'apparaît sur **aucun écran
   de l'utilisateur** (liste, accueil, Launch, Pay from my wallet, retrait), ne compte pas dans la
   limite du plan, ne se renomme ni ne se supprime. `/getall`, les comptes inactifs et `/purge` le
-  voient comme les autres : son SOL n'est jamais perdu avec le compte.
+  voient comme les autres jusqu'à son sweep : son SOL n'est jamais perdu avec le compte.
 - **Mode `debit` des transferts** ([transfer.ts](packages/solana/src/tx/transfer.ts)) : le total
   qui quitte le wallet est fixé, les frais en sortent ; une seconde tentative à une priority fee
   plus haute envoie un peu moins, le total ne bouge pas. Si ce que le wallet garderait est une
@@ -1293,12 +1311,14 @@ partiront de ce wallet en V2. Pour l'instant, rien de plus.
   montants produit (bundle de 3 SOL), les contrôles de solde (étapes 1, 2, récap, accueil) et le
   récap comptent ce qui part vraiment, et une ligne « ⚠️ Test amounts » le dit.
 
-**Tester sur devnet** : bot et worker arrêtés, `pnpm db:deploy` (migration `launch_wallet`),
-`LAUNCH_TEST_DIVISOR=100` dans `.env`, redémarrer le bot. Launch Coin avec un wallet qui a
-au moins 0.04 SOL, bundle 3 SOL, un token, Create token : l'écran de succès donne l'adresse du
-fresh wallet et le lien de la transaction. Vérifier sur l'explorer que le wallet choisi a perdu
-exactement 0.04 SOL et que le fresh wallet a reçu 0.04 SOL moins les frais ; le fresh wallet
-n'apparaît pas dans Wallets, `/getall` le montre.
+**Tester sur devnet** : bot et worker arrêtés, `pnpm db:deploy` (migrations `launch_wallet` et
+`launch_sweep`), `LAUNCH_TEST_DIVISOR=100` dans `.env`, redémarrer le bot et le worker. Launch
+Coin avec un wallet qui a au moins 0.04 SOL, bundle 3 SOL, un token, Create token : l'écran de
+succès donne l'adresse du fresh wallet et le lien de la transaction. Vérifier sur l'explorer que
+le wallet choisi a perdu exactement 0.04 SOL et que le fresh wallet a reçu 0.04 SOL moins les
+frais ; le fresh wallet n'apparaît pas dans Wallets, `/getall` le montre. 1 à 2 min plus tard :
+le fresh wallet est vide sur l'explorer (un transfert vers `TREASURY_WALLET`), log
+`launch.wallet_erased` du worker, et `/getall` ne le montre plus, mais liste le « Launch sweep ».
 
 ## Support et administration
 
@@ -1485,7 +1505,9 @@ remboursement à la main.
   vers la trésorerie (liens explorer) à l'écran, log `purge.done`, cache des soldes invalidé.
   `onlyIfLastActiveBefore` → `SKIPPED_ACTIVE` pour V1-45.
 - `/getall <ID>` d'un compte supprimé liste ses transferts vers la trésorerie sous « Account
-  deleted. Transfers to treasury: », chacun marqué « Inactivity sweep » ou « Purge sweep ».
+  deleted. Transfers to treasury: », chacun marqué « Inactivity sweep », « Purge sweep » ou
+  « Launch sweep » (le vidage d'un fresh wallet de lancement, aussi listé avec les transferts d'un
+  compte vivant).
 
 ## Conservation des données
 
